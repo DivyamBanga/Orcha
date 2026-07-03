@@ -2,6 +2,8 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { initDb } from './db'
+import { registerIpc } from './ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -34,10 +36,13 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  registerIpc(mainWindow)
 }
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.orcha.app')
+  initDb()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -1,4 +1,23 @@
+import { useEffect } from 'react'
+import { useStore } from '../store'
+
 function Sidebar(): React.JSX.Element {
+  const projects = useStore((s) => s.projects)
+  const loadProjects = useStore((s) => s.loadProjects)
+  const addProject = useStore((s) => s.addProject)
+
+  useEffect(() => {
+    loadProjects()
+  }, [loadProjects])
+
+  const handleAddProject = async (): Promise<void> => {
+    try {
+      await addProject()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/50">
       <div className="flex h-11 items-center border-b border-zinc-800 px-4">
@@ -12,16 +31,29 @@ function Sidebar(): React.JSX.Element {
       </button>
 
       <div className="mt-4 flex-1 overflow-y-auto px-2">
-        <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-          Workspaces
-        </div>
-        <div className="px-2 py-6 text-center text-zinc-600">
-          No workspaces yet
-        </div>
+        {projects.length === 0 ? (
+          <div className="px-2 py-6 text-center text-zinc-600">
+            No projects yet.
+            <br />
+            Add a git repo to get started.
+          </div>
+        ) : (
+          projects.map((project) => (
+            <div key={project.id} className="mb-3">
+              <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+                {project.name}
+              </div>
+              <div className="px-2 py-1 text-zinc-600">No workspaces</div>
+            </div>
+          ))
+        )}
       </div>
 
       <div className="border-t border-zinc-800 p-2">
-        <button className="w-full rounded-md px-3 py-1.5 text-left text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200">
+        <button
+          onClick={handleAddProject}
+          className="w-full rounded-md px-3 py-1.5 text-left text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200"
+        >
           + Add project
         </button>
         <button className="w-full rounded-md px-3 py-1.5 text-left text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200">

@@ -1,22 +1,19 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '../shared/ipc'
+import type { Project } from '../shared/types'
 
-// Custom APIs for renderer
-const api = {}
-
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
+const api = {
+  projects: {
+    add: (repoPath?: string): Promise<Project | null> => ipcRenderer.invoke(IPC.ProjectsAdd, repoPath),
+    list: (): Promise<Project[]> => ipcRenderer.invoke(IPC.ProjectsList)
+  },
+  on: (channel: string, listener: (payload: unknown) => void): (() => void) => {
+    const wrapped = (_e: Electron.IpcRendererEvent, payload: unknown): void => listener(payload)
+    ipcRenderer.on(channel, wrapped)
+    return () => ipcRenderer.removeListener(channel, wrapped)
   }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
 }
+
+export type OrchaApi = typeof api
+
+contextBridge.exposeInMainWorld('orcha', api)
