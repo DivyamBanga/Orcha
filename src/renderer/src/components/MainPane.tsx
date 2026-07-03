@@ -1,4 +1,5 @@
 import { useStore, useActiveWorkspace } from '../store'
+import ChatView from './ChatView'
 
 function MainPane(): React.JSX.Element {
   const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
@@ -51,9 +52,7 @@ function MainPane(): React.JSX.Element {
           Archive
         </button>
       </header>
-      <div className="flex flex-1 items-center justify-center text-zinc-600">
-        Chat coming in the next milestone
-      </div>
+      <ChatView workspaceId={workspace.id} />
     </main>
   )
 }

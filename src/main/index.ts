@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
 import { WorkspaceManager } from './services/WorkspaceManager'
+import { SessionManager } from './services/SessionManager'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -38,8 +39,15 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  const send = (channel: string, payload: unknown): void => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+  }
   const workspaceManager = new WorkspaceManager()
-  registerIpc(mainWindow, { workspaceManager })
+  const sessionManager = new SessionManager(send)
+  workspaceManager.onBeforeArchive = async (workspaceId) => {
+    sessionManager.interrupt(workspaceId)
+  }
+  registerIpc(mainWindow, { workspaceManager, sessionManager })
 }
 
 app.whenReady().then(() => {

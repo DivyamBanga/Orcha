@@ -6,13 +6,15 @@ import { IPC } from '../shared/ipc'
 import * as db from './db'
 import type { Project } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
+import type { SessionManager } from './services/SessionManager'
 
 interface Services {
   workspaceManager: WorkspaceManager
+  sessionManager: SessionManager
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
-  const { workspaceManager } = services
+  const { workspaceManager, sessionManager } = services
 
   ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
     let repoPath = pickedPath
@@ -48,5 +50,12 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.WorkspacesList, () => db.workspaces.listActive())
   ipcMain.handle(IPC.WorkspacesArchive, (_e, workspaceId: string) =>
     workspaceManager.archive(workspaceId)
+  )
+
+  ipcMain.handle(IPC.SessionSend, (_e, workspaceId: string, text: string) =>
+    sessionManager.sendPrompt(workspaceId, text)
+  )
+  ipcMain.handle(IPC.SessionInterrupt, (_e, workspaceId: string) =>
+    sessionManager.interrupt(workspaceId)
   )
 }

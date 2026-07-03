@@ -19,6 +19,20 @@ export interface Workspace {
 
 export type SessionStatus = 'idle' | 'busy' | 'error'
 
+// Renderer-side chat items, reduced from raw SDK messages.
+export type ChatItem =
+  | { kind: 'user'; text: string }
+  | { kind: 'assistant_text'; text: string }
+  | {
+      kind: 'tool'
+      toolUseId: string
+      name: string
+      input: unknown
+      result?: string
+      isError?: boolean
+    }
+  | { kind: 'error'; text: string }
+
 export interface GitStatus {
   branch: string
   dirty: boolean
