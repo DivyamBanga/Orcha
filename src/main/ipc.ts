@@ -7,14 +7,16 @@ import * as db from './db'
 import type { Project } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { SessionManager } from './services/SessionManager'
+import type { PtyManager } from './services/PtyManager'
 
 interface Services {
   workspaceManager: WorkspaceManager
   sessionManager: SessionManager
+  ptyManager: PtyManager
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
-  const { workspaceManager, sessionManager } = services
+  const { workspaceManager, sessionManager, ptyManager } = services
 
   ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
     let repoPath = pickedPath
@@ -61,4 +63,15 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.SessionHistory, (_e, workspaceId: string) =>
     sessionManager.getHistory(workspaceId)
   )
+
+  ipcMain.handle(IPC.PtyCreate, (_e, workspaceId: string, cols: number, rows: number) =>
+    ptyManager.create(workspaceId, cols, rows)
+  )
+  ipcMain.handle(IPC.PtyInput, (_e, workspaceId: string, data: string) =>
+    ptyManager.write(workspaceId, data)
+  )
+  ipcMain.handle(IPC.PtyResize, (_e, workspaceId: string, cols: number, rows: number) =>
+    ptyManager.resize(workspaceId, cols, rows)
+  )
+  ipcMain.handle(IPC.PtyKill, (_e, workspaceId: string) => ptyManager.kill(workspaceId))
 }

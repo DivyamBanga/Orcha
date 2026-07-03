@@ -22,6 +22,15 @@ const api = {
     history: (workspaceId: string): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.SessionHistory, workspaceId)
   },
+  pty: {
+    create: (workspaceId: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.PtyCreate, workspaceId, cols, rows),
+    input: (workspaceId: string, data: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.PtyInput, workspaceId, data),
+    resize: (workspaceId: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.PtyResize, workspaceId, cols, rows),
+    kill: (workspaceId: string): Promise<void> => ipcRenderer.invoke(IPC.PtyKill, workspaceId)
+  },
   on: (channel: string, listener: (payload: unknown) => void): (() => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, payload: unknown): void => listener(payload)
     ipcRenderer.on(channel, wrapped)

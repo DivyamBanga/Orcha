@@ -6,6 +6,7 @@ import { initDb } from './db'
 import { registerIpc } from './ipc'
 import { WorkspaceManager } from './services/WorkspaceManager'
 import { SessionManager } from './services/SessionManager'
+import { PtyManager } from './services/PtyManager'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -20,7 +21,9 @@ function createWindow(): void {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      // Sessions stream while the window is unfocused/occluded; keep rendering.
+      backgroundThrottling: false
     }
   })
 
@@ -44,10 +47,13 @@ function createWindow(): void {
   }
   const workspaceManager = new WorkspaceManager()
   const sessionManager = new SessionManager(send)
+  const ptyManager = new PtyManager(send)
   workspaceManager.onBeforeArchive = async (workspaceId) => {
     sessionManager.interrupt(workspaceId)
+    ptyManager.kill(workspaceId)
   }
-  registerIpc(mainWindow, { workspaceManager, sessionManager })
+  app.on('before-quit', () => ptyManager.killAll())
+  registerIpc(mainWindow, { workspaceManager, sessionManager, ptyManager })
 }
 
 app.whenReady().then(() => {

@@ -11,6 +11,8 @@ interface OrchaStore {
   messages: Record<string, ChatItem[]>
   streaming: Record<string, string>
   showNewWorkspace: boolean
+  activeTab: 'chat' | 'terminal'
+  openTerminals: string[]
 
   load: () => Promise<void>
   addProject: () => Promise<void>
@@ -21,6 +23,7 @@ interface OrchaStore {
   interrupt: (workspaceId: string) => void
   setActiveWorkspace: (id: string | null) => void
   setShowNewWorkspace: (show: boolean) => void
+  setActiveTab: (tab: 'chat' | 'terminal') => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -32,6 +35,8 @@ export const useStore = create<OrchaStore>((set) => ({
   messages: {},
   streaming: {},
   showNewWorkspace: false,
+  activeTab: 'chat',
+  openTerminals: [],
 
   load: async () => {
     const [projects, workspaces] = await Promise.all([
@@ -65,7 +70,8 @@ export const useStore = create<OrchaStore>((set) => ({
     await window.orcha.workspaces.archive(workspaceId)
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
-      activeWorkspaceId: s.activeWorkspaceId === workspaceId ? null : s.activeWorkspaceId
+      activeWorkspaceId: s.activeWorkspaceId === workspaceId ? null : s.activeWorkspaceId,
+      openTerminals: s.openTerminals.filter((id) => id !== workspaceId)
     }))
   },
 
@@ -113,8 +119,19 @@ export const useStore = create<OrchaStore>((set) => ({
     window.orcha.session.interrupt(workspaceId)
   },
 
-  setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
-  setShowNewWorkspace: (show) => set({ showNewWorkspace: show })
+  setActiveWorkspace: (id) => set({ activeWorkspaceId: id, activeTab: 'chat' }),
+  setShowNewWorkspace: (show) => set({ showNewWorkspace: show }),
+  setActiveTab: (tab) =>
+    set((s) => ({
+      activeTab: tab,
+      openTerminals:
+        tab === 'terminal' &&
+        s.activeWorkspaceId &&
+        s.activeWorkspaceId !== 'orchestrator' &&
+        !s.openTerminals.includes(s.activeWorkspaceId)
+          ? [...s.openTerminals, s.activeWorkspaceId]
+          : s.openTerminals
+    }))
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {
