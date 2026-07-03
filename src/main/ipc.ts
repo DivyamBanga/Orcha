@@ -58,4 +58,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.SessionInterrupt, (_e, workspaceId: string) =>
     sessionManager.interrupt(workspaceId)
   )
+  ipcMain.handle(IPC.SessionHistory, (_e, workspaceId: string) =>
+    sessionManager.getHistory(workspaceId)
+  )
 }

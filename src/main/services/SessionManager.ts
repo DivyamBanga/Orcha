@@ -1,4 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, getSessionMessages } from '@anthropic-ai/claude-agent-sdk'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 
@@ -22,6 +22,33 @@ export class SessionManager {
 
   interrupt(workspaceId: string): void {
     this.busy.get(workspaceId)?.abort()
+  }
+
+  // Raw transcript messages for rehydrating the chat UI after a restart.
+  async getHistory(workspaceId: string): Promise<unknown[]> {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace?.sessionId) return []
+    try {
+      const messages = await getSessionMessages(workspace.sessionId, {
+        dir: workspace.worktreePath
+      })
+      if (!this.activity.has(workspaceId)) {
+        for (const msg of messages) {
+          const m = msg as { type: string; message?: { content?: unknown } }
+          if (m.type === 'assistant' && Array.isArray(m.message?.content)) {
+            for (const block of m.message.content as { type: string; text?: string }[]) {
+              if (block.type === 'text' && block.text?.trim()) {
+                this.pushActivity(workspaceId, `Claude: ${block.text.slice(0, 100)}`)
+              }
+            }
+          }
+        }
+      }
+      return messages
+    } catch {
+      // Session file may have been deleted; start fresh.
+      return []
+    }
   }
 
   private pushActivity(workspaceId: string, line: string): void {

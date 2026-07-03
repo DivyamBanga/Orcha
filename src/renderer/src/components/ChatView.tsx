@@ -66,8 +66,13 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   const sendPrompt = useStore((s) => s.sendPrompt)
   const interrupt = useStore((s) => s.interrupt)
 
+  const loadHistory = useStore((s) => s.loadHistory)
   const [draft, setDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    loadHistory(workspaceId)
+  }, [workspaceId, loadHistory])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })

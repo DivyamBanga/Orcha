@@ -34,10 +34,13 @@ function blockContentToString(content: unknown): string {
 }
 
 // Reduce one raw SDK message into the workspace's ChatItem list.
+// includeUserText is used when replaying history: live user prompts are
+// echoed optimistically by the store, so they're skipped there.
 export function reduceMessage(
   items: ChatItem[],
   streamingText: string,
-  message: SessionMessageEvent['message']
+  message: SessionMessageEvent['message'],
+  includeUserText = false
 ): { items: ChatItem[]; streamingText: string } {
   switch (message.type) {
     case 'stream_event': {
@@ -66,9 +69,17 @@ export function reduceMessage(
     }
     case 'user': {
       const apiMessage = message.message as { content: unknown }
+      if (typeof apiMessage?.content === 'string') {
+        return includeUserText && apiMessage.content.trim()
+          ? { items: [...items, { kind: 'user', text: apiMessage.content }], streamingText }
+          : { items, streamingText }
+      }
       if (!Array.isArray(apiMessage?.content)) return { items, streamingText }
       let next = items
       for (const block of apiMessage.content as ContentBlock[]) {
+        if (includeUserText && block.type === 'text' && block.text?.trim()) {
+          next = [...next, { kind: 'user', text: block.text }]
+        }
         if (block.type === 'tool_result' && block.tool_use_id) {
           next = next.map((item) =>
             item.kind === 'tool' && item.toolUseId === block.tool_use_id

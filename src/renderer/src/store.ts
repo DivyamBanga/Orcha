@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { reduceMessage } from './wireIpc'
 import type { Project, Workspace, SessionStatus, GitStatus, ChatItem } from '../../shared/types'
 
 interface OrchaStore {
@@ -15,6 +16,7 @@ interface OrchaStore {
   addProject: () => Promise<void>
   createWorkspace: (projectId: string, name: string) => Promise<void>
   archiveWorkspace: (workspaceId: string) => Promise<void>
+  loadHistory: (workspaceId: string) => Promise<void>
   sendPrompt: (workspaceId: string, text: string) => void
   interrupt: (workspaceId: string) => void
   setActiveWorkspace: (id: string | null) => void
@@ -64,6 +66,25 @@ export const useStore = create<OrchaStore>((set) => ({
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
       activeWorkspaceId: s.activeWorkspaceId === workspaceId ? null : s.activeWorkspaceId
+    }))
+  },
+
+  loadHistory: async (workspaceId) => {
+    if (useStore.getState().messages[workspaceId] !== undefined) return
+    // Mark as loading synchronously so concurrent calls no-op.
+    set((s) => ({ messages: { ...s.messages, [workspaceId]: [] } }))
+    const raw = await window.orcha.session.history(workspaceId)
+    if (raw.length === 0) return
+    let items: ChatItem[] = []
+    let streamingText = ''
+    for (const msg of raw) {
+      const reduced = reduceMessage(items, streamingText, msg as never, true)
+      items = reduced.items
+      streamingText = reduced.streamingText
+    }
+    set((s) => ({
+      // Live events may have arrived while reading history; keep them after it.
+      messages: { ...s.messages, [workspaceId]: [...items, ...(s.messages[workspaceId] ?? [])] }
     }))
   },
 

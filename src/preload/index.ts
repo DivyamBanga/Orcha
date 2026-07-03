@@ -18,7 +18,9 @@ const api = {
     send: (workspaceId: string, text: string): Promise<void> =>
       ipcRenderer.invoke(IPC.SessionSend, workspaceId, text),
     interrupt: (workspaceId: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.SessionInterrupt, workspaceId)
+      ipcRenderer.invoke(IPC.SessionInterrupt, workspaceId),
+    history: (workspaceId: string): Promise<unknown[]> =>
+      ipcRenderer.invoke(IPC.SessionHistory, workspaceId)
   },
   on: (channel: string, listener: (payload: unknown) => void): (() => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, payload: unknown): void => listener(payload)
