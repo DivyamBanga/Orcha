@@ -3,12 +3,16 @@ import { useStore } from '../store'
 
 function Sidebar(): React.JSX.Element {
   const projects = useStore((s) => s.projects)
-  const loadProjects = useStore((s) => s.loadProjects)
+  const workspaces = useStore((s) => s.workspaces)
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
+  const load = useStore((s) => s.load)
   const addProject = useStore((s) => s.addProject)
+  const setActiveWorkspace = useStore((s) => s.setActiveWorkspace)
+  const setShowNewWorkspace = useStore((s) => s.setShowNewWorkspace)
 
   useEffect(() => {
-    loadProjects()
-  }, [loadProjects])
+    load()
+  }, [load])
 
   const handleAddProject = async (): Promise<void> => {
     try {
@@ -25,7 +29,14 @@ function Sidebar(): React.JSX.Element {
       </div>
 
       {/* Orchestrator — pinned mission control */}
-      <button className="mx-2 mt-2 flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-left hover:bg-zinc-800/70">
+      <button
+        onClick={() => setActiveWorkspace('orchestrator')}
+        className={`mx-2 mt-2 flex items-center gap-2 rounded-md border px-3 py-2 text-left ${
+          activeWorkspaceId === 'orchestrator'
+            ? 'border-emerald-800 bg-zinc-800'
+            : 'border-zinc-800 bg-zinc-900 hover:bg-zinc-800/70'
+        }`}
+      >
         <span className="h-2 w-2 rounded-full bg-emerald-500" />
         <span className="font-medium text-zinc-100">Mission Control</span>
       </button>
@@ -38,14 +49,33 @@ function Sidebar(): React.JSX.Element {
             Add a git repo to get started.
           </div>
         ) : (
-          projects.map((project) => (
-            <div key={project.id} className="mb-3">
-              <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
-                {project.name}
+          projects.map((project) => {
+            const projectWorkspaces = workspaces.filter((w) => w.projectId === project.id)
+            return (
+              <div key={project.id} className="mb-3">
+                <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+                  {project.name}
+                </div>
+                {projectWorkspaces.length === 0 ? (
+                  <div className="px-2 py-1 text-zinc-600">No workspaces</div>
+                ) : (
+                  projectWorkspaces.map((ws) => (
+                    <button
+                      key={ws.id}
+                      onClick={() => setActiveWorkspace(ws.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+                        activeWorkspaceId === ws.id
+                          ? 'bg-zinc-800 text-zinc-100'
+                          : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="truncate">{ws.name}</span>
+                    </button>
+                  ))
+                )}
               </div>
-              <div className="px-2 py-1 text-zinc-600">No workspaces</div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
@@ -56,7 +86,11 @@ function Sidebar(): React.JSX.Element {
         >
           + Add project
         </button>
-        <button className="w-full rounded-md px-3 py-1.5 text-left text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200">
+        <button
+          onClick={() => setShowNewWorkspace(true)}
+          disabled={projects.length === 0}
+          className="w-full rounded-md px-3 py-1.5 text-left text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+        >
           + New workspace
         </button>
       </div>

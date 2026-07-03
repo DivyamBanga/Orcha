@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
+import { WorkspaceManager } from './services/WorkspaceManager'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -37,7 +38,8 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  registerIpc(mainWindow)
+  const workspaceManager = new WorkspaceManager()
+  registerIpc(mainWindow, { workspaceManager })
 }
 
 app.whenReady().then(() => {

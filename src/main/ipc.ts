@@ -5,8 +5,15 @@ import { randomUUID } from 'crypto'
 import { IPC } from '../shared/ipc'
 import * as db from './db'
 import type { Project } from '../shared/types'
+import type { WorkspaceManager } from './services/WorkspaceManager'
 
-export function registerIpc(mainWindow: BrowserWindow): void {
+interface Services {
+  workspaceManager: WorkspaceManager
+}
+
+export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
+  const { workspaceManager } = services
+
   ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
     let repoPath = pickedPath
     if (!repoPath) {
@@ -34,4 +41,12 @@ export function registerIpc(mainWindow: BrowserWindow): void {
   })
 
   ipcMain.handle(IPC.ProjectsList, () => db.projects.list())
+
+  ipcMain.handle(IPC.WorkspacesCreate, (_e, projectId: string, name: string) =>
+    workspaceManager.create(projectId, name)
+  )
+  ipcMain.handle(IPC.WorkspacesList, () => db.workspaces.listActive())
+  ipcMain.handle(IPC.WorkspacesArchive, (_e, workspaceId: string) =>
+    workspaceManager.archive(workspaceId)
+  )
 }
