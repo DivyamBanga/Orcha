@@ -94,11 +94,12 @@ function useSessionMenu(): {
   return { menu, closeMenu: () => setMenu(null), openSessionMenu, openProjectMenu }
 }
 
+// Space is always reserved (opacity, not display) so rows never reflow on hover.
 function DotsButton({ onClick }: { onClick: (e: React.MouseEvent) => void }): React.JSX.Element {
   return (
     <button
       onClick={onClick}
-      className="hidden shrink-0 rounded px-1 font-mono text-zinc-500 hover:bg-edge hover:text-zinc-200 group-hover:inline"
+      className="shrink-0 rounded px-1 font-mono text-zinc-500 opacity-0 transition-opacity duration-100 hover:bg-edge hover:text-zinc-200 group-hover:opacity-100"
       title="Options"
     >
       ⋯
@@ -125,9 +126,9 @@ function SessionRow({
   return (
     <div
       onContextMenu={(e) => onMenu(e, workspace)}
-      className={`group flex w-full items-center gap-2 rounded px-2 py-1.5 transition-colors duration-100 ${
-        active ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:bg-surface-1 hover:text-zinc-200'
-      } ${isParallel ? 'pl-5' : ''}`}
+      className={`group flex w-full items-center gap-1 rounded px-1.5 py-1.5 transition-colors duration-100 ${
+        active ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:bg-surface-2/60 hover:text-zinc-200'
+      }`}
     >
       <button
         onClick={() => setActive(workspace.id)}
@@ -139,7 +140,9 @@ function SessionRow({
             title={open ? 'Session running' : 'Not started'}
           />
         </span>
-        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {workspace.kind === 'main' ? 'main' : workspace.name}
+        </span>
         {isParallel && (
           <span className="font-mono text-[10px] text-zinc-600" title={workspace.branch}>
             ⑂
@@ -151,7 +154,7 @@ function SessionRow({
           </span>
         )}
         {index < 9 && (
-          <kbd className="hidden font-mono text-[10px] text-zinc-600 group-hover:inline">
+          <kbd className="font-mono text-[10px] text-zinc-600 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
             ^{index + 1}
           </kbd>
         )}
@@ -213,24 +216,29 @@ function Sidebar(): React.JSX.Element {
           projects.map((project) => {
             const sessions = workspaces.filter((w) => w.projectId === project.id)
             return (
-              <div key={project.id} className="mb-3">
+              <div
+                key={project.id}
+                className="mb-2 rounded-md border border-edge bg-surface-0/50"
+              >
                 <div
                   onContextMenu={(e) => openProjectMenu(e, project)}
-                  className="group flex items-center px-2 pb-1 pt-2"
+                  className="group flex items-center gap-1 border-b border-edge px-2.5 py-2"
                 >
-                  <span className="flex-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-600">
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-tight text-zinc-200">
                     {project.name}
                   </span>
                   <DotsButton onClick={(e) => openProjectMenu(e, project)} />
                 </div>
-                {sessions.map((ws) => (
-                  <SessionRow
-                    key={ws.id}
-                    workspace={ws}
-                    index={workspaces.findIndex((w) => w.id === ws.id)}
-                    onMenu={openSessionMenu}
-                  />
-                ))}
+                <div className="p-1">
+                  {sessions.map((ws) => (
+                    <SessionRow
+                      key={ws.id}
+                      workspace={ws}
+                      index={workspaces.findIndex((w) => w.id === ws.id)}
+                      onMenu={openSessionMenu}
+                    />
+                  ))}
+                </div>
               </div>
             )
           })
