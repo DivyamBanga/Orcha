@@ -1,22 +1,19 @@
 # Orcha
 
-A Windows desktop cockpit for orchestrating parallel Claude Code sessions — inspired by [Conductor](https://conductor.build), rebuilt for Windows and reimagined around one idea: **leverage AI, don't babysit code**.
+A Windows desktop cockpit for running multiple native Claude Code sessions across your GitHub projects — inspired by [Conductor](https://conductor.build), rebuilt terminal-first for Windows.
 
-Each **workspace** is an isolated git worktree with its own Claude Code session and terminal. A pinned **Mission Control** session commands the whole fleet: it can list workspaces, read their activity, dispatch prompts, and spin up new workspaces on its own.
+**Each project is a tab running the real Claude Code TUI** (`claude --dangerously-skip-permissions`) in that repo's folder, wrapped with the controls that matter: git status, one-click Commit + Push, PR, model/effort pickers, restart. **Mission Control** is a chat that commands the whole fleet — it can report what every session is doing, type prompts into any of them, create new GitHub repos, and spin up parallel sessions.
 
-## How it works
+## The workflow
 
-- **Projects** point at local git repos. Workspaces are created as `git worktree add` under `~/.orcha/worktrees/<project>/<name>` on a branch `orcha/<name>` — parallel sessions never collide.
-- **Sessions** are real Claude Code sessions via the Agent SDK, using your existing Claude login. They run full-auto (`bypassPermissions`), stream into a chat UI with compact tool rows, and survive app restarts (transcripts persist in `~/.claude/projects`, resumed by id).
-- **Mission Control** is a dedicated session with in-process MCP tools: `list_workspaces`, `get_workspace_activity`, `send_prompt_to_workspace` (async dispatch), `create_workspace`.
-- **Git actions** stay minimal: status chip, one-click Commit + Push, "Ask Claude" to commit, PR via `gh`.
-- **Terminal tab** per workspace (ConPTY + xterm) for dev servers and manual testing; shells keep running while you switch around.
+- **New project**: type a name → Orcha creates the GitHub repo (`gh repo create`, private by default), clones it to `Desktop\Projects\<name>`, and boots the Claude session. Seconds from idea to working agent.
+- **Existing project**: pick from your GitHub repo list (auto-clone) or open a local folder. Reopening a project auto-resumes its last conversation (`--continue`).
+- **Parallel work on one repo**: "+ Parallel session" adds a git worktree + branch as another tab, so a second Claude works the same repo without collisions.
+- **Mission Control** (`Ctrl+0`): "what's everyone doing?" / "tell orcha-flow-test to add tests" / "create a repo called my-idea and have it scaffold a Next.js app".
 
-## Shortcuts
+## First run
 
-- `Ctrl+0` — Mission Control
-- `Ctrl+1..9` — jump to workspace
-- `Ctrl+T` — toggle Chat / Terminal
+Orcha checks that `gh` and Claude Code are connected and walks you through both logins in an embedded terminal if not.
 
 ## Development
 
@@ -26,4 +23,4 @@ npm run dev        # run with HMR
 npm run build:win  # NSIS installer in dist/
 ```
 
-Requires: Windows 10 1809+, Node 16+, git, [gh](https://cli.github.com/) (for PRs), and a logged-in [Claude Code](https://claude.com/claude-code) install.
+Requires: Windows 10 1809+, Node 16+, git, [gh](https://cli.github.com/), and [Claude Code](https://claude.com/claude-code).

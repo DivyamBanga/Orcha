@@ -12,8 +12,6 @@ export const IPC = {
   WorkspacesArchive: 'workspaces:archive',
   WorkspacesUpdateSettings: 'workspaces:updateSettings',
   SessionSend: 'session:send',
-  SessionInterrupt: 'session:interrupt',
-  SessionHistory: 'session:history',
   GitStatus: 'git:status',
   GitCommitPush: 'git:commitPush',
   GitCreatePr: 'git:createPr',
