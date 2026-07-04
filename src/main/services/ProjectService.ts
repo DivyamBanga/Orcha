@@ -76,6 +76,9 @@ export class ProjectService {
     for (const session of sessions) {
       await this.workspaceManager.archive(session.id)
     }
+    // Drop the session rows too — archived rows would block the project
+    // delete via the foreign key.
+    db.workspaces.removeByProject(projectId)
     db.projects.remove(projectId)
   }
 

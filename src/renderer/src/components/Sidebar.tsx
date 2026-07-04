@@ -63,7 +63,7 @@ function useSessionMenu(): {
     const items: MenuItem[] = [
       {
         label: 'New parallel session',
-        onClick: () => s.setShowNewSession(true)
+        onClick: () => s.setShowNewSession(project.id)
       },
       {
         label: 'Open folder',
@@ -170,7 +170,6 @@ function Sidebar(): React.JSX.Element {
   const openCount = useStore((s) => s.openSessions.length)
   const setActive = useStore((s) => s.setActive)
   const setShowNewProject = useStore((s) => s.setShowNewProject)
-  const setShowNewSession = useStore((s) => s.setShowNewSession)
   const { menu, closeMenu, openSessionMenu, openProjectMenu } = useSessionMenu()
 
   return (
@@ -244,13 +243,6 @@ function Sidebar(): React.JSX.Element {
           className="w-full rounded px-3 py-1.5 text-left text-zinc-500 transition-colors duration-100 hover:bg-surface-2 hover:text-zinc-200"
         >
           + New project
-        </button>
-        <button
-          onClick={() => setShowNewSession(true)}
-          disabled={projects.length === 0}
-          className="w-full rounded px-3 py-1.5 text-left text-zinc-500 transition-colors duration-100 hover:bg-surface-2 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          + Parallel session
         </button>
       </div>
 

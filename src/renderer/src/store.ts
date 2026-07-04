@@ -20,7 +20,8 @@ interface OrchaStore {
   slashCommands: Record<string, string[]>
 
   showNewProject: boolean
-  showNewSession: boolean
+  // Project id to preselect in the parallel-session dialog, or null = closed.
+  showNewSession: string | null
 
   checkSetup: () => Promise<void>
   load: () => Promise<void>
@@ -37,7 +38,7 @@ interface OrchaStore {
   mcInterrupt: () => void
   mcLoadHistory: () => Promise<void>
   setShowNewProject: (show: boolean) => void
-  setShowNewSession: (show: boolean) => void
+  setShowNewSession: (projectId: string | null) => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -53,7 +54,7 @@ export const useStore = create<OrchaStore>((set) => ({
   sessionStatus: {},
   slashCommands: {},
   showNewProject: false,
-  showNewSession: false,
+  showNewSession: null,
 
   checkSetup: async () => {
     const setup = await window.orcha.setup.status()
@@ -106,7 +107,7 @@ export const useStore = create<OrchaStore>((set) => ({
       workspaces: [...s.workspaces, workspace],
       activeId: workspace.id,
       openSessions: [...s.openSessions, workspace.id],
-      showNewSession: false
+      showNewSession: null
     }))
   },
 
@@ -150,7 +151,7 @@ export const useStore = create<OrchaStore>((set) => ({
   },
 
   setShowNewProject: (show) => set({ showNewProject: show }),
-  setShowNewSession: (show) => set({ showNewSession: show })
+  setShowNewSession: (projectId) => set({ showNewSession: projectId })
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {

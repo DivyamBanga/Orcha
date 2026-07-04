@@ -174,6 +174,9 @@ export const workspaces = {
   },
   setStatus(id: string, status: Workspace['status']): void {
     db.prepare('UPDATE workspaces SET status = ? WHERE id = ?').run(status, id)
+  },
+  removeByProject(projectId: string): void {
+    db.prepare('DELETE FROM workspaces WHERE project_id = ?').run(projectId)
   }
 }
 

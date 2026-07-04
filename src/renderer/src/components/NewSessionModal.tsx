@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { useStore, useActiveWorkspace } from '../store'
+import { useStore } from '../store'
 
 // Creates a parallel session: a git worktree + branch opened as another tab.
+// Opened from a project's context menu, which preselects that project.
 function NewSessionModal(): React.JSX.Element | null {
   const projects = useStore((s) => s.projects)
   const show = useStore((s) => s.showNewSession)
   const setShow = useStore((s) => s.setShowNewSession)
   const createParallelSession = useStore((s) => s.createParallelSession)
-  const active = useActiveWorkspace()
 
   const [projectId, setProjectId] = useState('')
   const [name, setName] = useState('')
@@ -15,9 +15,9 @@ function NewSessionModal(): React.JSX.Element | null {
   const [effort, setEffort] = useState('')
   const [creating, setCreating] = useState(false)
 
-  if (!show) return null
+  if (show === null) return null
 
-  const selectedProject = projectId || active?.projectId || projects[0]?.id || ''
+  const selectedProject = projectId || show || projects[0]?.id || ''
 
   const handleCreate = async (): Promise<void> => {
     if (!name.trim() || !selectedProject) return
@@ -35,7 +35,7 @@ function NewSessionModal(): React.JSX.Element | null {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={() => setShow(false)}
+      onClick={() => setShow(null)}
     >
       <div
         className="w-96 rounded-lg border border-edge-bright bg-surface-1 p-4"
@@ -103,7 +103,7 @@ function NewSessionModal(): React.JSX.Element | null {
 
         <div className="flex justify-end gap-2">
           <button
-            onClick={() => setShow(false)}
+            onClick={() => setShow(null)}
             className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
           >
             Cancel
