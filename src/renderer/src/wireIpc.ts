@@ -138,6 +138,32 @@ export function wireIpc(): () => void {
       sessionStatus: { ...s.sessionStatus, [workspaceId]: status },
       streaming: status === 'busy' ? s.streaming : { ...s.streaming, [workspaceId]: '' }
     }))
+    // Mission Control finished a turn: flush the next queued message.
+    if (workspaceId === 'orchestrator' && status !== 'busy') {
+      const s = useStore.getState()
+      const next = s.mcQueue[0]
+      if (next !== undefined) {
+        useStore.setState({ mcQueue: s.mcQueue.slice(1) })
+        useStore.setState((st) => ({
+          sessionStatus: { ...st.sessionStatus, orchestrator: 'busy' }
+        }))
+        window.orcha.orchestrator.send(next).catch(() => {})
+      }
+    }
+  })
+
+  const unsubActivity = window.orcha.on(IPC.EvActivity, (payload) => {
+    const { workspaceId, state } = payload as {
+      workspaceId: string
+      state: 'working' | 'waiting' | 'off'
+    }
+    useStore.setState((s) => ({ activity: { ...s.activity, [workspaceId]: state } }))
+  })
+
+  // Clicking a Windows notification jumps to that session.
+  const unsubFocus = window.orcha.on(IPC.EvFocusSession, (payload) => {
+    const { workspaceId } = payload as { workspaceId: string }
+    useStore.getState().setActive(workspaceId)
   })
 
   const unsubGit = window.orcha.on(IPC.EvGitStatus, (payload) => {
@@ -155,5 +181,7 @@ export function wireIpc(): () => void {
     unsubStatus()
     unsubGit()
     unsubChanged()
+    unsubActivity()
+    unsubFocus()
   }
 }

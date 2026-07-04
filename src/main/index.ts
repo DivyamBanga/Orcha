@@ -9,6 +9,8 @@ import { PtyManager } from './services/PtyManager'
 import { GitService } from './services/GitService'
 import { ProjectService } from './services/ProjectService'
 import { OrchestratorService } from './services/OrchestratorService'
+import { ActivityMonitor } from './services/ActivityMonitor'
+import { IPC } from '../shared/ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -63,7 +65,19 @@ function createWindow(): void {
     // Give Windows a beat to release file handles before worktree removal.
     await new Promise((r) => setTimeout(r, 300))
   }
-  app.on('before-quit', () => ptyManager.killAll())
+  const activityMonitor = new ActivityMonitor(send, ptyManager)
+  activityMonitor.isWindowFocused = () => mainWindow.isFocused()
+  activityMonitor.onNotificationClick = (workspaceId) => {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+    send(IPC.EvFocusSession, { workspaceId })
+  }
+  activityMonitor.start()
+  app.on('before-quit', () => {
+    activityMonitor.stop()
+    ptyManager.killAll()
+  })
   registerIpc(mainWindow, {
     workspaceManager,
     ptyManager,

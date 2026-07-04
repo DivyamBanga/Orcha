@@ -126,4 +126,10 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.SessionSend, (_e, workspaceId: string, text: string) =>
     ptyManager.dispatchPrompt(workspaceId, text)
   )
+
+  // Small persisted UI state (open sessions, last active) in app_state.
+  ipcMain.handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)
+  ipcMain.handle(IPC.UiSaveState, (_e, key: string, value: string) =>
+    db.appState.set(`ui:${key}`, value)
+  )
 }

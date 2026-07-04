@@ -40,27 +40,48 @@ function MainPane(): React.JSX.Element {
     return () => clearInterval(interval)
   }, [workspaceId])
 
-  if (activeId === 'orchestrator') {
+  // Terminals for every open session stay mounted below regardless of which
+  // view is showing, so restored sessions boot and keep running unattended.
+  const terminalHost = (
+    <>
+      {openSessions.map((id) => (
+        <div
+          key={id}
+          className="absolute inset-0"
+          style={{ display: id === activeId ? 'block' : 'none' }}
+        >
+          <TerminalView workspaceId={id} visible={id === activeId} />
+        </div>
+      ))}
+    </>
+  )
+
+  if (activeId === 'orchestrator' || !workspace) {
     return (
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
-          <span className="h-2 w-2 rounded-full bg-accent" />
-          <span className="font-medium text-zinc-100">Mission Control</span>
-          <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
-        </header>
-        <ChatView workspaceId="orchestrator" />
-      </main>
-    )
-  }
-
-  if (!workspace) {
-    return (
-      <main className="flex flex-1 items-center justify-center">
-        <div className="text-center">
-          <div className="text-lg font-medium text-zinc-500">No session selected</div>
-          <div className="mt-1 text-zinc-600">
-            Pick a session on the left, or create a project to start one
-          </div>
+        {activeId === 'orchestrator' ? (
+          <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
+            <span className="h-2 w-2 rounded-full bg-accent" />
+            <span className="font-medium text-zinc-100">Mission Control</span>
+            <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
+          </header>
+        ) : (
+          <header className="h-11 shrink-0 border-b border-edge" />
+        )}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {activeId === 'orchestrator' ? (
+            <ChatView workspaceId="orchestrator" />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <div className="text-center">
+                <div className="text-lg font-medium text-zinc-500">No session selected</div>
+                <div className="mt-1 text-zinc-600">
+                  Pick a session on the left, or create a project to start one
+                </div>
+              </div>
+            </div>
+          )}
+          {terminalHost}
         </div>
       </main>
     )
@@ -174,17 +195,7 @@ function MainPane(): React.JSX.Element {
         </button>
       </header>
 
-      <div className="relative min-h-0 flex-1">
-        {openSessions.map((id) => (
-          <div
-            key={id}
-            className="absolute inset-0"
-            style={{ display: id === workspace.id ? 'block' : 'none' }}
-          >
-            <TerminalView workspaceId={id} visible={id === workspace.id} />
-          </div>
-        ))}
-      </div>
+      <div className="relative min-h-0 flex-1">{terminalHost}</div>
     </main>
   )
 }

@@ -119,6 +119,7 @@ function SessionRow({
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
   const open = useStore((s) => s.openSessions.includes(workspace.id))
+  const activity = useStore((s) => s.activity[workspace.id]) ?? 'off'
   const git = useStore((s) => s.gitStatus[workspace.id])
   const active = activeId === workspace.id
   const isParallel = workspace.kind === 'worktree'
@@ -135,10 +136,22 @@ function SessionRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left"
       >
         <span className="flex w-3 shrink-0 items-center justify-center">
-          <span
-            className={`rounded-full ${open ? 'h-1.5 w-1.5 bg-accent' : 'h-1 w-1 bg-zinc-700'}`}
-            title={open ? 'Session running' : 'Not started'}
-          />
+          {activity === 'working' ? (
+            <span
+              className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent"
+              title="Claude is working"
+            />
+          ) : activity === 'waiting' ? (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-amber-500"
+              title="Waiting for you"
+            />
+          ) : (
+            <span
+              className={`rounded-full ${open ? 'h-1.5 w-1.5 bg-zinc-500' : 'h-1 w-1 bg-zinc-700'}`}
+              title={open ? 'Session starting' : 'Not started'}
+            />
+          )}
         </span>
         <span className="min-w-0 flex-1 truncate">
           {workspace.kind === 'main' ? 'main' : workspace.name}

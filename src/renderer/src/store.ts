@@ -4,14 +4,20 @@ import type { Project, Workspace, SessionStatus, GitStatus, ChatItem } from '../
 
 const MC = 'orchestrator'
 
+function persistOpenSessions(ids: string[]): void {
+  window.orcha.ui.saveState('openSessions', JSON.stringify(ids)).catch(() => {})
+}
+
 interface OrchaStore {
   setup: { gh: boolean; claude: boolean } | null
   projects: Project[]
   workspaces: Workspace[]
   activeId: string | null // workspace id or 'orchestrator'
   openSessions: string[] // terminals kept mounted
+  activity: Record<string, 'working' | 'waiting' | 'off'>
   gitStatus: Record<string, GitStatus>
   unread: Record<string, boolean>
+  mcQueue: string[]
 
   // Mission Control chat state (keyed map so wireIpc stays generic)
   messages: Record<string, ChatItem[]>
@@ -25,6 +31,7 @@ interface OrchaStore {
 
   checkSetup: () => Promise<void>
   load: () => Promise<void>
+  restoreOpenSessions: () => Promise<void>
   setActive: (id: string | null) => void
   archiveSession: (workspaceId: string) => Promise<void>
   removeProject: (projectId: string) => Promise<void>
@@ -47,8 +54,10 @@ export const useStore = create<OrchaStore>((set) => ({
   workspaces: [],
   activeId: null,
   openSessions: [],
+  activity: {},
   gitStatus: {},
   unread: {},
+  mcQueue: [],
   messages: {},
   streaming: {},
   sessionStatus: {},
@@ -69,23 +78,47 @@ export const useStore = create<OrchaStore>((set) => ({
     set({ projects, workspaces })
   },
 
+  // Reopen the sessions that were live when the app last quit.
+  restoreOpenSessions: async () => {
+    const raw = await window.orcha.ui.getState('openSessions')
+    if (!raw) return
+    let ids: string[]
+    try {
+      ids = JSON.parse(raw)
+    } catch {
+      return
+    }
+    const valid = ids.filter((id) => useStore.getState().workspaces.some((w) => w.id === id))
+    if (valid.length > 0) {
+      set((s) => ({ openSessions: [...new Set([...s.openSessions, ...valid])] }))
+    }
+  },
+
   setActive: (id) =>
-    set((s) => ({
-      activeId: id,
-      unread: id ? { ...s.unread, [id]: false } : s.unread,
-      openSessions:
+    set((s) => {
+      const openSessions =
         id && id !== MC && !s.openSessions.includes(id)
           ? [...s.openSessions, id]
           : s.openSessions
-    })),
+      if (openSessions !== s.openSessions) persistOpenSessions(openSessions)
+      return {
+        activeId: id,
+        unread: id ? { ...s.unread, [id]: false } : s.unread,
+        openSessions
+      }
+    }),
 
   archiveSession: async (workspaceId) => {
     await window.orcha.workspaces.archive(workspaceId)
-    set((s) => ({
-      workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
-      activeId: s.activeId === workspaceId ? null : s.activeId,
-      openSessions: s.openSessions.filter((id) => id !== workspaceId)
-    }))
+    set((s) => {
+      const openSessions = s.openSessions.filter((id) => id !== workspaceId)
+      persistOpenSessions(openSessions)
+      return {
+        workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
+        activeId: s.activeId === workspaceId ? null : s.activeId,
+        openSessions
+      }
+    })
   },
 
   removeProject: async (projectId) => {
@@ -112,6 +145,15 @@ export const useStore = create<OrchaStore>((set) => ({
   },
 
   mcSend: (text) => {
+    const busy = useStore.getState().sessionStatus[MC] === 'busy'
+    if (busy) {
+      // Queue it; wireIpc flushes when the current turn ends.
+      set((s) => ({
+        mcQueue: [...s.mcQueue, text],
+        messages: { ...s.messages, [MC]: [...(s.messages[MC] ?? []), { kind: 'user', text }] }
+      }))
+      return
+    }
     set((s) => ({
       messages: { ...s.messages, [MC]: [...(s.messages[MC] ?? []), { kind: 'user', text }] },
       sessionStatus: { ...s.sessionStatus, [MC]: 'busy' }

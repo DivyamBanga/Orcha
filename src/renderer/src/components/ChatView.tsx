@@ -4,6 +4,21 @@ import rehypeHighlight from 'rehype-highlight'
 import { useStore } from '../store'
 import type { ChatItem } from '../../../shared/types'
 
+const HISTORY_KEY = 'orcha-prompt-history'
+
+function loadPromptHistory(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function savePromptToHistory(text: string): void {
+  const history = [text, ...loadPromptHistory().filter((t) => t !== text)].slice(0, 100)
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+}
+
 // The one argument worth showing next to the tool name.
 function mainArg(input: unknown): string {
   if (typeof input !== 'object' || input === null) return ''
@@ -71,6 +86,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
 
   const slashCommands = useStore((s) => s.slashCommands[workspaceId]) ?? []
   const [draft, setDraft] = useState('')
+  const [historyIndex, setHistoryIndex] = useState(-1)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // Slash-command preview: only while typing the command word itself.
@@ -92,7 +108,9 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
 
   const handleSend = (): void => {
     const text = draft.trim()
-    if (!text || busy) return
+    if (!text) return
+    savePromptToHistory(text)
+    setHistoryIndex(-1)
     setDraft('')
     sendPrompt(text)
   }
@@ -169,12 +187,31 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
                 setDraft(`/${slashMatches[0]} `)
                 return
               }
+              // Shell-style history: only when the draft is empty or already browsing.
+              if (e.key === 'ArrowUp' && (draft === '' || historyIndex >= 0)) {
+                const history = loadPromptHistory()
+                const next = Math.min(historyIndex + 1, history.length - 1)
+                if (history[next] !== undefined) {
+                  e.preventDefault()
+                  setHistoryIndex(next)
+                  setDraft(history[next])
+                }
+                return
+              }
+              if (e.key === 'ArrowDown' && historyIndex >= 0) {
+                e.preventDefault()
+                const history = loadPromptHistory()
+                const next = historyIndex - 1
+                setHistoryIndex(next)
+                setDraft(next >= 0 ? (history[next] ?? '') : '')
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSend()
               }
             }}
-            placeholder={busy ? 'session is working…' : 'prompt this session'}
+            placeholder={busy ? 'working — Enter queues your next message' : 'prompt this session'}
             rows={Math.min(6, Math.max(1, draft.split('\n').length))}
             className="flex-1 resize-none rounded-md border border-edge bg-surface-1 px-3 py-2 text-zinc-200 transition-colors duration-100 placeholder:text-zinc-600 focus:border-accent-dim focus:outline-none"
           />

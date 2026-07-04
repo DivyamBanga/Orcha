@@ -15,7 +15,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const s = useStore.getState()
     s.checkSetup()
-    s.load()
+    s.load().then(() => s.restoreOpenSessions())
   }, [])
 
   // Ctrl+1..9 jumps to a session (0 = Mission Control).

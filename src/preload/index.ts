@@ -6,6 +6,11 @@ const api = {
   setup: {
     status: (): Promise<{ gh: boolean; claude: boolean }> => ipcRenderer.invoke(IPC.SetupStatus)
   },
+  ui: {
+    getState: (key: string): Promise<string | null> => ipcRenderer.invoke(IPC.UiGetState, key),
+    saveState: (key: string, value: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.UiSaveState, key, value)
+  },
   projects: {
     add: (repoPath?: string): Promise<Project | null> =>
       ipcRenderer.invoke(IPC.ProjectsAdd, repoPath),

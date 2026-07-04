@@ -27,9 +27,14 @@ export const IPC = {
   OrchestratorInterrupt: 'orchestrator:interrupt',
   OrchestratorHistory: 'orchestrator:history',
 
+  UiGetState: 'ui:getState',
+  UiSaveState: 'ui:saveState',
+
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',
   EvSessionStatus: 'ev:session:status',
+  EvActivity: 'ev:activity',
+  EvFocusSession: 'ev:focusSession',
   EvPtyData: 'ev:pty:data',
   EvPtyExit: 'ev:pty:exit',
   EvGitStatus: 'ev:git:status',
