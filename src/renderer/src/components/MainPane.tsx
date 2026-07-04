@@ -34,8 +34,13 @@ function MainPane(): React.JSX.Element {
 
   if (activeWorkspaceId === 'orchestrator') {
     return (
-      <main className="flex flex-1 items-center justify-center">
-        <div className="text-center text-zinc-600">Mission Control — coming soon</div>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-11 shrink-0 items-center gap-3 border-b border-zinc-800 px-4">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="font-medium text-zinc-100">Mission Control</span>
+          <span className="text-zinc-600">commands every workspace</span>
+        </header>
+        <ChatView workspaceId="orchestrator" />
       </main>
     )
   }

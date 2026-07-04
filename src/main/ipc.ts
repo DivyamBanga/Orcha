@@ -9,16 +9,19 @@ import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { SessionManager } from './services/SessionManager'
 import type { PtyManager } from './services/PtyManager'
 import type { GitService } from './services/GitService'
+import type { OrchestratorService } from './services/OrchestratorService'
 
 interface Services {
   workspaceManager: WorkspaceManager
   sessionManager: SessionManager
   ptyManager: PtyManager
   gitService: GitService
+  orchestratorService: OrchestratorService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
-  const { workspaceManager, sessionManager, ptyManager, gitService } = services
+  const { workspaceManager, sessionManager, ptyManager, gitService, orchestratorService } =
+    services
 
   ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
     let repoPath = pickedPath
@@ -82,4 +85,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     gitService.commitAndPush(workspaceId, message)
   )
   ipcMain.handle(IPC.GitCreatePr, (_e, workspaceId: string) => gitService.createPr(workspaceId))
+
+  ipcMain.handle(IPC.OrchestratorSend, (_e, text: string) => orchestratorService.sendPrompt(text))
+  ipcMain.handle(IPC.OrchestratorInterrupt, () => orchestratorService.interrupt())
+  ipcMain.handle(IPC.OrchestratorHistory, () => orchestratorService.getHistory())
 }

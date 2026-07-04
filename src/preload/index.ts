@@ -22,6 +22,11 @@ const api = {
     history: (workspaceId: string): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.SessionHistory, workspaceId)
   },
+  orchestrator: {
+    send: (text: string): Promise<void> => ipcRenderer.invoke(IPC.OrchestratorSend, text),
+    interrupt: (): Promise<void> => ipcRenderer.invoke(IPC.OrchestratorInterrupt),
+    history: (): Promise<unknown[]> => ipcRenderer.invoke(IPC.OrchestratorHistory)
+  },
   git: {
     status: (workspaceId: string): Promise<GitStatus> =>
       ipcRenderer.invoke(IPC.GitStatus, workspaceId),

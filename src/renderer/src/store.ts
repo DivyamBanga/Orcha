@@ -79,7 +79,10 @@ export const useStore = create<OrchaStore>((set) => ({
     if (useStore.getState().messages[workspaceId] !== undefined) return
     // Mark as loading synchronously so concurrent calls no-op.
     set((s) => ({ messages: { ...s.messages, [workspaceId]: [] } }))
-    const raw = await window.orcha.session.history(workspaceId)
+    const raw =
+      workspaceId === 'orchestrator'
+        ? await window.orcha.orchestrator.history()
+        : await window.orcha.session.history(workspaceId)
     if (raw.length === 0) return
     let items: ChatItem[] = []
     let streamingText = ''
@@ -102,7 +105,11 @@ export const useStore = create<OrchaStore>((set) => ({
       },
       sessionStatus: { ...s.sessionStatus, [workspaceId]: 'busy' }
     }))
-    window.orcha.session.send(workspaceId, text).catch((err) => {
+    const sendCall =
+      workspaceId === 'orchestrator'
+        ? window.orcha.orchestrator.send(text)
+        : window.orcha.session.send(workspaceId, text)
+    sendCall.catch((err) => {
       set((s) => ({
         messages: {
           ...s.messages,
@@ -116,7 +123,8 @@ export const useStore = create<OrchaStore>((set) => ({
   },
 
   interrupt: (workspaceId) => {
-    window.orcha.session.interrupt(workspaceId)
+    if (workspaceId === 'orchestrator') window.orcha.orchestrator.interrupt()
+    else window.orcha.session.interrupt(workspaceId)
   },
 
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id, activeTab: 'chat' }),

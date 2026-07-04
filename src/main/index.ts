@@ -8,6 +8,7 @@ import { WorkspaceManager } from './services/WorkspaceManager'
 import { SessionManager } from './services/SessionManager'
 import { PtyManager } from './services/PtyManager'
 import { GitService } from './services/GitService'
+import { OrchestratorService } from './services/OrchestratorService'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -58,8 +59,20 @@ function createWindow(): void {
   sessionManager.onTurnComplete = (workspaceId) => {
     gitService.status(workspaceId).catch(() => {})
   }
+  const orchestratorService = new OrchestratorService(
+    send,
+    workspaceManager,
+    sessionManager,
+    gitService
+  )
   app.on('before-quit', () => ptyManager.killAll())
-  registerIpc(mainWindow, { workspaceManager, sessionManager, ptyManager, gitService })
+  registerIpc(mainWindow, {
+    workspaceManager,
+    sessionManager,
+    ptyManager,
+    gitService,
+    orchestratorService
+  })
 }
 
 app.whenReady().then(() => {

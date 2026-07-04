@@ -16,6 +16,9 @@ export const IPC = {
   PtyInput: 'pty:input',
   PtyResize: 'pty:resize',
   PtyKill: 'pty:kill',
+  OrchestratorSend: 'orchestrator:send',
+  OrchestratorInterrupt: 'orchestrator:interrupt',
+  OrchestratorHistory: 'orchestrator:history',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',

@@ -133,9 +133,15 @@ export function wireIpc(): () => void {
     useStore.setState((s) => ({ gitStatus: { ...s.gitStatus, [workspaceId]: status } }))
   })
 
+  // Fired when the orchestrator creates a workspace, so the sidebar updates.
+  const unsubChanged = window.orcha.on(IPC.EvWorkspacesChanged, () => {
+    useStore.getState().load()
+  })
+
   return () => {
     unsubMessage()
     unsubStatus()
     unsubGit()
+    unsubChanged()
   }
 }
