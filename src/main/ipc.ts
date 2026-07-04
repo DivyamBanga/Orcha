@@ -8,15 +8,17 @@ import type { Project } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { SessionManager } from './services/SessionManager'
 import type { PtyManager } from './services/PtyManager'
+import type { GitService } from './services/GitService'
 
 interface Services {
   workspaceManager: WorkspaceManager
   sessionManager: SessionManager
   ptyManager: PtyManager
+  gitService: GitService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
-  const { workspaceManager, sessionManager, ptyManager } = services
+  const { workspaceManager, sessionManager, ptyManager, gitService } = services
 
   ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
     let repoPath = pickedPath
@@ -74,4 +76,10 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     ptyManager.resize(workspaceId, cols, rows)
   )
   ipcMain.handle(IPC.PtyKill, (_e, workspaceId: string) => ptyManager.kill(workspaceId))
+
+  ipcMain.handle(IPC.GitStatus, (_e, workspaceId: string) => gitService.status(workspaceId))
+  ipcMain.handle(IPC.GitCommitPush, (_e, workspaceId: string, message: string) =>
+    gitService.commitAndPush(workspaceId, message)
+  )
+  ipcMain.handle(IPC.GitCreatePr, (_e, workspaceId: string) => gitService.createPr(workspaceId))
 }

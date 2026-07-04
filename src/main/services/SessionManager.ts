@@ -10,6 +10,8 @@ export class SessionManager {
   private busy = new Map<string, AbortController>()
   private activity = new Map<string, string[]>()
 
+  onTurnComplete: ((workspaceId: string) => void) | null = null
+
   constructor(private send: SendFn) {}
 
   isBusy(workspaceId: string): boolean {
@@ -117,6 +119,7 @@ export class SessionManager {
       this.send(IPC.EvSessionStatus, { workspaceId, status: aborted ? 'idle' : 'error' })
     } finally {
       this.busy.delete(workspaceId)
+      this.onTurnComplete?.(workspaceId)
     }
   }
 }

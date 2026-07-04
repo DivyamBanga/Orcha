@@ -1,6 +1,6 @@
 import { IPC } from '../../shared/ipc'
 import { useStore } from './store'
-import type { ChatItem, SessionStatus } from '../../shared/types'
+import type { ChatItem, GitStatus, SessionStatus } from '../../shared/types'
 
 interface SessionMessageEvent {
   workspaceId: string
@@ -128,8 +128,14 @@ export function wireIpc(): () => void {
     }))
   })
 
+  const unsubGit = window.orcha.on(IPC.EvGitStatus, (payload) => {
+    const { workspaceId, status } = payload as { workspaceId: string; status: GitStatus }
+    useStore.setState((s) => ({ gitStatus: { ...s.gitStatus, [workspaceId]: status } }))
+  })
+
   return () => {
     unsubMessage()
     unsubStatus()
+    unsubGit()
   }
 }

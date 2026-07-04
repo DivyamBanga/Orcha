@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { Project, Workspace } from '../shared/types'
+import type { GitStatus, Project, Workspace } from '../shared/types'
 
 const api = {
   projects: {
@@ -21,6 +21,14 @@ const api = {
       ipcRenderer.invoke(IPC.SessionInterrupt, workspaceId),
     history: (workspaceId: string): Promise<unknown[]> =>
       ipcRenderer.invoke(IPC.SessionHistory, workspaceId)
+  },
+  git: {
+    status: (workspaceId: string): Promise<GitStatus> =>
+      ipcRenderer.invoke(IPC.GitStatus, workspaceId),
+    commitPush: (workspaceId: string, message: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GitCommitPush, workspaceId, message),
+    createPr: (workspaceId: string): Promise<{ url: string }> =>
+      ipcRenderer.invoke(IPC.GitCreatePr, workspaceId)
   },
   pty: {
     create: (workspaceId: string, cols: number, rows: number): Promise<void> =>
