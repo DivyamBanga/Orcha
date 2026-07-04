@@ -69,8 +69,16 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   const interrupt = useStore((s) => s.interrupt)
   const loadHistory = useStore((s) => s.loadHistory)
 
+  const slashCommands = useStore((s) => s.slashCommands[workspaceId]) ?? []
   const [draft, setDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Slash-command preview: only while typing the command word itself.
+  const typingSlash = draft.startsWith('/') && !draft.includes(' ') && !draft.includes('\n')
+  const slashMatches = typingSlash
+    ? slashCommands.filter((c) => c.startsWith(draft.slice(1))).slice(0, 8)
+    : []
+  const showSlashPopup = typingSlash && (slashMatches.length > 0 || slashCommands.length === 0)
 
   useEffect(() => {
     loadHistory(workspaceId)
@@ -132,12 +140,35 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-edge p-3">
+      <div className="relative border-t border-edge p-3">
+        {showSlashPopup && (
+          <div className="absolute bottom-full left-3 mb-1 w-72 overflow-hidden rounded-md border border-edge-bright bg-surface-1">
+            {slashMatches.map((cmd) => (
+              <button
+                key={cmd}
+                onClick={() => setDraft(`/${cmd} `)}
+                className="block w-full px-3 py-1.5 text-left font-mono text-[12px] text-zinc-300 hover:bg-surface-2"
+              >
+                /{cmd}
+              </button>
+            ))}
+            {slashCommands.length === 0 && (
+              <div className="px-3 py-1.5 font-mono text-[11px] text-zinc-600">
+                commands appear after the session's first message
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === 'Tab' && slashMatches.length > 0) {
+                e.preventDefault()
+                setDraft(`/${slashMatches[0]} `)
+                return
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 handleSend()

@@ -119,7 +119,8 @@ export class OrchestratorService {
           {
             project_name: z.string(),
             workspace_name: z.string(),
-            initial_prompt: z.string().optional()
+            initial_prompt: z.string().optional(),
+            model: z.enum(['opus', 'sonnet', 'haiku']).optional()
           },
           async (args) => {
             const project = db.projects
@@ -129,7 +130,11 @@ export class OrchestratorService {
               const names = db.projects.list().map((p) => p.name)
               return this.text({ error: `Unknown project "${args.project_name}". Valid: ${names.join(', ')}` })
             }
-            const workspace = await this.workspaceManager.create(project.id, args.workspace_name)
+            const workspace = await this.workspaceManager.create(
+              project.id,
+              args.workspace_name,
+              args.model ?? null
+            )
             this.send(IPC.EvWorkspacesChanged, {})
             if (args.initial_prompt) {
               this.sessionManager.sendPrompt(workspace.id, args.initial_prompt).catch(() => {})

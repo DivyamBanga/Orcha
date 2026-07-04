@@ -81,6 +81,8 @@ export class SessionManager {
           // wrong folder. settingSources restores CLAUDE.md loading.
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources: ['user', 'project'],
+          model: workspace.model ?? undefined,
+          effort: workspace.effort ?? undefined,
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           // Under Electron the SDK would otherwise spawn process.execPath

@@ -51,12 +51,19 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(IPC.ProjectsList, () => db.projects.list())
 
-  ipcMain.handle(IPC.WorkspacesCreate, (_e, projectId: string, name: string) =>
-    workspaceManager.create(projectId, name)
+  ipcMain.handle(
+    IPC.WorkspacesCreate,
+    (_e, projectId: string, name: string, model: string | null, effort: string | null) =>
+      workspaceManager.create(projectId, name, model, effort as Parameters<typeof workspaceManager.create>[3])
   )
   ipcMain.handle(IPC.WorkspacesList, () => db.workspaces.listActive())
   ipcMain.handle(IPC.WorkspacesArchive, (_e, workspaceId: string) =>
     workspaceManager.archive(workspaceId)
+  )
+  ipcMain.handle(
+    IPC.WorkspacesUpdateSettings,
+    (_e, workspaceId: string, model: string | null, effort: string | null) =>
+      db.workspaces.updateSettings(workspaceId, model, effort)
   )
 
   ipcMain.handle(IPC.SessionSend, (_e, workspaceId: string, text: string) =>

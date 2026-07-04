@@ -14,11 +14,22 @@ interface OrchaStore {
   activeTab: 'chat' | 'terminal'
   openTerminals: string[]
   unread: Record<string, boolean>
+  slashCommands: Record<string, string[]>
 
   load: () => Promise<void>
   addProject: () => Promise<void>
-  createWorkspace: (projectId: string, name: string) => Promise<void>
+  createWorkspace: (
+    projectId: string,
+    name: string,
+    model?: string | null,
+    effort?: string | null
+  ) => Promise<void>
   archiveWorkspace: (workspaceId: string) => Promise<void>
+  updateWorkspaceSettings: (
+    workspaceId: string,
+    model: string | null,
+    effort: string | null
+  ) => Promise<void>
   loadHistory: (workspaceId: string) => Promise<void>
   sendPrompt: (workspaceId: string, text: string) => void
   interrupt: (workspaceId: string) => void
@@ -39,6 +50,7 @@ export const useStore = create<OrchaStore>((set) => ({
   activeTab: 'chat',
   openTerminals: [],
   unread: {},
+  slashCommands: {},
 
   load: async () => {
     const [projects, workspaces] = await Promise.all([
@@ -59,8 +71,8 @@ export const useStore = create<OrchaStore>((set) => ({
     }
   },
 
-  createWorkspace: async (projectId, name) => {
-    const workspace = await window.orcha.workspaces.create(projectId, name)
+  createWorkspace: async (projectId, name, model = null, effort = null) => {
+    const workspace = await window.orcha.workspaces.create(projectId, name, model, effort)
     set((s) => ({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
@@ -74,6 +86,15 @@ export const useStore = create<OrchaStore>((set) => ({
       workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
       activeWorkspaceId: s.activeWorkspaceId === workspaceId ? null : s.activeWorkspaceId,
       openTerminals: s.openTerminals.filter((id) => id !== workspaceId)
+    }))
+  },
+
+  updateWorkspaceSettings: async (workspaceId, model, effort) => {
+    await window.orcha.workspaces.updateSettings(workspaceId, model, effort)
+    set((s) => ({
+      workspaces: s.workspaces.map((w) =>
+        w.id === workspaceId ? { ...w, model, effort: effort as Workspace['effort'] } : w
+      )
     }))
   },
 

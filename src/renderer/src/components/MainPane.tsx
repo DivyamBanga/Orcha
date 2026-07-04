@@ -25,6 +25,7 @@ function MainPane(): React.JSX.Element {
   const openTerminals = useStore((s) => s.openTerminals)
   const sendPrompt = useStore((s) => s.sendPrompt)
   const sessionStatus = useStore((s) => s.sessionStatus)
+  const updateWorkspaceSettings = useStore((s) => s.updateWorkspaceSettings)
   const [gitBusy, setGitBusy] = useState(false)
 
   const workspaceId = workspace?.id
@@ -105,6 +106,34 @@ function MainPane(): React.JSX.Element {
           {workspace.branch}
         </span>
         <GitChip workspaceId={workspace.id} />
+        <select
+          value={workspace.model ?? ''}
+          onChange={(e) =>
+            updateWorkspaceSettings(workspace.id, e.target.value || null, workspace.effort)
+          }
+          title="Model for this session (applies from the next prompt)"
+          className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
+        >
+          <option value="">model: default</option>
+          <option value="opus">model: opus</option>
+          <option value="sonnet">model: sonnet</option>
+          <option value="haiku">model: haiku</option>
+        </select>
+        <select
+          value={workspace.effort ?? ''}
+          onChange={(e) =>
+            updateWorkspaceSettings(workspace.id, workspace.model, e.target.value || null)
+          }
+          title="Thinking effort (applies from the next prompt)"
+          className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
+        >
+          <option value="">effort: default</option>
+          <option value="low">effort: low</option>
+          <option value="medium">effort: medium</option>
+          <option value="high">effort: high</option>
+          <option value="xhigh">effort: xhigh</option>
+          <option value="max">effort: max</option>
+        </select>
         <div className="ml-2 flex rounded-md border border-edge">
           <button
             onClick={() => setActiveTab('chat')}

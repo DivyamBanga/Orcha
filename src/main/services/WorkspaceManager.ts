@@ -40,7 +40,12 @@ export class WorkspaceManager {
     return stdout
   }
 
-  async create(projectId: string, name: string): Promise<Workspace> {
+  async create(
+    projectId: string,
+    name: string,
+    model: string | null = null,
+    effort: Workspace['effort'] = null
+  ): Promise<Workspace> {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
 
@@ -73,7 +78,9 @@ export class WorkspaceManager {
         sessionId: null,
         status: 'active',
         createdAt: Date.now(),
-        lastActivityAt: null
+        lastActivityAt: null,
+        model,
+        effort
       }
       db.workspaces.insert(workspace)
       return workspace

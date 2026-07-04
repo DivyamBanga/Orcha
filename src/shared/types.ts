@@ -5,6 +5,8 @@ export interface Project {
   createdAt: number
 }
 
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
 export interface Workspace {
   id: string
   projectId: string
@@ -15,6 +17,8 @@ export interface Workspace {
   status: 'active' | 'archived'
   createdAt: number
   lastActivityAt: number | null
+  model: string | null // null = account default; else 'opus' | 'sonnet' | 'haiku'
+  effort: EffortLevel | null // null = default
 }
 
 export type SessionStatus = 'idle' | 'busy' | 'error'

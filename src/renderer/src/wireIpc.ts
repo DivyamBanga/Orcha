@@ -107,6 +107,14 @@ export function reduceMessage(
 export function wireIpc(): () => void {
   const unsubMessage = window.orcha.on(IPC.EvSessionMessage, (payload) => {
     const { workspaceId, message } = payload as SessionMessageEvent
+    if (message.type === 'system' && message.subtype === 'init') {
+      const commands = (message as { slash_commands?: string[] }).slash_commands
+      if (Array.isArray(commands)) {
+        useStore.setState((s) => ({
+          slashCommands: { ...s.slashCommands, [workspaceId]: commands }
+        }))
+      }
+    }
     useStore.setState((s) => {
       const reduced = reduceMessage(
         s.messages[workspaceId] ?? [],

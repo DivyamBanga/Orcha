@@ -8,11 +8,21 @@ const api = {
     list: (): Promise<Project[]> => ipcRenderer.invoke(IPC.ProjectsList)
   },
   workspaces: {
-    create: (projectId: string, name: string): Promise<Workspace> =>
-      ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name),
+    create: (
+      projectId: string,
+      name: string,
+      model: string | null = null,
+      effort: string | null = null
+    ): Promise<Workspace> => ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name, model, effort),
     list: (): Promise<Workspace[]> => ipcRenderer.invoke(IPC.WorkspacesList),
     archive: (workspaceId: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId)
+      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId),
+    updateSettings: (
+      workspaceId: string,
+      model: string | null,
+      effort: string | null
+    ): Promise<void> =>
+      ipcRenderer.invoke(IPC.WorkspacesUpdateSettings, workspaceId, model, effort)
   },
   session: {
     send: (workspaceId: string, text: string): Promise<void> =>

@@ -31,6 +31,14 @@ export function initDb(): void {
       value TEXT
     );
   `)
+  // Additive migrations for pre-existing databases.
+  for (const col of ['model TEXT', 'effort TEXT']) {
+    try {
+      db.exec(`ALTER TABLE workspaces ADD COLUMN ${col}`)
+    } catch {
+      // column already exists
+    }
+  }
 }
 
 interface ProjectRow {
@@ -50,6 +58,8 @@ interface WorkspaceRow {
   status: string
   created_at: number
   last_activity_at: number | null
+  model: string | null
+  effort: string | null
 }
 
 function toProject(r: ProjectRow): Project {
@@ -66,7 +76,9 @@ function toWorkspace(r: WorkspaceRow): Workspace {
     sessionId: r.session_id,
     status: r.status as Workspace['status'],
     createdAt: r.created_at,
-    lastActivityAt: r.last_activity_at
+    lastActivityAt: r.last_activity_at,
+    model: r.model,
+    effort: r.effort as Workspace['effort']
   }
 }
 
@@ -96,8 +108,8 @@ export const workspaces = {
   insert(w: Workspace): void {
     db.prepare(
       `INSERT INTO workspaces
-       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       w.id,
       w.projectId,
@@ -107,8 +119,13 @@ export const workspaces = {
       w.sessionId,
       w.status,
       w.createdAt,
-      w.lastActivityAt
+      w.lastActivityAt,
+      w.model,
+      w.effort
     )
+  },
+  updateSettings(id: string, model: string | null, effort: string | null): void {
+    db.prepare('UPDATE workspaces SET model = ?, effort = ? WHERE id = ?').run(model, effort, id)
   },
   listActive(): Workspace[] {
     return (

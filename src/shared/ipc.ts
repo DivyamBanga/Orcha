@@ -6,6 +6,7 @@ export const IPC = {
   WorkspacesCreate: 'workspaces:create',
   WorkspacesList: 'workspaces:list',
   WorkspacesArchive: 'workspaces:archive',
+  WorkspacesUpdateSettings: 'workspaces:updateSettings',
   SessionSend: 'session:send',
   SessionInterrupt: 'session:interrupt',
   SessionHistory: 'session:history',
