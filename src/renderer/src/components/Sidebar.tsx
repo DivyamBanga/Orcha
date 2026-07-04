@@ -215,6 +215,7 @@ function Sidebar(): React.JSX.Element {
         ) : (
           projects.map((project) => {
             const sessions = workspaces.filter((w) => w.projectId === project.id)
+            const mainSession = sessions.find((w) => w.kind === 'main')
             return (
               <div
                 key={project.id}
@@ -224,9 +225,13 @@ function Sidebar(): React.JSX.Element {
                   onContextMenu={(e) => openProjectMenu(e, project)}
                   className="group flex items-center gap-1 border-b border-edge px-2.5 py-2"
                 >
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-tight text-zinc-200">
+                  <button
+                    onClick={() => mainSession && setActive(mainSession.id)}
+                    className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold tracking-tight text-zinc-200 hover:text-white"
+                    title="Open the main session"
+                  >
                     {project.name}
-                  </span>
+                  </button>
                   <DotsButton onClick={(e) => openProjectMenu(e, project)} />
                 </div>
                 <div className="p-1">
