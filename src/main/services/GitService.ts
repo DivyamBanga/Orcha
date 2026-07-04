@@ -54,7 +54,8 @@ export class GitService {
     if (staged.trim()) {
       await this.git(cwd, ['commit', '-m', message])
     }
-    await this.git(cwd, ['push', '-u', 'origin', workspace.branch])
+    // HEAD works for main sessions (whatever branch is checked out) and worktrees alike.
+    await this.git(cwd, ['push', '-u', 'origin', 'HEAD'])
     await this.status(workspaceId)
   }
 
@@ -63,13 +64,9 @@ export class GitService {
     if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
     const cwd = workspace.worktreePath
 
-    // Push first so the PR has a head.
-    await this.git(cwd, ['push', '-u', 'origin', workspace.branch])
-    const { stdout } = await execFileAsync(
-      'gh',
-      ['pr', 'create', '--fill', '--head', workspace.branch],
-      { cwd }
-    )
+    // Push first so the PR has a head; gh infers the branch from the checkout.
+    await this.git(cwd, ['push', '-u', 'origin', 'HEAD'])
+    const { stdout } = await execFileAsync('gh', ['pr', 'create', '--fill'], { cwd })
     const url = stdout.trim().split('\n').pop() ?? ''
     await this.status(workspaceId)
     return { url }

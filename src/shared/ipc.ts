@@ -3,6 +3,10 @@ export const IPC = {
   // invoke: renderer -> main
   ProjectsAdd: 'projects:add',
   ProjectsList: 'projects:list',
+  ProjectsCreateRepo: 'projects:createRepo',
+  ProjectsListGithub: 'projects:listGithub',
+  ProjectsCloneGithub: 'projects:cloneGithub',
+  SetupStatus: 'setup:status',
   WorkspacesCreate: 'workspaces:create',
   WorkspacesList: 'workspaces:list',
   WorkspacesArchive: 'workspaces:archive',
@@ -17,6 +21,7 @@ export const IPC = {
   PtyInput: 'pty:input',
   PtyResize: 'pty:resize',
   PtyKill: 'pty:kill',
+  PtyRestart: 'pty:restart',
   OrchestratorSend: 'orchestrator:send',
   OrchestratorInterrupt: 'orchestrator:interrupt',
   OrchestratorHistory: 'orchestrator:history',

@@ -1,14 +1,24 @@
 import * as pty from 'node-pty'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
+import { hasSessionHistory } from '../claudeSessions'
+import type { Workspace } from '../../shared/types'
 
 type SendFn = (channel: string, payload: unknown) => void
 
-const REPLAY_LIMIT = 50_000
+const REPLAY_LIMIT = 100_000
 
 interface PtyEntry {
   proc: pty.IPty
   buffer: string
+}
+
+function claudeLaunchCommand(workspace: Workspace): string {
+  const parts = ['claude', '--dangerously-skip-permissions']
+  if (hasSessionHistory(workspace.worktreePath)) parts.push('--continue')
+  if (workspace.model) parts.push('--model', workspace.model)
+  if (workspace.effort) parts.push('--effort', workspace.effort)
+  return parts.join(' ')
 }
 
 export class PtyManager {
@@ -16,8 +26,12 @@ export class PtyManager {
 
   constructor(private send: SendFn) {}
 
-  // Spawns the shell on first call; on later calls replays recent output so a
-  // re-attached xterm isn't blank.
+  has(workspaceId: string): boolean {
+    return this.ptys.has(workspaceId)
+  }
+
+  // Spawns the session shell (auto-running the Claude TUI) on first call; on
+  // later calls replays recent output so a re-attached xterm isn't blank.
   create(workspaceId: string, cols: number, rows: number): void {
     const existing = this.ptys.get(workspaceId)
     if (existing) {
@@ -27,12 +41,21 @@ export class PtyManager {
       return
     }
 
-    const workspace = db.workspaces.get(workspaceId)
-    if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
+    // 'setup' is the onboarding terminal: plain shell in the home folder for
+    // running `gh auth login` / `claude` login flows.
+    const workspace = workspaceId === 'setup' ? null : db.workspaces.get(workspaceId)
+    if (workspaceId !== 'setup' && !workspace) {
+      throw new Error(`Unknown workspace: ${workspaceId}`)
+    }
 
-    const proc = pty.spawn('powershell.exe', [], {
+    // -NoExit: when Claude exits (/exit, crash), you land in a shell in the
+    // same folder instead of a dead tab.
+    const args = workspace
+      ? ['-NoLogo', '-NoExit', '-Command', claudeLaunchCommand(workspace)]
+      : ['-NoLogo']
+    const proc = pty.spawn('powershell.exe', args, {
       name: 'xterm-color',
-      cwd: workspace.worktreePath,
+      cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
       env: process.env as Record<string, string>,
       cols,
       rows,
@@ -55,6 +78,20 @@ export class PtyManager {
     this.ptys.get(workspaceId)?.proc.write(data)
   }
 
+  // Type a prompt into the session's Claude TUI. Boots the session first if
+  // its terminal was never opened (TUI needs a few seconds before input).
+  async dispatchPrompt(workspaceId: string, prompt: string): Promise<void> {
+    if (!this.ptys.has(workspaceId)) {
+      this.create(workspaceId, 120, 30)
+      await new Promise((r) => setTimeout(r, 8000))
+    }
+    const text = prompt.replace(/\r?\n/g, ' ').trim()
+    this.write(workspaceId, text)
+    // Small pause so the TUI ingests the paste before Enter.
+    await new Promise((r) => setTimeout(r, 300))
+    this.write(workspaceId, '\r')
+  }
+
   resize(workspaceId: string, cols: number, rows: number): void {
     this.ptys.get(workspaceId)?.proc.resize(cols, rows)
   }
@@ -65,6 +102,12 @@ export class PtyManager {
       this.ptys.delete(workspaceId)
       entry.proc.kill()
     }
+  }
+
+  // Kill and respawn (picks up model/effort changes; resumes conversation).
+  restart(workspaceId: string, cols: number, rows: number): void {
+    this.kill(workspaceId)
+    this.create(workspaceId, cols, rows)
   }
 
   killAll(): void {

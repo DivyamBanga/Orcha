@@ -12,13 +12,14 @@ export interface Workspace {
   projectId: string
   name: string
   branch: string
-  worktreePath: string
+  worktreePath: string // for kind 'main' this IS the repo folder
   sessionId: string | null
   status: 'active' | 'archived'
   createdAt: number
   lastActivityAt: number | null
   model: string | null // null = account default; else 'opus' | 'sonnet' | 'haiku'
   effort: EffortLevel | null // null = default
+  kind: 'main' | 'worktree'
 }
 
 export type SessionStatus = 'idle' | 'busy' | 'error'

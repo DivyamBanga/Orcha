@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { useStore } from '../store'
+import { useStore, useActiveWorkspace } from '../store'
 
-function NewWorkspaceModal(): React.JSX.Element | null {
+// Creates a parallel session: a git worktree + branch opened as another tab.
+function NewSessionModal(): React.JSX.Element | null {
   const projects = useStore((s) => s.projects)
-  const show = useStore((s) => s.showNewWorkspace)
-  const setShow = useStore((s) => s.setShowNewWorkspace)
-  const createWorkspace = useStore((s) => s.createWorkspace)
+  const show = useStore((s) => s.showNewSession)
+  const setShow = useStore((s) => s.setShowNewSession)
+  const createParallelSession = useStore((s) => s.createParallelSession)
+  const active = useActiveWorkspace()
 
   const [projectId, setProjectId] = useState('')
   const [name, setName] = useState('')
@@ -15,13 +17,13 @@ function NewWorkspaceModal(): React.JSX.Element | null {
 
   if (!show) return null
 
-  const selectedProject = projectId || projects[0]?.id || ''
+  const selectedProject = projectId || active?.projectId || projects[0]?.id || ''
 
   const handleCreate = async (): Promise<void> => {
     if (!name.trim() || !selectedProject) return
     setCreating(true)
     try {
-      await createWorkspace(selectedProject, name.trim(), model || null, effort || null)
+      await createParallelSession(selectedProject, name.trim(), model || null, effort || null)
       setName('')
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err))
@@ -39,7 +41,11 @@ function NewWorkspaceModal(): React.JSX.Element | null {
         className="w-96 rounded-lg border border-edge-bright bg-surface-1 p-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 font-medium text-zinc-100">New workspace</div>
+        <div className="mb-1 font-medium text-zinc-100">New parallel session</div>
+        <div className="mb-3 font-mono text-[11px] leading-relaxed text-zinc-600">
+          Separate worktree + branch on the same repo — work on a second feature while the main
+          session keeps going.
+        </div>
 
         <label className="mb-1 block text-zinc-500">Project</label>
         <select
@@ -54,7 +60,7 @@ function NewWorkspaceModal(): React.JSX.Element | null {
           ))}
         </select>
 
-        <label className="mb-1 block text-zinc-500">Task name</label>
+        <label className="mb-1 block text-zinc-500">Task name (becomes the branch)</label>
         <input
           autoFocus
           value={name}
@@ -115,4 +121,4 @@ function NewWorkspaceModal(): React.JSX.Element | null {
   )
 }
 
-export default NewWorkspaceModal
+export default NewSessionModal

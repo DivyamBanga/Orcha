@@ -2,55 +2,67 @@ import { create } from 'zustand'
 import { reduceMessage } from './wireIpc'
 import type { Project, Workspace, SessionStatus, GitStatus, ChatItem } from '../../shared/types'
 
+const MC = 'orchestrator'
+
 interface OrchaStore {
+  setup: { gh: boolean; claude: boolean } | null
   projects: Project[]
   workspaces: Workspace[]
-  activeWorkspaceId: string | null // workspace id or 'orchestrator'
-  sessionStatus: Record<string, SessionStatus>
+  activeId: string | null // workspace id or 'orchestrator'
+  openSessions: string[] // terminals kept mounted
   gitStatus: Record<string, GitStatus>
+  unread: Record<string, boolean>
+
+  // Mission Control chat state (keyed map so wireIpc stays generic)
   messages: Record<string, ChatItem[]>
   streaming: Record<string, string>
-  showNewWorkspace: boolean
-  activeTab: 'chat' | 'terminal'
-  openTerminals: string[]
-  unread: Record<string, boolean>
+  sessionStatus: Record<string, SessionStatus>
   slashCommands: Record<string, string[]>
 
+  showNewProject: boolean
+  showNewSession: boolean
+
+  checkSetup: () => Promise<void>
   load: () => Promise<void>
-  addProject: () => Promise<void>
-  createWorkspace: (
+  setActive: (id: string | null) => void
+  archiveSession: (workspaceId: string) => Promise<void>
+  createParallelSession: (
     projectId: string,
     name: string,
     model?: string | null,
     effort?: string | null
   ) => Promise<void>
-  archiveWorkspace: (workspaceId: string) => Promise<void>
   updateWorkspaceSettings: (
     workspaceId: string,
     model: string | null,
     effort: string | null
   ) => Promise<void>
-  loadHistory: (workspaceId: string) => Promise<void>
-  sendPrompt: (workspaceId: string, text: string) => void
-  interrupt: (workspaceId: string) => void
-  setActiveWorkspace: (id: string | null) => void
-  setShowNewWorkspace: (show: boolean) => void
-  setActiveTab: (tab: 'chat' | 'terminal') => void
+  mcSend: (text: string) => void
+  mcInterrupt: () => void
+  mcLoadHistory: () => Promise<void>
+  setShowNewProject: (show: boolean) => void
+  setShowNewSession: (show: boolean) => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
+  setup: null,
   projects: [],
   workspaces: [],
-  activeWorkspaceId: null,
-  sessionStatus: {},
+  activeId: null,
+  openSessions: [],
   gitStatus: {},
+  unread: {},
   messages: {},
   streaming: {},
-  showNewWorkspace: false,
-  activeTab: 'chat',
-  openTerminals: [],
-  unread: {},
+  sessionStatus: {},
   slashCommands: {},
+  showNewProject: false,
+  showNewSession: false,
+
+  checkSetup: async () => {
+    const setup = await window.orcha.setup.status()
+    set({ setup })
+  },
 
   load: async () => {
     const [projects, workspaces] = await Promise.all([
@@ -60,32 +72,32 @@ export const useStore = create<OrchaStore>((set) => ({
     set({ projects, workspaces })
   },
 
-  addProject: async () => {
-    const project = await window.orcha.projects.add()
-    if (project) {
-      set((s) => ({
-        projects: s.projects.some((p) => p.id === project.id)
-          ? s.projects
-          : [...s.projects, project]
-      }))
-    }
-  },
-
-  createWorkspace: async (projectId, name, model = null, effort = null) => {
-    const workspace = await window.orcha.workspaces.create(projectId, name, model, effort)
+  setActive: (id) =>
     set((s) => ({
-      workspaces: [...s.workspaces, workspace],
-      activeWorkspaceId: workspace.id,
-      showNewWorkspace: false
-    }))
-  },
+      activeId: id,
+      unread: id ? { ...s.unread, [id]: false } : s.unread,
+      openSessions:
+        id && id !== MC && !s.openSessions.includes(id)
+          ? [...s.openSessions, id]
+          : s.openSessions
+    })),
 
-  archiveWorkspace: async (workspaceId) => {
+  archiveSession: async (workspaceId) => {
     await window.orcha.workspaces.archive(workspaceId)
     set((s) => ({
       workspaces: s.workspaces.filter((w) => w.id !== workspaceId),
-      activeWorkspaceId: s.activeWorkspaceId === workspaceId ? null : s.activeWorkspaceId,
-      openTerminals: s.openTerminals.filter((id) => id !== workspaceId)
+      activeId: s.activeId === workspaceId ? null : s.activeId,
+      openSessions: s.openSessions.filter((id) => id !== workspaceId)
+    }))
+  },
+
+  createParallelSession: async (projectId, name, model = null, effort = null) => {
+    const workspace = await window.orcha.workspaces.create(projectId, name, model, effort)
+    set((s) => ({
+      workspaces: [...s.workspaces, workspace],
+      activeId: workspace.id,
+      openSessions: [...s.openSessions, workspace.id],
+      showNewSession: false
     }))
   },
 
@@ -98,14 +110,32 @@ export const useStore = create<OrchaStore>((set) => ({
     }))
   },
 
-  loadHistory: async (workspaceId) => {
-    if (useStore.getState().messages[workspaceId] !== undefined) return
-    // Mark as loading synchronously so concurrent calls no-op.
-    set((s) => ({ messages: { ...s.messages, [workspaceId]: [] } }))
-    const raw =
-      workspaceId === 'orchestrator'
-        ? await window.orcha.orchestrator.history()
-        : await window.orcha.session.history(workspaceId)
+  mcSend: (text) => {
+    set((s) => ({
+      messages: { ...s.messages, [MC]: [...(s.messages[MC] ?? []), { kind: 'user', text }] },
+      sessionStatus: { ...s.sessionStatus, [MC]: 'busy' }
+    }))
+    window.orcha.orchestrator.send(text).catch((err) => {
+      set((s) => ({
+        messages: {
+          ...s.messages,
+          [MC]: [
+            ...(s.messages[MC] ?? []),
+            { kind: 'error', text: err instanceof Error ? err.message : String(err) }
+          ]
+        }
+      }))
+    })
+  },
+
+  mcInterrupt: () => {
+    window.orcha.orchestrator.interrupt()
+  },
+
+  mcLoadHistory: async () => {
+    if (useStore.getState().messages[MC] !== undefined) return
+    set((s) => ({ messages: { ...s.messages, [MC]: [] } }))
+    const raw = await window.orcha.orchestrator.history()
     if (raw.length === 0) return
     let items: ChatItem[] = []
     let streamingText = ''
@@ -115,63 +145,16 @@ export const useStore = create<OrchaStore>((set) => ({
       streamingText = reduced.streamingText
     }
     set((s) => ({
-      // Live events may have arrived while reading history; keep them after it.
-      messages: { ...s.messages, [workspaceId]: [...items, ...(s.messages[workspaceId] ?? [])] }
+      messages: { ...s.messages, [MC]: [...items, ...(s.messages[MC] ?? [])] }
     }))
   },
 
-  sendPrompt: (workspaceId, text) => {
-    set((s) => ({
-      messages: {
-        ...s.messages,
-        [workspaceId]: [...(s.messages[workspaceId] ?? []), { kind: 'user', text }]
-      },
-      sessionStatus: { ...s.sessionStatus, [workspaceId]: 'busy' }
-    }))
-    const sendCall =
-      workspaceId === 'orchestrator'
-        ? window.orcha.orchestrator.send(text)
-        : window.orcha.session.send(workspaceId, text)
-    sendCall.catch((err) => {
-      set((s) => ({
-        messages: {
-          ...s.messages,
-          [workspaceId]: [
-            ...(s.messages[workspaceId] ?? []),
-            { kind: 'error', text: err instanceof Error ? err.message : String(err) }
-          ]
-        }
-      }))
-    })
-  },
-
-  interrupt: (workspaceId) => {
-    if (workspaceId === 'orchestrator') window.orcha.orchestrator.interrupt()
-    else window.orcha.session.interrupt(workspaceId)
-  },
-
-  setActiveWorkspace: (id) =>
-    set((s) => ({
-      activeWorkspaceId: id,
-      activeTab: 'chat',
-      unread: id ? { ...s.unread, [id]: false } : s.unread
-    })),
-  setShowNewWorkspace: (show) => set({ showNewWorkspace: show }),
-  setActiveTab: (tab) =>
-    set((s) => ({
-      activeTab: tab,
-      openTerminals:
-        tab === 'terminal' &&
-        s.activeWorkspaceId &&
-        s.activeWorkspaceId !== 'orchestrator' &&
-        !s.openTerminals.includes(s.activeWorkspaceId)
-          ? [...s.openTerminals, s.activeWorkspaceId]
-          : s.openTerminals
-    }))
+  setShowNewProject: (show) => set({ showNewProject: show }),
+  setShowNewSession: (show) => set({ showNewSession: show })
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {
-  const id = useStore((s) => s.activeWorkspaceId)
+  const id = useStore((s) => s.activeId)
   const workspaces = useStore((s) => s.workspaces)
   return workspaces.find((w) => w.id === id)
 }

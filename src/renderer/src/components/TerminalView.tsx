@@ -2,11 +2,10 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { IPC } from '../../../shared/ipc'
-import { useStore } from '../store'
 import '@xterm/xterm/css/xterm.css'
 
-// One live terminal per workspace. Stays mounted (hidden) across tab and
-// workspace switches so shells and dev servers keep running.
+// One live terminal per session (the Claude TUI runs inside it). Stays
+// mounted (hidden) across switches so the session keeps running.
 function TerminalView({
   workspaceId,
   visible
@@ -45,7 +44,7 @@ function TerminalView({
     })
     const unsubExit = window.orcha.on(IPC.EvPtyExit, (payload) => {
       const p = payload as { workspaceId: string }
-      if (p.workspaceId === workspaceId) term.write('\r\n[process exited]\r\n')
+      if (p.workspaceId === workspaceId) term.write('\r\n[session ended]\r\n')
     })
 
     const resizeObserver = new ResizeObserver(() => {
@@ -70,28 +69,12 @@ function TerminalView({
     if (visible) fitRef.current?.fit()
   }, [visible])
 
-  const sessionId = useStore(
-    (s) => s.workspaces.find((w) => w.id === workspaceId)?.sessionId ?? null
-  )
-
-  // Drops into the real Claude Code TUI, resuming this workspace's session —
-  // full native slash commands, model picker, everything.
-  const launchClaudeCli = (): void => {
-    const cmd = sessionId ? `claude --resume ${sessionId}\r` : 'claude\r'
-    window.orcha.pty.input(workspaceId, cmd)
-  }
-
   return (
-    <div className="relative h-full w-full" style={{ display: visible ? 'block' : 'none' }}>
-      <div ref={containerRef} className="h-full w-full bg-[#09090b] p-2" />
-      <button
-        onClick={launchClaudeCli}
-        title="Launch the native Claude Code CLI here, resuming this workspace's session"
-        className="absolute right-3 top-2 rounded border border-edge bg-surface-1 px-2 py-0.5 font-mono text-[11px] text-zinc-500 transition-colors duration-100 hover:border-accent-dim hover:text-accent"
-      >
-        open claude cli
-      </button>
-    </div>
+    <div
+      ref={containerRef}
+      className="h-full w-full bg-[#09090b] p-2"
+      style={{ display: visible ? 'block' : 'none' }}
+    />
   )
 }
 

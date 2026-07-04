@@ -8,8 +8,12 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
   if (!status) return null
   return (
     <span className="flex items-center gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-zinc-400">
-      {status.dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Uncommitted changes" />}
-      {!status.dirty && <span className="h-1.5 w-1.5 rounded-full bg-accent-dim" title="Clean" />}
+      {status.dirty ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Uncommitted changes" />
+      ) : (
+        <span className="h-1.5 w-1.5 rounded-full bg-accent-dim" title="Clean" />
+      )}
+      {status.branch && <span className="font-mono">{status.branch}</span>}
       {status.ahead > 0 && <span>↑{status.ahead}</span>}
       {status.behind > 0 && <span>↓{status.behind}</span>}
     </span>
@@ -17,29 +21,32 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
 }
 
 function MainPane(): React.JSX.Element {
-  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
+  const activeId = useStore((s) => s.activeId)
   const workspace = useActiveWorkspace()
-  const archiveWorkspace = useStore((s) => s.archiveWorkspace)
-  const activeTab = useStore((s) => s.activeTab)
-  const setActiveTab = useStore((s) => s.setActiveTab)
-  const openTerminals = useStore((s) => s.openTerminals)
-  const sendPrompt = useStore((s) => s.sendPrompt)
-  const sessionStatus = useStore((s) => s.sessionStatus)
+  const openSessions = useStore((s) => s.openSessions)
+  const archiveSession = useStore((s) => s.archiveSession)
   const updateWorkspaceSettings = useStore((s) => s.updateWorkspaceSettings)
   const [gitBusy, setGitBusy] = useState(false)
 
+  // Refresh the git chip when switching sessions and every 30s while focused.
   const workspaceId = workspace?.id
   useEffect(() => {
-    if (workspaceId) window.orcha.git.status(workspaceId).catch(() => {})
+    if (!workspaceId) return
+    const refresh = (): void => {
+      window.orcha.git.status(workspaceId).catch(() => {})
+    }
+    refresh()
+    const interval = setInterval(refresh, 30_000)
+    return () => clearInterval(interval)
   }, [workspaceId])
 
-  if (activeWorkspaceId === 'orchestrator') {
+  if (activeId === 'orchestrator') {
     return (
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
           <span className="h-2 w-2 rounded-full bg-accent" />
           <span className="font-medium text-zinc-100">Mission Control</span>
-          <span className="font-mono text-[11px] text-zinc-600">commands every workspace</span>
+          <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
         </header>
         <ChatView workspaceId="orchestrator" />
       </main>
@@ -50,27 +57,14 @@ function MainPane(): React.JSX.Element {
     return (
       <main className="flex flex-1 items-center justify-center">
         <div className="text-center">
-          <div className="text-lg font-medium text-zinc-500">No workspace selected</div>
+          <div className="text-lg font-medium text-zinc-500">No session selected</div>
           <div className="mt-1 text-zinc-600">
-            Add a project, then create a workspace to start a session
+            Pick a session on the left, or create a project to start one
           </div>
         </div>
       </main>
     )
   }
-
-  const handleArchive = async (): Promise<void> => {
-    if (!confirm(`Archive "${workspace.name}"? The worktree folder is removed; the branch is kept.`))
-      return
-    try {
-      await archiveWorkspace(workspace.id)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  const showTerminal = activeTab === 'terminal'
-  const busy = sessionStatus[workspace.id] === 'busy'
 
   const runGit = async (fn: () => Promise<unknown>): Promise<void> => {
     setGitBusy(true)
@@ -84,13 +78,14 @@ function MainPane(): React.JSX.Element {
   }
 
   const handleCommitPush = (): Promise<void> =>
-    runGit(() => window.orcha.git.commitPush(workspace.id, `Update from workspace ${workspace.name}`))
+    runGit(() => window.orcha.git.commitPush(workspace.id, `Update from ${workspace.name}`))
 
-  const handleAskClaude = (): void =>
-    sendPrompt(
+  const handleAskClaude = (): void => {
+    window.orcha.session.send(
       workspace.id,
       'Commit the current changes with a good descriptive message and push to origin.'
     )
+  }
 
   const handlePr = (): Promise<void> =>
     runGit(async () => {
@@ -98,20 +93,36 @@ function MainPane(): React.JSX.Element {
       if (url) window.open(url)
     })
 
+  const handleRestart = (): void => {
+    if (confirm('Restart this Claude session? The conversation resumes automatically.')) {
+      window.orcha.pty.restart(workspace.id, 120, 30)
+    }
+  }
+
+  const handleClose = async (): Promise<void> => {
+    const message =
+      workspace.kind === 'main'
+        ? `Close "${workspace.name}"? The repo stays on disk; reopen it anytime.`
+        : `Close parallel session "${workspace.name}"? Its worktree folder is removed; the branch is kept.`
+    if (!confirm(message)) return
+    try {
+      await archiveSession(workspace.id)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return (
     <main className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
         <span className="font-medium text-zinc-100">{workspace.name}</span>
-        <span className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-zinc-400">
-          {workspace.branch}
-        </span>
         <GitChip workspaceId={workspace.id} />
         <select
           value={workspace.model ?? ''}
           onChange={(e) =>
             updateWorkspaceSettings(workspace.id, e.target.value || null, workspace.effort)
           }
-          title="Model for this session (applies from the next prompt)"
+          title="Model (applies on session restart)"
           className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
         >
           <option value="">model: default</option>
@@ -124,7 +135,7 @@ function MainPane(): React.JSX.Element {
           onChange={(e) =>
             updateWorkspaceSettings(workspace.id, workspace.model, e.target.value || null)
           }
-          title="Thinking effort (applies from the next prompt)"
+          title="Thinking effort (applies on session restart)"
           className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
         >
           <option value="">effort: default</option>
@@ -134,20 +145,6 @@ function MainPane(): React.JSX.Element {
           <option value="xhigh">effort: xhigh</option>
           <option value="max">effort: max</option>
         </select>
-        <div className="ml-2 flex rounded-md border border-edge">
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={`px-2.5 py-1 ${!showTerminal ? 'bg-surface-2 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
-          >
-            Chat
-          </button>
-          <button
-            onClick={() => setActiveTab('terminal')}
-            className={`px-2.5 py-1 ${showTerminal ? 'bg-surface-2 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
-          >
-            Terminal
-          </button>
-        </div>
         <div className="flex-1" />
         <button
           onClick={handleCommitPush}
@@ -158,9 +155,8 @@ function MainPane(): React.JSX.Element {
         </button>
         <button
           onClick={handleAskClaude}
-          disabled={busy}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
-          title="Ask Claude to commit and push with a good message"
+          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+          title="Types a commit-and-push instruction into this session"
         >
           Ask Claude
         </button>
@@ -172,23 +168,28 @@ function MainPane(): React.JSX.Element {
           PR
         </button>
         <button
-          onClick={handleArchive}
+          onClick={handleRestart}
+          className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+          title="Restart the Claude session (resumes conversation, applies model/effort)"
+        >
+          Restart
+        </button>
+        <button
+          onClick={handleClose}
           className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
         >
-          Archive
+          Close
         </button>
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <div
-          className="flex h-full flex-col"
-          style={{ display: showTerminal ? 'none' : 'flex' }}
-        >
-          <ChatView workspaceId={workspace.id} />
-        </div>
-        {openTerminals.map((id) => (
-          <div key={id} className="absolute inset-0" style={{ display: showTerminal && id === workspace.id ? 'block' : 'none' }}>
-            <TerminalView workspaceId={id} visible={showTerminal && id === workspace.id} />
+        {openSessions.map((id) => (
+          <div
+            key={id}
+            className="absolute inset-0"
+            style={{ display: id === workspace.id ? 'block' : 'none' }}
+          >
+            <TerminalView workspaceId={id} visible={id === workspace.id} />
           </div>
         ))}
       </div>

@@ -80,11 +80,34 @@ export class WorkspaceManager {
         createdAt: Date.now(),
         lastActivityAt: null,
         model,
-        effort
+        effort,
+        kind: 'worktree'
       }
       db.workspaces.insert(workspace)
       return workspace
     })
+  }
+
+  // The default tab for a project: a session rooted at the repo folder itself.
+  createMain(projectId: string): Workspace {
+    const project = db.projects.list().find((p) => p.id === projectId)
+    if (!project) throw new Error(`Unknown project: ${projectId}`)
+    const workspace: Workspace = {
+      id: randomUUID(),
+      projectId,
+      name: project.name,
+      branch: '',
+      worktreePath: project.repoPath,
+      sessionId: null,
+      status: 'active',
+      createdAt: Date.now(),
+      lastActivityAt: null,
+      model: null,
+      effort: null,
+      kind: 'main'
+    }
+    db.workspaces.insert(workspace)
+    return workspace
   }
 
   async archive(workspaceId: string): Promise<void> {
@@ -93,7 +116,11 @@ export class WorkspaceManager {
 
     await this.onBeforeArchive?.(workspaceId)
 
-    const project = db.projects.list().find((p) => p.id === workspace.projectId)
+    // NEVER remove folders for main sessions — that's the user's actual repo.
+    const project =
+      workspace.kind === 'worktree'
+        ? db.projects.list().find((p) => p.id === workspace.projectId)
+        : undefined
     if (project) {
       await this.enqueue(workspace.projectId, async () => {
         try {

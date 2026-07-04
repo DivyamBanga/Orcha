@@ -1,40 +1,59 @@
 import { useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import MainPane from './components/MainPane'
-import NewWorkspaceModal from './components/NewWorkspaceModal'
+import NewProjectModal from './components/NewProjectModal'
+import NewSessionModal from './components/NewSessionModal'
+import SetupGate from './components/SetupGate'
 import { wireIpc } from './wireIpc'
 import { useStore } from './store'
 
 function App(): React.JSX.Element {
+  const setup = useStore((s) => s.setup)
+
   useEffect(() => wireIpc(), [])
 
-  // Ctrl+1..9 jumps to a workspace (0 = Mission Control), Ctrl+T flips Chat/Terminal.
+  useEffect(() => {
+    const s = useStore.getState()
+    s.checkSetup()
+    s.load()
+  }, [])
+
+  // Ctrl+1..9 jumps to a session (0 = Mission Control).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (!e.ctrlKey || e.altKey || e.metaKey) return
       const s = useStore.getState()
-      if (e.key === 't' || e.key === 'T') {
+      if (e.key === '0') {
         e.preventDefault()
-        if (s.activeWorkspaceId && s.activeWorkspaceId !== 'orchestrator') {
-          s.setActiveTab(s.activeTab === 'chat' ? 'terminal' : 'chat')
-        }
-      } else if (e.key === '0') {
-        e.preventDefault()
-        s.setActiveWorkspace('orchestrator')
+        s.setActive('orchestrator')
       } else if (/^[1-9]$/.test(e.key)) {
         e.preventDefault()
         const ws = s.workspaces[Number(e.key) - 1]
-        if (ws) s.setActiveWorkspace(ws.id)
+        if (ws) s.setActive(ws.id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const ready = setup !== null && setup.gh && setup.claude
+
   return (
     <div className="flex h-full bg-surface-0 text-zinc-300">
-      <Sidebar />
-      <MainPane />
-      <NewWorkspaceModal />
+      {ready ? (
+        <>
+          <Sidebar />
+          <MainPane />
+          <NewProjectModal />
+          <NewSessionModal />
+        </>
+      ) : setup === null ? (
+        <div className="flex flex-1 items-center justify-center font-mono text-zinc-700">
+          checking connections…
+        </div>
+      ) : (
+        <SetupGate />
+      )}
     </div>
   )
 }

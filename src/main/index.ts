@@ -5,9 +5,9 @@ import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
 import { registerIpc } from './ipc'
 import { WorkspaceManager } from './services/WorkspaceManager'
-import { SessionManager } from './services/SessionManager'
 import { PtyManager } from './services/PtyManager'
 import { GitService } from './services/GitService'
+import { ProjectService } from './services/ProjectService'
 import { OrchestratorService } from './services/OrchestratorService'
 
 function createWindow(): void {
@@ -18,7 +18,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#18181b',
+    backgroundColor: '#0b0b0d',
     title: 'Orcha',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -48,29 +48,27 @@ function createWindow(): void {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
   }
   const workspaceManager = new WorkspaceManager()
-  const sessionManager = new SessionManager(send)
   const ptyManager = new PtyManager(send)
   const gitService = new GitService(send)
-  workspaceManager.onBeforeArchive = async (workspaceId) => {
-    sessionManager.interrupt(workspaceId)
-    ptyManager.kill(workspaceId)
-  }
-  // Claude likely changed files; refresh the workspace's git chip.
-  sessionManager.onTurnComplete = (workspaceId) => {
-    gitService.status(workspaceId).catch(() => {})
-  }
+  const projectService = new ProjectService(workspaceManager)
   const orchestratorService = new OrchestratorService(
     send,
     workspaceManager,
-    sessionManager,
-    gitService
+    ptyManager,
+    gitService,
+    projectService
   )
+  workspaceManager.onBeforeArchive = async (workspaceId) => {
+    ptyManager.kill(workspaceId)
+    // Give Windows a beat to release file handles before worktree removal.
+    await new Promise((r) => setTimeout(r, 300))
+  }
   app.on('before-quit', () => ptyManager.killAll())
   registerIpc(mainWindow, {
     workspaceManager,
-    sessionManager,
     ptyManager,
     gitService,
+    projectService,
     orchestratorService
   })
 }

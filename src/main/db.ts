@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { randomUUID } from 'crypto'
 import type { Project, Workspace } from '../shared/types'
 
 let db: Database.Database
@@ -32,11 +33,32 @@ export function initDb(): void {
     );
   `)
   // Additive migrations for pre-existing databases.
-  for (const col of ['model TEXT', 'effort TEXT']) {
+  for (const col of ['model TEXT', 'effort TEXT', "kind TEXT NOT NULL DEFAULT 'worktree'"]) {
     try {
       db.exec(`ALTER TABLE workspaces ADD COLUMN ${col}`)
     } catch {
       // column already exists
+    }
+  }
+
+  // Terminal-first rework: retire pre-rework SDK-chat workspaces, then make
+  // sure every project has a 'main' session rooted at the repo folder.
+  const migrated = db.prepare("SELECT value FROM app_state WHERE key = 'terminal_rework'").get()
+  if (!migrated) {
+    db.exec("UPDATE workspaces SET status = 'archived' WHERE kind = 'worktree'")
+    db.prepare("INSERT INTO app_state (key, value) VALUES ('terminal_rework', '1')").run()
+  }
+  const projectRows = db.prepare('SELECT * FROM projects').all() as ProjectRow[]
+  for (const p of projectRows) {
+    const main = db
+      .prepare("SELECT id FROM workspaces WHERE project_id = ? AND kind = 'main' AND status = 'active'")
+      .get(p.id)
+    if (!main) {
+      db.prepare(
+        `INSERT INTO workspaces
+         (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort, kind)
+         VALUES (?, ?, ?, '', ?, NULL, 'active', ?, NULL, NULL, NULL, 'main')`
+      ).run(randomUUID(), p.id, p.name, p.repo_path, Date.now())
     }
   }
 }
@@ -60,6 +82,7 @@ interface WorkspaceRow {
   last_activity_at: number | null
   model: string | null
   effort: string | null
+  kind: string
 }
 
 function toProject(r: ProjectRow): Project {
@@ -78,7 +101,8 @@ function toWorkspace(r: WorkspaceRow): Workspace {
     createdAt: r.created_at,
     lastActivityAt: r.last_activity_at,
     model: r.model,
-    effort: r.effort as Workspace['effort']
+    effort: r.effort as Workspace['effort'],
+    kind: r.kind as Workspace['kind']
   }
 }
 
@@ -108,8 +132,8 @@ export const workspaces = {
   insert(w: Workspace): void {
     db.prepare(
       `INSERT INTO workspaces
-       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort, kind)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       w.id,
       w.projectId,
@@ -121,7 +145,8 @@ export const workspaces = {
       w.createdAt,
       w.lastActivityAt,
       w.model,
-      w.effort
+      w.effort,
+      w.kind
     )
   },
   updateSettings(id: string, model: string | null, effort: string | null): void {

@@ -65,9 +65,9 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   const items = useStore((s) => s.messages[workspaceId]) ?? []
   const streamingText = useStore((s) => s.streaming[workspaceId]) ?? ''
   const status = useStore((s) => s.sessionStatus[workspaceId]) ?? 'idle'
-  const sendPrompt = useStore((s) => s.sendPrompt)
-  const interrupt = useStore((s) => s.interrupt)
-  const loadHistory = useStore((s) => s.loadHistory)
+  const sendPrompt = useStore((s) => s.mcSend)
+  const interrupt = useStore((s) => s.mcInterrupt)
+  const loadHistory = useStore((s) => s.mcLoadHistory)
 
   const slashCommands = useStore((s) => s.slashCommands[workspaceId]) ?? []
   const [draft, setDraft] = useState('')
@@ -81,8 +81,8 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   const showSlashPopup = typingSlash && (slashMatches.length > 0 || slashCommands.length === 0)
 
   useEffect(() => {
-    loadHistory(workspaceId)
-  }, [workspaceId, loadHistory])
+    loadHistory()
+  }, [loadHistory])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
@@ -94,7 +94,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
     const text = draft.trim()
     if (!text || busy) return
     setDraft('')
-    sendPrompt(workspaceId, text)
+    sendPrompt(text)
   }
 
   return (
@@ -180,7 +180,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
           />
           {busy ? (
             <button
-              onClick={() => interrupt(workspaceId)}
+              onClick={() => interrupt()}
               className="rounded-md border border-edge-bright px-3 py-2 text-zinc-300 transition-colors duration-100 hover:border-red-800 hover:text-red-400"
             >
               Stop
