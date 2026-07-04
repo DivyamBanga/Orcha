@@ -2,8 +2,17 @@
 
 @theme {
   --font-sans:
-    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+    'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'IBM Plex Mono', Consolas, ui-monospace, monospace;
+
+  /* Phosphor console palette — one accent, everything else neutral. */
+  --color-accent: #34d399;
+  --color-accent-dim: #059669;
+  --color-surface-0: #0b0b0d;
+  --color-surface-1: #111114;
+  --color-surface-2: #18181c;
+  --color-edge: #232329;
+  --color-edge-bright: #34343c;
 }
 
 html,
@@ -16,4 +25,115 @@ body,
 body {
   font-size: 13px;
   user-select: none;
+  background: var(--color-surface-0);
+}
+
+/* Subtle scanline grain so large empty areas aren't dead flat. */
+.console-bg {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgb(255 255 255 / 0.006) 2px,
+    rgb(255 255 255 / 0.006) 4px
+  );
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-edge);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-edge-bright);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Chat markdown */
+.prose-chat {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.prose-chat p {
+  margin: 0.4em 0;
+}
+.prose-chat pre {
+  background: var(--color-surface-1);
+  border: 1px solid var(--color-edge);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 0.6em 0;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.prose-chat :not(pre) > code {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-edge);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.prose-chat ul,
+.prose-chat ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.prose-chat ul {
+  list-style: disc;
+}
+.prose-chat ol {
+  list-style: decimal;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 600;
+  color: #f4f4f5;
+  margin: 0.8em 0 0.3em;
+}
+.prose-chat a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Busy ring — a thin arc, not a chunky spinner. */
+@keyframes orcha-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.busy-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-edge-bright);
+  border-top-color: var(--color-accent);
+  animation: orcha-spin 0.8s linear infinite;
+}
+
+@keyframes orcha-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: orcha-pulse 1.6s ease-in-out infinite;
 }

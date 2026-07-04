@@ -13,6 +13,7 @@ interface OrchaStore {
   showNewWorkspace: boolean
   activeTab: 'chat' | 'terminal'
   openTerminals: string[]
+  unread: Record<string, boolean>
 
   load: () => Promise<void>
   addProject: () => Promise<void>
@@ -37,6 +38,7 @@ export const useStore = create<OrchaStore>((set) => ({
   showNewWorkspace: false,
   activeTab: 'chat',
   openTerminals: [],
+  unread: {},
 
   load: async () => {
     const [projects, workspaces] = await Promise.all([
@@ -127,7 +129,12 @@ export const useStore = create<OrchaStore>((set) => ({
     else window.orcha.session.interrupt(workspaceId)
   },
 
-  setActiveWorkspace: (id) => set({ activeWorkspaceId: id, activeTab: 'chat' }),
+  setActiveWorkspace: (id) =>
+    set((s) => ({
+      activeWorkspaceId: id,
+      activeTab: 'chat',
+      unread: id ? { ...s.unread, [id]: false } : s.unread
+    })),
   setShowNewWorkspace: (show) => set({ showNewWorkspace: show }),
   setActiveTab: (tab) =>
     set((s) => ({

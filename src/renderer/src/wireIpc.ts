@@ -115,7 +115,11 @@ export function wireIpc(): () => void {
       )
       return {
         messages: { ...s.messages, [workspaceId]: reduced.items },
-        streaming: { ...s.streaming, [workspaceId]: reduced.streamingText }
+        streaming: { ...s.streaming, [workspaceId]: reduced.streamingText },
+        unread:
+          workspaceId !== s.activeWorkspaceId && message.type === 'assistant'
+            ? { ...s.unread, [workspaceId]: true }
+            : s.unread
       }
     })
   })
