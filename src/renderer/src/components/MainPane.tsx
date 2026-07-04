@@ -25,7 +25,7 @@ function MainPane(): React.JSX.Element {
   const workspace = useActiveWorkspace()
   const openSessions = useStore((s) => s.openSessions)
   const archiveSession = useStore((s) => s.archiveSession)
-  const updateWorkspaceSettings = useStore((s) => s.updateWorkspaceSettings)
+  const gitStatus = useStore((s) => (workspace ? s.gitStatus[workspace.id] : undefined))
   const [gitBusy, setGitBusy] = useState(false)
 
   // Refresh the git chip when switching sessions and every 30s while focused.
@@ -117,34 +117,16 @@ function MainPane(): React.JSX.Element {
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
         <span className="font-medium text-zinc-100">{workspace.name}</span>
         <GitChip workspaceId={workspace.id} />
-        <select
-          value={workspace.model ?? ''}
-          onChange={(e) =>
-            updateWorkspaceSettings(workspace.id, e.target.value || null, workspace.effort)
-          }
-          title="Model (applies on session restart)"
-          className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
-        >
-          <option value="">model: default</option>
-          <option value="opus">model: opus</option>
-          <option value="sonnet">model: sonnet</option>
-          <option value="haiku">model: haiku</option>
-        </select>
-        <select
-          value={workspace.effort ?? ''}
-          onChange={(e) =>
-            updateWorkspaceSettings(workspace.id, workspace.model, e.target.value || null)
-          }
-          title="Thinking effort (applies on session restart)"
-          className="rounded border border-edge bg-surface-1 px-1 py-0.5 font-mono text-[11px] text-zinc-400 hover:border-edge-bright focus:outline-none"
-        >
-          <option value="">effort: default</option>
-          <option value="low">effort: low</option>
-          <option value="medium">effort: medium</option>
-          <option value="high">effort: high</option>
-          <option value="xhigh">effort: xhigh</option>
-          <option value="max">effort: max</option>
-        </select>
+        {(gitStatus?.behind ?? 0) > 0 && (
+          <button
+            onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
+            disabled={gitBusy}
+            className="rounded-md border border-amber-700/60 px-2 py-0.5 text-[11px] text-amber-500 hover:bg-amber-950/40 disabled:opacity-40"
+            title="Remote has new commits — git pull --ff-only"
+          >
+            Pull ↓{gitStatus?.behind}
+          </button>
+        )}
         <div className="flex-1" />
         <button
           onClick={handleCommitPush}
@@ -160,12 +142,22 @@ function MainPane(): React.JSX.Element {
         >
           Ask Claude
         </button>
+        {workspace.kind === 'worktree' && (
+          <button
+            onClick={handlePr}
+            disabled={gitBusy}
+            className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+            title="Push this branch and open a pull request"
+          >
+            PR
+          </button>
+        )}
         <button
-          onClick={handlePr}
-          disabled={gitBusy}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+          onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
+          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+          title="Open this repo on GitHub"
         >
-          PR
+          GitHub
         </button>
         <button
           onClick={handleRestart}

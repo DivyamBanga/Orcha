@@ -69,6 +69,16 @@ export class ProjectService {
     return JSON.parse(stdout)
   }
 
+  // Unregister a project from Orcha. Closes its sessions (worktree folders are
+  // removed, the repo folder itself is never touched) and drops the entry.
+  async remove(projectId: string): Promise<void> {
+    const sessions = db.workspaces.listActive().filter((w) => w.projectId === projectId)
+    for (const session of sessions) {
+      await this.workspaceManager.archive(session.id)
+    }
+    db.projects.remove(projectId)
+  }
+
   async cloneGithub(nameWithOwner: string): Promise<Project> {
     mkdirSync(PROJECTS_ROOT, { recursive: true })
     const name = nameWithOwner.split('/').pop() ?? nameWithOwner

@@ -26,16 +26,12 @@ interface OrchaStore {
   load: () => Promise<void>
   setActive: (id: string | null) => void
   archiveSession: (workspaceId: string) => Promise<void>
+  removeProject: (projectId: string) => Promise<void>
   createParallelSession: (
     projectId: string,
     name: string,
     model?: string | null,
     effort?: string | null
-  ) => Promise<void>
-  updateWorkspaceSettings: (
-    workspaceId: string,
-    model: string | null,
-    effort: string | null
   ) => Promise<void>
   mcSend: (text: string) => void
   mcInterrupt: () => void
@@ -91,6 +87,19 @@ export const useStore = create<OrchaStore>((set) => ({
     }))
   },
 
+  removeProject: async (projectId) => {
+    await window.orcha.projects.remove(projectId)
+    set((s) => {
+      const removedIds = s.workspaces.filter((w) => w.projectId === projectId).map((w) => w.id)
+      return {
+        projects: s.projects.filter((p) => p.id !== projectId),
+        workspaces: s.workspaces.filter((w) => w.projectId !== projectId),
+        openSessions: s.openSessions.filter((id) => !removedIds.includes(id)),
+        activeId: removedIds.includes(s.activeId ?? '') ? null : s.activeId
+      }
+    })
+  },
+
   createParallelSession: async (projectId, name, model = null, effort = null) => {
     const workspace = await window.orcha.workspaces.create(projectId, name, model, effort)
     set((s) => ({
@@ -98,15 +107,6 @@ export const useStore = create<OrchaStore>((set) => ({
       activeId: workspace.id,
       openSessions: [...s.openSessions, workspace.id],
       showNewSession: false
-    }))
-  },
-
-  updateWorkspaceSettings: async (workspaceId, model, effort) => {
-    await window.orcha.workspaces.updateSettings(workspaceId, model, effort)
-    set((s) => ({
-      workspaces: s.workspaces.map((w) =>
-        w.id === workspaceId ? { ...w, model, effort: effort as Workspace['effort'] } : w
-      )
     }))
   },
 

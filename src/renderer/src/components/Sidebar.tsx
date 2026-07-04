@@ -1,7 +1,120 @@
+import { useState } from 'react'
 import { useStore } from '../store'
-import type { Workspace } from '../../../shared/types'
+import ContextMenu, { type MenuItem } from './ContextMenu'
+import type { Project, Workspace } from '../../../shared/types'
 
-function SessionRow({ workspace, index }: { workspace: Workspace; index: number }): React.JSX.Element {
+interface MenuState {
+  x: number
+  y: number
+  items: MenuItem[]
+}
+
+function useSessionMenu(): {
+  menu: MenuState | null
+  closeMenu: () => void
+  openSessionMenu: (e: React.MouseEvent, workspace: Workspace) => void
+  openProjectMenu: (e: React.MouseEvent, project: Project) => void
+} {
+  const [menu, setMenu] = useState<MenuState | null>(null)
+
+  const openSessionMenu = (e: React.MouseEvent, workspace: Workspace): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const s = useStore.getState()
+    const items: MenuItem[] = [
+      {
+        label: 'Restart session',
+        onClick: () => window.orcha.pty.restart(workspace.id, 120, 30)
+      },
+      {
+        label: 'Open folder',
+        onClick: () => window.orcha.shell.openPath(workspace.worktreePath)
+      },
+      {
+        label: 'Open on GitHub',
+        onClick: () => window.orcha.git.openGithub(workspace.id).catch(() => {})
+      },
+      {
+        label: 'Copy path',
+        onClick: () => navigator.clipboard.writeText(workspace.worktreePath)
+      },
+      {
+        label: workspace.kind === 'main' ? 'Close session' : 'Close (remove worktree)',
+        danger: true,
+        separatorAbove: true,
+        onClick: () => {
+          const message =
+            workspace.kind === 'main'
+              ? `Close "${workspace.name}"? The repo stays on disk; reopen it anytime.`
+              : `Close "${workspace.name}"? Its worktree folder is removed; the branch is kept.`
+          if (confirm(message)) {
+            s.archiveSession(workspace.id).catch((err) => alert(String(err)))
+          }
+        }
+      }
+    ]
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
+
+  const openProjectMenu = (e: React.MouseEvent, project: Project): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const s = useStore.getState()
+    const items: MenuItem[] = [
+      {
+        label: 'New parallel session',
+        onClick: () => s.setShowNewSession(true)
+      },
+      {
+        label: 'Open folder',
+        onClick: () => window.orcha.shell.openPath(project.repoPath)
+      },
+      {
+        label: 'Copy path',
+        onClick: () => navigator.clipboard.writeText(project.repoPath)
+      },
+      {
+        label: 'Remove from Orcha',
+        danger: true,
+        separatorAbove: true,
+        onClick: () => {
+          if (
+            confirm(
+              `Remove "${project.name}" from Orcha? All its sessions close (parallel worktrees are deleted); the repo folder itself stays on disk.`
+            )
+          ) {
+            s.removeProject(project.id).catch((err) => alert(String(err)))
+          }
+        }
+      }
+    ]
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
+
+  return { menu, closeMenu: () => setMenu(null), openSessionMenu, openProjectMenu }
+}
+
+function DotsButton({ onClick }: { onClick: (e: React.MouseEvent) => void }): React.JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className="hidden shrink-0 rounded px-1 font-mono text-zinc-500 hover:bg-edge hover:text-zinc-200 group-hover:inline"
+      title="Options"
+    >
+      ⋯
+    </button>
+  )
+}
+
+function SessionRow({
+  workspace,
+  index,
+  onMenu
+}: {
+  workspace: Workspace
+  index: number
+  onMenu: (e: React.MouseEvent, workspace: Workspace) => void
+}): React.JSX.Element {
   const activeId = useStore((s) => s.activeId)
   const setActive = useStore((s) => s.setActive)
   const open = useStore((s) => s.openSessions.includes(workspace.id))
@@ -10,37 +123,41 @@ function SessionRow({ workspace, index }: { workspace: Workspace; index: number 
   const isParallel = workspace.kind === 'worktree'
 
   return (
-    <button
-      onClick={() => setActive(workspace.id)}
-      className={`group flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors duration-100 ${
+    <div
+      onContextMenu={(e) => onMenu(e, workspace)}
+      className={`group flex w-full items-center gap-2 rounded px-2 py-1.5 transition-colors duration-100 ${
         active ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:bg-surface-1 hover:text-zinc-200'
       } ${isParallel ? 'pl-5' : ''}`}
     >
-      <span className="flex w-3 shrink-0 items-center justify-center">
-        <span
-          className={`rounded-full ${open ? 'h-1.5 w-1.5 bg-accent' : 'h-1 w-1 bg-zinc-700'}`}
-          title={open ? 'Session running' : 'Not started'}
-        />
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        {isParallel ? workspace.name : workspace.name}
-      </span>
-      {isParallel && (
-        <span className="font-mono text-[10px] text-zinc-600" title={workspace.branch}>
-          ⑂
+      <button
+        onClick={() => setActive(workspace.id)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span className="flex w-3 shrink-0 items-center justify-center">
+          <span
+            className={`rounded-full ${open ? 'h-1.5 w-1.5 bg-accent' : 'h-1 w-1 bg-zinc-700'}`}
+            title={open ? 'Session running' : 'Not started'}
+          />
         </span>
-      )}
-      {git?.dirty && (
-        <span className="font-mono text-[10px] text-amber-500/80" title="Uncommitted changes">
-          M
-        </span>
-      )}
-      {index < 9 && (
-        <kbd className="hidden font-mono text-[10px] text-zinc-600 group-hover:inline">
-          ^{index + 1}
-        </kbd>
-      )}
-    </button>
+        <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+        {isParallel && (
+          <span className="font-mono text-[10px] text-zinc-600" title={workspace.branch}>
+            ⑂
+          </span>
+        )}
+        {git?.dirty && (
+          <span className="font-mono text-[10px] text-amber-500/80" title="Uncommitted changes">
+            M
+          </span>
+        )}
+        {index < 9 && (
+          <kbd className="hidden font-mono text-[10px] text-zinc-600 group-hover:inline">
+            ^{index + 1}
+          </kbd>
+        )}
+      </button>
+      <DotsButton onClick={(e) => onMenu(e, workspace)} />
+    </div>
   )
 }
 
@@ -54,6 +171,7 @@ function Sidebar(): React.JSX.Element {
   const setActive = useStore((s) => s.setActive)
   const setShowNewProject = useStore((s) => s.setShowNewProject)
   const setShowNewSession = useStore((s) => s.setShowNewSession)
+  const { menu, closeMenu, openSessionMenu, openProjectMenu } = useSessionMenu()
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface-1">
@@ -79,9 +197,7 @@ function Sidebar(): React.JSX.Element {
         {orchestratorBusy ? (
           <span className="busy-ring" />
         ) : (
-          <span
-            className={`h-2 w-2 rounded-full bg-accent ${mcUnread ? 'pulse-dot' : ''}`}
-          />
+          <span className={`h-2 w-2 rounded-full bg-accent ${mcUnread ? 'pulse-dot' : ''}`} />
         )}
         <span className="font-medium">Mission Control</span>
         <kbd className="ml-auto font-mono text-[10px] text-zinc-600">^0</kbd>
@@ -99,14 +215,21 @@ function Sidebar(): React.JSX.Element {
             const sessions = workspaces.filter((w) => w.projectId === project.id)
             return (
               <div key={project.id} className="mb-3">
-                <div className="px-2 pb-1 pt-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-600">
-                  {project.name}
+                <div
+                  onContextMenu={(e) => openProjectMenu(e, project)}
+                  className="group flex items-center px-2 pb-1 pt-2"
+                >
+                  <span className="flex-1 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-600">
+                    {project.name}
+                  </span>
+                  <DotsButton onClick={(e) => openProjectMenu(e, project)} />
                 </div>
                 {sessions.map((ws) => (
                   <SessionRow
                     key={ws.id}
                     workspace={ws}
                     index={workspaces.findIndex((w) => w.id === ws.id)}
+                    onMenu={openSessionMenu}
                   />
                 ))}
               </div>
@@ -130,6 +253,8 @@ function Sidebar(): React.JSX.Element {
           + Parallel session
         </button>
       </div>
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={closeMenu} />}
     </aside>
   )
 }

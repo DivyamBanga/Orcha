@@ -125,6 +125,9 @@ export const projects = {
       | ProjectRow
       | undefined
     return row && toProject(row)
+  },
+  remove(id: string): void {
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id)
   }
 }
 
@@ -148,9 +151,6 @@ export const workspaces = {
       w.effort,
       w.kind
     )
-  },
-  updateSettings(id: string, model: string | null, effort: string | null): void {
-    db.prepare('UPDATE workspaces SET model = ?, effort = ? WHERE id = ?').run(model, effort, id)
   },
   listActive(): Workspace[] {
     return (

@@ -15,7 +15,11 @@ const api = {
     listGithub: (): Promise<{ nameWithOwner: string; name: string }[]> =>
       ipcRenderer.invoke(IPC.ProjectsListGithub),
     cloneGithub: (nameWithOwner: string): Promise<Project> =>
-      ipcRenderer.invoke(IPC.ProjectsCloneGithub, nameWithOwner)
+      ipcRenderer.invoke(IPC.ProjectsCloneGithub, nameWithOwner),
+    remove: (projectId: string): Promise<void> => ipcRenderer.invoke(IPC.ProjectsRemove, projectId)
+  },
+  shell: {
+    openPath: (path: string): Promise<void> => ipcRenderer.invoke(IPC.ShellOpenPath, path)
   },
   workspaces: {
     create: (
@@ -26,13 +30,7 @@ const api = {
     ): Promise<Workspace> => ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name, model, effort),
     list: (): Promise<Workspace[]> => ipcRenderer.invoke(IPC.WorkspacesList),
     archive: (workspaceId: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId),
-    updateSettings: (
-      workspaceId: string,
-      model: string | null,
-      effort: string | null
-    ): Promise<void> =>
-      ipcRenderer.invoke(IPC.WorkspacesUpdateSettings, workspaceId, model, effort)
+      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId)
   },
   // Types a prompt into a session's Claude terminal.
   session: {
@@ -50,7 +48,10 @@ const api = {
     commitPush: (workspaceId: string, message: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GitCommitPush, workspaceId, message),
     createPr: (workspaceId: string): Promise<{ url: string }> =>
-      ipcRenderer.invoke(IPC.GitCreatePr, workspaceId)
+      ipcRenderer.invoke(IPC.GitCreatePr, workspaceId),
+    pull: (workspaceId: string): Promise<void> => ipcRenderer.invoke(IPC.GitPull, workspaceId),
+    openGithub: (workspaceId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.GitOpenGithub, workspaceId)
   },
   pty: {
     create: (workspaceId: string, cols: number, rows: number): Promise<void> =>

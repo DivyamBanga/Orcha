@@ -59,6 +59,27 @@ export class GitService {
     await this.status(workspaceId)
   }
 
+  async pull(workspaceId: string): Promise<void> {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
+    await this.git(workspace.worktreePath, ['pull', '--ff-only'])
+    await this.status(workspaceId)
+  }
+
+  // https URL of the repo at the current branch, from the origin remote.
+  async githubUrl(workspaceId: string): Promise<string> {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
+    const remote = (await this.git(workspace.worktreePath, ['remote', 'get-url', 'origin'])).trim()
+    const https = remote
+      .replace(/^git@github\.com:/, 'https://github.com/')
+      .replace(/\.git$/, '')
+    const branch = (
+      await this.git(workspace.worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    ).trim()
+    return branch && branch !== 'HEAD' ? `${https}/tree/${branch}` : https
+  }
+
   async createPr(workspaceId: string): Promise<{ url: string }> {
     const workspace = db.workspaces.get(workspaceId)
     if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)

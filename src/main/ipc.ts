@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { existsSync } from 'fs'
@@ -84,11 +84,6 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.WorkspacesArchive, (_e, workspaceId: string) =>
     workspaceManager.archive(workspaceId)
   )
-  ipcMain.handle(
-    IPC.WorkspacesUpdateSettings,
-    (_e, workspaceId: string, model: string | null, effort: string | null) =>
-      db.workspaces.updateSettings(workspaceId, model, effort)
-  )
 
   // --- Mission Control chat ------------------------------------------------
 
@@ -103,6 +98,13 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     gitService.commitAndPush(workspaceId, message)
   )
   ipcMain.handle(IPC.GitCreatePr, (_e, workspaceId: string) => gitService.createPr(workspaceId))
+  ipcMain.handle(IPC.GitPull, (_e, workspaceId: string) => gitService.pull(workspaceId))
+  ipcMain.handle(IPC.GitOpenGithub, async (_e, workspaceId: string) => {
+    const url = await gitService.githubUrl(workspaceId)
+    await shell.openExternal(url)
+  })
+  ipcMain.handle(IPC.ShellOpenPath, (_e, path: string) => shell.openPath(path))
+  ipcMain.handle(IPC.ProjectsRemove, (_e, projectId: string) => projectService.remove(projectId))
 
   // --- terminals ---------------------------------------------------------------
 
