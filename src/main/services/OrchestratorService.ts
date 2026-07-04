@@ -211,6 +211,10 @@ export class OrchestratorService {
           resume: db.appState.get(SESSION_KEY),
           systemPrompt: { type: 'preset', preset: 'claude_code', append: BRIEFING },
           settingSources: ['user'],
+          // Mission Control dispatches and coordinates; it doesn't need Opus.
+          // Sonnet keeps it snappy and saves the usage window for real work.
+          model: 'sonnet',
+          effort: 'medium',
           mcpServers: { orcha: this.buildServer() },
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
