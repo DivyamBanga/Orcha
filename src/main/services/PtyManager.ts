@@ -11,7 +11,18 @@ const REPLAY_LIMIT = 100_000
 interface PtyEntry {
   proc: pty.IPty
   buffer: string
+  // Last time the Claude TUI's busy indicator appeared in the output stream.
+  lastBusyMarkerAt: number
+  // Small rolling tail of recent (ANSI-stripped) output. The busy marker can
+  // arrive split across two pty chunks; scanning a stitched tail instead of a
+  // single chunk keeps us from missing spinner repaints and false-reporting idle.
+  markerTail: string
 }
+
+// The TUI repaints this constantly while Claude is running a turn.
+const BUSY_MARKER = /esc to interrupt/i
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
 
 function claudeLaunchCommand(workspace: Workspace): string {
   const parts = ['claude', '--dangerously-skip-permissions']
@@ -61,11 +72,15 @@ export class PtyManager {
       rows,
       useConpty: true
     })
-    const entry: PtyEntry = { proc, buffer: '' }
+    const entry: PtyEntry = { proc, buffer: '', lastBusyMarkerAt: 0, markerTail: '' }
     this.ptys.set(workspaceId, entry)
 
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
+      entry.markerTail = (entry.markerTail + data.replace(ANSI, '')).slice(-64)
+      if (BUSY_MARKER.test(entry.markerTail)) {
+        entry.lastBusyMarkerAt = Date.now()
+      }
       this.send(IPC.EvPtyData, { workspaceId, data })
     })
     proc.onExit(({ exitCode }) => {
@@ -76,6 +91,13 @@ export class PtyManager {
 
   write(workspaceId: string, data: string): void {
     this.ptys.get(workspaceId)?.proc.write(data)
+  }
+
+  // Milliseconds since the TUI last showed its busy indicator; null if the
+  // terminal isn't open or Claude has never run in it.
+  busyMarkerAgeMs(workspaceId: string): number | null {
+    const at = this.ptys.get(workspaceId)?.lastBusyMarkerAt
+    return at ? Date.now() - at : null
   }
 
   // Type a prompt into the session's Claude TUI. Boots the session first if

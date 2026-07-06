@@ -70,7 +70,11 @@ function createWindow(): void {
   activityMonitor.onNotificationClick = (workspaceId) => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
+    // On Windows focus() alone often only flashes the taskbar; a brief
+    // always-on-top toggle forces the window to the foreground.
+    mainWindow.setAlwaysOnTop(true)
     mainWindow.focus()
+    mainWindow.setAlwaysOnTop(false)
     send(IPC.EvFocusSession, { workspaceId })
   }
   activityMonitor.start()
