@@ -8,11 +8,26 @@ type SendFn = (channel: string, payload: unknown) => void
 export type ActivityState = 'working' | 'waiting' | 'off'
 
 const POLL_MS = 2000
-// The TUI busy indicator repaints every second while Claude is mid-turn. Only
-// treat it as "done" once the spinner has been gone this long, so a quiet gap
-// during a long silent command (npm install, a big test run) is not mistaken
-// for the turn ending. Bigger = fewer false "finished" pings, slightly slower.
-const IDLE_AFTER_MS = 12000
+// How "working" is detected (verified empirically on Windows/ConPTY):
+// an idle Claude TUI screen is static and ConPTY, which only transmits screen
+// diffs, emits literally zero bytes. A mid-turn TUI animates its spinner and
+// elapsed counter continuously. So sustained output = working, silence = done.
+// The "esc to interrupt" text is NOT reliable: ConPTY resends it only when
+// that line first draws, and some TUI states never show it at all.
+//
+// Output within this age counts as "flowing" for the current poll.
+const OUTPUT_FLOWING_MS = 2500
+// Consecutive flowing polls needed to call the session working, so a one-off
+// repaint (a window resize, a stray redraw) does not register as work.
+const ENTER_STREAK = 2
+// Keystroke echo also produces output; ignore output this soon after input so
+// the user typing a prompt does not read as Claude working.
+const TYPING_GUARD_MS = 3000
+// A fresh busy marker still enters "working" instantly when it does appear.
+const MARKER_FRESH_MS = 5000
+// While a turn runs the spinner repaints about once a second, so output never
+// stays quiet mid-turn. Output silent this long = the turn is over.
+const OUTPUT_IDLE_MS = 8000
 // Only notify when the work actually lasted a bit, so quick replies stay quiet.
 const MIN_WORK_BURST_MS = 8000
 // After the turn looks finished, wait this long and make sure it stayed idle
@@ -48,6 +63,9 @@ const DONE_LINES = [
 export class ActivityMonitor {
   private states = new Map<string, ActivityState>()
   private workingSince = new Map<string, number>()
+  // Consecutive polls with output flowing, and when that flow started.
+  private flowStreak = new Map<string, number>()
+  private flowStart = new Map<string, number>()
   // Sessions that looked done and are serving out the confirmation window.
   private pendingNotify = new Map<string, number>()
   private timer: NodeJS.Timeout | null = null
@@ -80,23 +98,51 @@ export class ActivityMonitor {
       let next: ActivityState
       if (!this.ptyManager.has(workspace.id)) {
         next = 'off'
+        this.flowStreak.delete(workspace.id)
+      } else if (prev === 'working') {
+        // Already mid-turn: output flow keeps it alive; silence means done.
+        const outputAge = this.ptyManager.outputAgeMs(workspace.id) ?? Infinity
+        next = outputAge < OUTPUT_IDLE_MS ? 'working' : 'waiting'
       } else {
-        // Trust the TUI's own "esc to interrupt" indicator: present (or seen in
-        // the last few seconds) means Claude is genuinely mid-turn.
-        const age = this.ptyManager.busyMarkerAgeMs(workspace.id)
-        next = age !== null && age < IDLE_AFTER_MS ? 'working' : 'waiting'
+        // Idle: enter working on sustained output flow (Claude animating its
+        // spinner) that is not just the echo of the user typing, or right away
+        // on a freshly drawn busy marker when the TUI does show one.
+        const outputAge = this.ptyManager.outputAgeMs(workspace.id)
+        const flowing = outputAge !== null && outputAge < OUTPUT_FLOWING_MS
+        const streak = flowing ? (this.flowStreak.get(workspace.id) ?? 0) + 1 : 0
+        if (streak === 1) this.flowStart.set(workspace.id, now - (outputAge ?? 0))
+        this.flowStreak.set(workspace.id, streak)
+        const inputAge = this.ptyManager.inputAgeMs(workspace.id)
+        const typing = inputAge !== null && inputAge < TYPING_GUARD_MS
+        const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
+        const freshMarker = markerAge !== null && markerAge < MARKER_FRESH_MS
+        next = freshMarker || (streak >= ENTER_STREAK && !typing) ? 'working' : 'waiting'
       }
 
       if (next !== prev) {
-        if (next === 'working') this.workingSince.set(workspace.id, now)
+        // Backdate to when the burst's output actually started; the poll can
+        // lag it by a few seconds, which would shrink measured work time.
+        if (next === 'working') {
+          const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
+          const fromMarker = markerAge !== null && markerAge < MARKER_FRESH_MS ? now - markerAge : now
+          const fromFlow = this.flowStart.get(workspace.id) ?? now
+          this.workingSince.set(workspace.id, Math.min(fromMarker, fromFlow))
+        }
         this.states.set(workspace.id, next)
         this.send(IPC.EvActivity, { workspaceId: workspace.id, state: next })
 
         // Turn looks finished: start the confirmation window instead of firing
-        // right away, so a mid-turn pause can't masquerade as "done".
+        // right away, so a mid-turn pause can't masquerade as "done". The
+        // burst runs from the turn's opening marker to its last output, so a
+        // stray marker flash measures ~0 and stays quiet. Sessions that never
+        // got any input cannot have finished anything, so they stay quiet too
+        // (that is what used to fire right after app startup).
         if (prev === 'working' && next === 'waiting') {
-          const burst = now - (this.workingSince.get(workspace.id) ?? 0)
-          if (burst >= MIN_WORK_BURST_MS) this.pendingNotify.set(workspace.id, now)
+          const idleFor = this.ptyManager.outputAgeMs(workspace.id) ?? 0
+          const burst = now - idleFor - (this.workingSince.get(workspace.id) ?? now)
+          if (burst >= MIN_WORK_BURST_MS && this.ptyManager.hadInput(workspace.id)) {
+            this.pendingNotify.set(workspace.id, now)
+          }
         }
       }
 

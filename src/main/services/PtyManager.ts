@@ -12,7 +12,19 @@ interface PtyEntry {
   proc: pty.IPty
   buffer: string
   // Last time the Claude TUI's busy indicator appeared in the output stream.
+  // ConPTY only retransmits the text when that screen line redraws, so this
+  // marks the START of a turn, not its whole duration.
   lastBusyMarkerAt: number
+  // Last time ANY output arrived. While a turn runs the TUI repaints its
+  // elapsed counter about once a second, so output flowing = still working.
+  lastOutputAt: number
+  // Whether anything was ever typed/dispatched into this pty. Claude never
+  // starts a turn on its own, so without input there is nothing to notify
+  // about; this kills false "done" pings from startup spinner flashes.
+  hadInput: boolean
+  // Last time anything was typed/dispatched, so keystroke echo is not
+  // mistaken for Claude starting to work.
+  lastInputAt: number
   // Small rolling tail of recent (ANSI-stripped) output. The busy marker can
   // arrive split across two pty chunks; scanning a stitched tail instead of a
   // single chunk keeps us from missing spinner repaints and false-reporting idle.
@@ -72,11 +84,20 @@ export class PtyManager {
       rows,
       useConpty: true
     })
-    const entry: PtyEntry = { proc, buffer: '', lastBusyMarkerAt: 0, markerTail: '' }
+    const entry: PtyEntry = {
+      proc,
+      buffer: '',
+      lastBusyMarkerAt: 0,
+      lastOutputAt: 0,
+      hadInput: false,
+      lastInputAt: 0,
+      markerTail: ''
+    }
     this.ptys.set(workspaceId, entry)
 
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
+      entry.lastOutputAt = Date.now()
       entry.markerTail = (entry.markerTail + data.replace(ANSI, '')).slice(-64)
       if (BUSY_MARKER.test(entry.markerTail)) {
         entry.lastBusyMarkerAt = Date.now()
@@ -90,13 +111,34 @@ export class PtyManager {
   }
 
   write(workspaceId: string, data: string): void {
-    this.ptys.get(workspaceId)?.proc.write(data)
+    const entry = this.ptys.get(workspaceId)
+    if (!entry) return
+    entry.hadInput = true
+    entry.lastInputAt = Date.now()
+    entry.proc.write(data)
+  }
+
+  // True once anything was typed/dispatched into the session since it spawned.
+  hadInput(workspaceId: string): boolean {
+    return this.ptys.get(workspaceId)?.hadInput ?? false
+  }
+
+  // Milliseconds since something was typed/dispatched; null if never or closed.
+  inputAgeMs(workspaceId: string): number | null {
+    const at = this.ptys.get(workspaceId)?.lastInputAt
+    return at ? Date.now() - at : null
   }
 
   // Milliseconds since the TUI last showed its busy indicator; null if the
   // terminal isn't open or Claude has never run in it.
   busyMarkerAgeMs(workspaceId: string): number | null {
     const at = this.ptys.get(workspaceId)?.lastBusyMarkerAt
+    return at ? Date.now() - at : null
+  }
+
+  // Milliseconds since any output arrived; null if the terminal isn't open.
+  outputAgeMs(workspaceId: string): number | null {
+    const at = this.ptys.get(workspaceId)?.lastOutputAt
     return at ? Date.now() - at : null
   }
 
