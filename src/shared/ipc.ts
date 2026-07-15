@@ -26,6 +26,9 @@ export const IPC = {
   OrchestratorSend: 'orchestrator:send',
   OrchestratorInterrupt: 'orchestrator:interrupt',
   OrchestratorHistory: 'orchestrator:history',
+  SessionRemoteControl: 'session:remoteControl',
+  ShareStart: 'share:start',
+  ShareStop: 'share:stop',
 
   UiGetState: 'ui:getState',
   UiSaveState: 'ui:saveState',
@@ -38,5 +41,6 @@ export const IPC = {
   EvPtyData: 'ev:pty:data',
   EvPtyExit: 'ev:pty:exit',
   EvGitStatus: 'ev:git:status',
-  EvWorkspacesChanged: 'ev:workspaces:changed'
+  EvWorkspacesChanged: 'ev:workspaces:changed',
+  EvShareStatus: 'ev:share:status'
 } as const

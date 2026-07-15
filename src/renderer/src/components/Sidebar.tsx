@@ -35,6 +35,14 @@ function useSessionMenu(): {
         onClick: () => window.orcha.git.openGithub(workspace.id).catch(() => {})
       },
       {
+        label: 'Share live view',
+        onClick: () => s.setLinkModal({ kind: 'share', workspaceId: workspace.id })
+      },
+      {
+        label: 'Connect phone',
+        onClick: () => s.setLinkModal({ kind: 'phone', workspaceId: workspace.id })
+      },
+      {
         label: 'Copy path',
         onClick: () => navigator.clipboard.writeText(workspace.worktreePath)
       },

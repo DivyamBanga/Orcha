@@ -18,6 +18,11 @@ interface OrchaStore {
   gitStatus: Record<string, GitStatus>
   unread: Record<string, boolean>
   mcQueue: string[]
+  // Live-share state per session: progress phase while the tunnel spins up,
+  // then the public URL once ready.
+  shareStatus: Record<string, { phase: string; url?: string }>
+  // Which link modal is open (live share or phone Remote Control), if any.
+  linkModal: { kind: 'share' | 'phone'; workspaceId: string } | null
 
   // Mission Control chat state (keyed map so wireIpc stays generic)
   messages: Record<string, ChatItem[]>
@@ -46,6 +51,7 @@ interface OrchaStore {
   mcLoadHistory: () => Promise<void>
   setShowNewProject: (show: boolean) => void
   setShowNewSession: (projectId: string | null) => void
+  setLinkModal: (modal: { kind: 'share' | 'phone'; workspaceId: string } | null) => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -58,6 +64,8 @@ export const useStore = create<OrchaStore>((set) => ({
   gitStatus: {},
   unread: {},
   mcQueue: [],
+  shareStatus: {},
+  linkModal: null,
   messages: {},
   streaming: {},
   sessionStatus: {},
@@ -193,7 +201,8 @@ export const useStore = create<OrchaStore>((set) => ({
   },
 
   setShowNewProject: (show) => set({ showNewProject: show }),
-  setShowNewSession: (projectId) => set({ showNewSession: projectId })
+  setShowNewSession: (projectId) => set({ showNewSession: projectId }),
+  setLinkModal: (modal) => set({ linkModal: modal })
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {

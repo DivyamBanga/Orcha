@@ -176,6 +176,21 @@ export function wireIpc(): () => void {
     useStore.getState().load()
   })
 
+  // Live-share lifecycle: progress phases while starting, url when ready.
+  const unsubShare = window.orcha.on(IPC.EvShareStatus, (payload) => {
+    const { workspaceId, phase, url } = payload as {
+      workspaceId: string
+      phase: string
+      url?: string
+    }
+    useStore.setState((s) => {
+      const shareStatus = { ...s.shareStatus }
+      if (phase === 'stopped') delete shareStatus[workspaceId]
+      else shareStatus[workspaceId] = { phase, url }
+      return { shareStatus }
+    })
+  })
+
   return () => {
     unsubMessage()
     unsubStatus()
@@ -183,5 +198,6 @@ export function wireIpc(): () => void {
     unsubChanged()
     unsubActivity()
     unsubFocus()
+    unsubShare()
   }
 }

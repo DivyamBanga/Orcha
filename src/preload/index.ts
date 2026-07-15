@@ -40,7 +40,14 @@ const api = {
   // Types a prompt into a session's Claude terminal.
   session: {
     send: (workspaceId: string, text: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.SessionSend, workspaceId, text)
+      ipcRenderer.invoke(IPC.SessionSend, workspaceId, text),
+    remoteControl: (workspaceId: string): Promise<{ url: string }> =>
+      ipcRenderer.invoke(IPC.SessionRemoteControl, workspaceId)
+  },
+  share: {
+    start: (workspaceId: string): Promise<{ url: string }> =>
+      ipcRenderer.invoke(IPC.ShareStart, workspaceId),
+    stop: (workspaceId: string): Promise<void> => ipcRenderer.invoke(IPC.ShareStop, workspaceId)
   },
   orchestrator: {
     send: (text: string): Promise<void> => ipcRenderer.invoke(IPC.OrchestratorSend, text),

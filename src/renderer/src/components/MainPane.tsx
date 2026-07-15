@@ -26,6 +26,8 @@ function MainPane(): React.JSX.Element {
   const openSessions = useStore((s) => s.openSessions)
   const archiveSession = useStore((s) => s.archiveSession)
   const gitStatus = useStore((s) => (workspace ? s.gitStatus[workspace.id] : undefined))
+  const setLinkModal = useStore((s) => s.setLinkModal)
+  const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
   const [gitBusy, setGitBusy] = useState(false)
 
   // Refresh the git chip when switching sessions and every 30s while focused.
@@ -179,6 +181,23 @@ function MainPane(): React.JSX.Element {
           title="Open this repo on GitHub"
         >
           GitHub
+        </button>
+        <button
+          onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${
+            sharing ? 'text-accent' : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+          title="Share a live read-only view of this terminal — any browser, no install"
+        >
+          {sharing && <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />}
+          {sharing ? 'Sharing' : 'Share'}
+        </button>
+        <button
+          onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
+          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+          title="Continue this session from your phone (Claude Code Remote Control)"
+        >
+          Phone
         </button>
         <button
           onClick={handleRestart}

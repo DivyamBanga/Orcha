@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar'
 import MainPane from './components/MainPane'
 import NewProjectModal from './components/NewProjectModal'
 import NewSessionModal from './components/NewSessionModal'
+import LinkModal from './components/LinkModal'
 import SetupGate from './components/SetupGate'
 import { wireIpc } from './wireIpc'
 import { useStore } from './store'
@@ -46,6 +47,7 @@ function App(): React.JSX.Element {
           <MainPane />
           <NewProjectModal />
           <NewSessionModal />
+          <LinkModal />
         </>
       ) : setup === null ? (
         <div className="flex flex-1 items-center justify-center font-mono text-zinc-700">

@@ -9,6 +9,7 @@ import { PtyManager } from './services/PtyManager'
 import { GitService } from './services/GitService'
 import { ProjectService } from './services/ProjectService'
 import { OrchestratorService } from './services/OrchestratorService'
+import { ShareService } from './services/ShareService'
 import { ActivityMonitor } from './services/ActivityMonitor'
 import { IPC } from '../shared/ipc'
 
@@ -60,7 +61,9 @@ function createWindow(): void {
     gitService,
     projectService
   )
+  const shareService = new ShareService(send, ptyManager)
   workspaceManager.onBeforeArchive = async (workspaceId) => {
+    shareService.stop(workspaceId)
     ptyManager.kill(workspaceId)
     // Give Windows a beat to release file handles before worktree removal.
     await new Promise((r) => setTimeout(r, 300))
@@ -80,6 +83,7 @@ function createWindow(): void {
   activityMonitor.start()
   app.on('before-quit', () => {
     activityMonitor.stop()
+    shareService.stopAll()
     ptyManager.killAll()
   })
   registerIpc(mainWindow, {
@@ -87,7 +91,8 @@ function createWindow(): void {
     ptyManager,
     gitService,
     projectService,
-    orchestratorService
+    orchestratorService,
+    shareService
   })
 }
 
