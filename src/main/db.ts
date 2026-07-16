@@ -14,7 +14,11 @@ export function initDb(): void {
       id          TEXT PRIMARY KEY,
       name        TEXT NOT NULL,
       repo_path   TEXT NOT NULL UNIQUE,
-      created_at  INTEGER NOT NULL
+      created_at  INTEGER NOT NULL,
+      remote_path TEXT,
+      ssh_host    TEXT,
+      ssh_user    TEXT,
+      ssh_port    INTEGER
     );
     CREATE TABLE IF NOT EXISTS workspaces (
       id               TEXT PRIMARY KEY,
@@ -36,6 +40,13 @@ export function initDb(): void {
   for (const col of ['model TEXT', 'effort TEXT', "kind TEXT NOT NULL DEFAULT 'worktree'"]) {
     try {
       db.exec(`ALTER TABLE workspaces ADD COLUMN ${col}`)
+    } catch {
+      // column already exists
+    }
+  }
+  for (const col of ['remote_path TEXT', 'ssh_host TEXT', 'ssh_user TEXT', 'ssh_port INTEGER']) {
+    try {
+      db.exec(`ALTER TABLE projects ADD COLUMN ${col}`)
     } catch {
       // column already exists
     }
@@ -68,6 +79,10 @@ interface ProjectRow {
   name: string
   repo_path: string
   created_at: number
+  remote_path: string | null
+  ssh_host: string | null
+  ssh_user: string | null
+  ssh_port: number | null
 }
 
 interface WorkspaceRow {
@@ -86,7 +101,16 @@ interface WorkspaceRow {
 }
 
 function toProject(r: ProjectRow): Project {
-  return { id: r.id, name: r.name, repoPath: r.repo_path, createdAt: r.created_at }
+  return {
+    id: r.id,
+    name: r.name,
+    repoPath: r.repo_path,
+    createdAt: r.created_at,
+    remotePath: r.remote_path,
+    sshHost: r.ssh_host,
+    sshUser: r.ssh_user,
+    sshPort: r.ssh_port
+  }
 }
 
 function toWorkspace(r: WorkspaceRow): Workspace {
@@ -108,17 +132,22 @@ function toWorkspace(r: WorkspaceRow): Workspace {
 
 export const projects = {
   insert(p: Project): void {
-    db.prepare('INSERT INTO projects (id, name, repo_path, created_at) VALUES (?, ?, ?, ?)').run(
-      p.id,
-      p.name,
-      p.repoPath,
-      p.createdAt
-    )
+    db.prepare(
+      `INSERT INTO projects
+       (id, name, repo_path, created_at, remote_path, ssh_host, ssh_user, ssh_port)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(p.id, p.name, p.repoPath, p.createdAt, p.remotePath, p.sshHost, p.sshUser, p.sshPort)
   },
   list(): Project[] {
     return (db.prepare('SELECT * FROM projects ORDER BY created_at').all() as ProjectRow[]).map(
       toProject
     )
+  },
+  get(id: string): Project | undefined {
+    const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
+      | ProjectRow
+      | undefined
+    return row && toProject(row)
   },
   byRepoPath(repoPath: string): Project | undefined {
     const row = db.prepare('SELECT * FROM projects WHERE repo_path = ?').get(repoPath) as

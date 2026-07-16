@@ -6,6 +6,7 @@ export const IPC = {
   ProjectsCreateRepo: 'projects:createRepo',
   ProjectsListGithub: 'projects:listGithub',
   ProjectsCloneGithub: 'projects:cloneGithub',
+  ProjectsAddRemote: 'projects:addRemote',
   SetupStatus: 'setup:status',
   WorkspacesCreate: 'workspaces:create',
   WorkspacesList: 'workspaces:list',

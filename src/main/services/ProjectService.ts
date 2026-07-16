@@ -1,12 +1,13 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { existsSync, mkdirSync } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, posix } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import * as db from '../db'
 import type { Project } from '../../shared/types'
 import type { WorkspaceManager } from './WorkspaceManager'
+import { verifyRemotePath } from '../ssh'
 
 const execFileAsync = promisify(execFile)
 
@@ -15,21 +16,62 @@ export const PROJECTS_ROOT = join(homedir(), 'Desktop', 'Projects')
 export class ProjectService {
   constructor(private workspaceManager: WorkspaceManager) {}
 
+  // Ensures a project has a main session tab (idempotent).
+  private ensureMainWorkspace(projectId: string): void {
+    const hasMain = db.workspaces
+      .listActive()
+      .some((w) => w.projectId === projectId && w.kind === 'main')
+    if (!hasMain) this.workspaceManager.createMain(projectId)
+  }
+
   // Idempotent: registers the repo as a project and ensures a main session tab.
   register(repoPath: string): Project {
     const existing = db.projects.byRepoPath(repoPath)
     if (existing) {
-      const hasMain = db.workspaces
-        .listActive()
-        .some((w) => w.projectId === existing.id && w.kind === 'main')
-      if (!hasMain) this.workspaceManager.createMain(existing.id)
+      this.ensureMainWorkspace(existing.id)
       return existing
     }
     const project: Project = {
       id: randomUUID(),
       name: basename(repoPath),
       repoPath,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      remotePath: null,
+      sshHost: null,
+      sshUser: null,
+      sshPort: null
+    }
+    db.projects.insert(project)
+    this.workspaceManager.createMain(project.id)
+    return project
+  }
+
+  // Registers a server folder reachable over SSH as a project (the "remote
+  // Claude workspace" flow — same tab UI as local, but the pty runs `ssh`
+  // instead of a local shell; see PtyManager.doCreate).
+  async addRemote(
+    host: string,
+    user: string,
+    port: number | null,
+    remotePath: string
+  ): Promise<Project> {
+    await verifyRemotePath({ host, user, port }, remotePath)
+
+    const key = `ssh://${user}@${host}:${port ?? 22}${remotePath}`
+    const existing = db.projects.byRepoPath(key)
+    if (existing) {
+      this.ensureMainWorkspace(existing.id)
+      return existing
+    }
+    const project: Project = {
+      id: randomUUID(),
+      name: posix.basename(remotePath) || host,
+      repoPath: key,
+      createdAt: Date.now(),
+      remotePath,
+      sshHost: host,
+      sshUser: user,
+      sshPort: port
     }
     db.projects.insert(project)
     this.workspaceManager.createMain(project.id)

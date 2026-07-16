@@ -21,19 +21,25 @@ function useSessionMenu(): {
     e.preventDefault()
     e.stopPropagation()
     const s = useStore.getState()
+    const project = s.projects.find((p) => p.id === workspace.projectId)
+    const isRemote = Boolean(project?.sshHost)
     const items: MenuItem[] = [
       {
         label: 'Restart session',
         onClick: () => window.orcha.pty.restart(workspace.id, 120, 30)
       },
-      {
-        label: 'Open folder',
-        onClick: () => window.orcha.shell.openPath(workspace.worktreePath)
-      },
-      {
-        label: 'Open on GitHub',
-        onClick: () => window.orcha.git.openGithub(workspace.id).catch(() => {})
-      },
+      ...(isRemote
+        ? []
+        : [
+            {
+              label: 'Open folder',
+              onClick: () => window.orcha.shell.openPath(workspace.worktreePath)
+            },
+            {
+              label: 'Open on GitHub',
+              onClick: () => window.orcha.git.openGithub(workspace.id).catch(() => {})
+            }
+          ]),
       {
         label: 'Share live view',
         onClick: () => s.setLinkModal({ kind: 'share', workspaceId: workspace.id })
@@ -69,17 +75,21 @@ function useSessionMenu(): {
     e.stopPropagation()
     const s = useStore.getState()
     const items: MenuItem[] = [
-      {
-        label: 'New parallel session',
-        onClick: () => s.setShowNewSession(project.id)
-      },
-      {
-        label: 'Open folder',
-        onClick: () => window.orcha.shell.openPath(project.repoPath)
-      },
+      ...(project.sshHost
+        ? []
+        : [
+            {
+              label: 'New parallel session',
+              onClick: () => s.setShowNewSession(project.id)
+            },
+            {
+              label: 'Open folder',
+              onClick: () => window.orcha.shell.openPath(project.repoPath)
+            }
+          ]),
       {
         label: 'Copy path',
-        onClick: () => navigator.clipboard.writeText(project.repoPath)
+        onClick: () => navigator.clipboard.writeText(project.remotePath ?? project.repoPath)
       },
       {
         label: 'Remove from Orcha',
@@ -248,10 +258,18 @@ function Sidebar(): React.JSX.Element {
                 >
                   <button
                     onClick={() => mainSession && setActive(mainSession.id)}
-                    className="min-w-0 flex-1 truncate text-left text-[12px] font-semibold tracking-tight text-zinc-200 hover:text-white"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left text-[12px] font-semibold tracking-tight text-zinc-200 hover:text-white"
                     title="Open the main session"
                   >
-                    {project.name}
+                    <span className="truncate">{project.name}</span>
+                    {project.sshHost && (
+                      <span
+                        className="shrink-0 rounded bg-surface-2 px-1 font-mono text-[9px] font-normal text-zinc-500"
+                        title={`Remote: ${project.sshUser}@${project.sshHost}`}
+                      >
+                        ssh
+                      </span>
+                    )}
                   </button>
                   <DotsButton onClick={(e) => openProjectMenu(e, project)} />
                 </div>

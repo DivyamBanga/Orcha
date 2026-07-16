@@ -54,7 +54,7 @@ export class ShareService {
 
     const workspace = db.workspaces.get(workspaceId)
     if (!workspace) throw new Error(`Unknown session: ${workspaceId}`)
-    if (!this.ptyManager.has(workspaceId)) this.ptyManager.create(workspaceId, 120, 30)
+    if (!this.ptyManager.has(workspaceId)) await this.ptyManager.create(workspaceId, 120, 30)
     // A session restored hidden (never shown) boots at a near-zero fit size;
     // give viewers a real screen. The host refits on next show and wins.
     const size = this.ptyManager.size(workspaceId)

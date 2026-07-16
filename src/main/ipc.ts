@@ -75,6 +75,11 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.ProjectsCloneGithub, (_e, nameWithOwner: string) =>
     projectService.cloneGithub(nameWithOwner)
   )
+  ipcMain.handle(
+    IPC.ProjectsAddRemote,
+    (_e, host: string, user: string, port: number | null, remotePath: string) =>
+      projectService.addRemote(host, user, port, remotePath)
+  )
 
   // --- sessions (workspaces) ---------------------------------------------------
 

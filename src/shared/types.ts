@@ -1,8 +1,12 @@
 export interface Project {
   id: string
   name: string
-  repoPath: string
+  repoPath: string // unique key; for remote projects a display/dedup ssh:// string, not a real path
   createdAt: number
+  remotePath: string | null // actual POSIX path to cd into on the server; null = local project
+  sshHost: string | null
+  sshUser: string | null
+  sshPort: number | null // null = default 22
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'

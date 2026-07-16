@@ -23,6 +23,9 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
 function MainPane(): React.JSX.Element {
   const activeId = useStore((s) => s.activeId)
   const workspace = useActiveWorkspace()
+  const project = useStore((s) =>
+    workspace ? s.projects.find((p) => p.id === workspace.projectId) : undefined
+  )
   const openSessions = useStore((s) => s.openSessions)
   const archiveSession = useStore((s) => s.archiveSession)
   const gitStatus = useStore((s) => (workspace ? s.gitStatus[workspace.id] : undefined))
@@ -33,14 +36,14 @@ function MainPane(): React.JSX.Element {
   // Refresh the git chip when switching sessions and every 30s while focused.
   const workspaceId = workspace?.id
   useEffect(() => {
-    if (!workspaceId) return
+    if (!workspaceId || project?.sshHost) return
     const refresh = (): void => {
       window.orcha.git.status(workspaceId).catch(() => {})
     }
     refresh()
     const interval = setInterval(refresh, 30_000)
     return () => clearInterval(interval)
-  }, [workspaceId])
+  }, [workspaceId, project?.sshHost])
 
   // Terminals for every open session stay mounted below regardless of which
   // view is showing, so restored sessions boot and keep running unattended.
@@ -139,49 +142,57 @@ function MainPane(): React.JSX.Element {
     <main className="flex min-w-0 flex-1 flex-col">
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
         <span className="font-medium text-zinc-100">{workspace.name}</span>
-        <GitChip workspaceId={workspace.id} />
-        {(gitStatus?.behind ?? 0) > 0 && (
-          <button
-            onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
-            disabled={gitBusy}
-            className="rounded-md border border-amber-700/60 px-2 py-0.5 text-[11px] text-amber-500 hover:bg-amber-950/40 disabled:opacity-40"
-            title="Remote has new commits — git pull --ff-only"
-          >
-            Pull ↓{gitStatus?.behind}
-          </button>
+        {!project?.sshHost && (
+          <>
+            <GitChip workspaceId={workspace.id} />
+            {(gitStatus?.behind ?? 0) > 0 && (
+              <button
+                onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
+                disabled={gitBusy}
+                className="rounded-md border border-amber-700/60 px-2 py-0.5 text-[11px] text-amber-500 hover:bg-amber-950/40 disabled:opacity-40"
+                title="Remote has new commits — git pull --ff-only"
+              >
+                Pull ↓{gitStatus?.behind}
+              </button>
+            )}
+          </>
         )}
         <div className="flex-1" />
-        <button
-          onClick={handleCommitPush}
-          disabled={gitBusy}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
-        >
-          Commit + Push
-        </button>
-        <button
-          onClick={handleAskClaude}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-          title="Types a commit-and-push instruction into this session"
-        >
-          Ask Claude
-        </button>
-        {workspace.kind === 'worktree' && (
-          <button
-            onClick={handlePr}
-            disabled={gitBusy}
-            className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
-            title="Push this branch and open a pull request"
-          >
-            PR
-          </button>
+        {!project?.sshHost && (
+          <>
+            <button
+              onClick={handleCommitPush}
+              disabled={gitBusy}
+              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+            >
+              Commit + Push
+            </button>
+            <button
+              onClick={handleAskClaude}
+              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+              title="Types a commit-and-push instruction into this session"
+            >
+              Ask Claude
+            </button>
+            {workspace.kind === 'worktree' && (
+              <button
+                onClick={handlePr}
+                disabled={gitBusy}
+                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+                title="Push this branch and open a pull request"
+              >
+                PR
+              </button>
+            )}
+            <button
+              onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
+              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+              title="Open this repo on GitHub"
+            >
+              GitHub
+            </button>
+          </>
         )}
-        <button
-          onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-          title="Open this repo on GitHub"
-        >
-          GitHub
-        </button>
         <button
           onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
           className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${

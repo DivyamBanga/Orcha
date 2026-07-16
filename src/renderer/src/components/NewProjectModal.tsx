@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 
-type Mode = 'new' | 'github' | 'local'
+type Mode = 'new' | 'github' | 'local' | 'remote'
 
 function NewProjectModal(): React.JSX.Element | null {
   const show = useStore((s) => s.showNewProject)
@@ -15,6 +15,10 @@ function NewProjectModal(): React.JSX.Element | null {
   const [repos, setRepos] = useState<{ nameWithOwner: string; name: string }[] | null>(null)
   const [filter, setFilter] = useState('')
   const [working, setWorking] = useState<string | null>(null)
+  const [host, setHost] = useState('')
+  const [user, setUser] = useState('')
+  const [port, setPort] = useState('')
+  const [remotePath, setRemotePath] = useState('')
 
   // Load the GitHub repo list once when that tab is opened.
   useEffect(() => {
@@ -76,6 +80,27 @@ function NewProjectModal(): React.JSX.Element | null {
     }
   }
 
+  const handleRemote = async (): Promise<void> => {
+    const trimmedHost = host.trim()
+    const trimmedUser = user.trim()
+    const trimmedPath = remotePath.trim()
+    if (!trimmedHost || !trimmedUser || !trimmedPath) return
+    const parsedPort = port.trim() ? Number(port.trim()) : null
+    setWorking(`Connecting to ${trimmedHost}…`)
+    try {
+      const project = await window.orcha.projects.addRemote(
+        trimmedHost,
+        trimmedUser,
+        parsedPort,
+        trimmedPath
+      )
+      await finish(project.repoPath)
+    } catch (err) {
+      setWorking(null)
+      alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const filtered = (repos ?? []).filter((r) =>
     r.nameWithOwner.toLowerCase().includes(filter.toLowerCase())
   )
@@ -96,7 +121,8 @@ function NewProjectModal(): React.JSX.Element | null {
             [
               ['new', 'Create repo'],
               ['github', 'From GitHub'],
-              ['local', 'Local folder']
+              ['local', 'Local folder'],
+              ['remote', 'Remote server']
             ] as [Mode, string][]
           ).map(([m, label]) => (
             <button
@@ -184,7 +210,7 @@ function NewProjectModal(): React.JSX.Element | null {
               )}
             </div>
           </>
-        ) : (
+        ) : mode === 'local' ? (
           <div className="py-2">
             <div className="mb-4 leading-relaxed text-zinc-500">
               Open a git repository that already exists on this computer.
@@ -196,6 +222,65 @@ function NewProjectModal(): React.JSX.Element | null {
               Choose folder…
             </button>
           </div>
+        ) : (
+          <>
+            <label className="mb-1 block text-zinc-500">Host</label>
+            <input
+              autoFocus
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="myserver.example.com"
+              className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+            />
+            <div className="mb-3 flex gap-2">
+              <div className="flex-1">
+                <label className="mb-1 block text-zinc-500">Username</label>
+                <input
+                  value={user}
+                  onChange={(e) => setUser(e.target.value)}
+                  placeholder="ubuntu"
+                  className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+              <div className="w-20">
+                <label className="mb-1 block text-zinc-500">Port</label>
+                <input
+                  value={port}
+                  onChange={(e) => setPort(e.target.value)}
+                  placeholder="22"
+                  className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+                />
+              </div>
+            </div>
+            <label className="mb-1 block text-zinc-500">Remote path</label>
+            <input
+              value={remotePath}
+              onChange={(e) => setRemotePath(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleRemote()}
+              placeholder="/home/ubuntu/my-app"
+              className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+            />
+            <div className="mb-4 font-mono text-[11px] leading-relaxed text-zinc-600">
+              Connects over SSH and runs Claude in that folder on the server (it must already exist,
+              e.g. an existing git checkout). Uses your normal SSH keys/config — same as running{' '}
+              <code>ssh</code> yourself.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShow(false)}
+                className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRemote}
+                disabled={!host.trim() || !user.trim() || !remotePath.trim()}
+                className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+              >
+                Connect
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

@@ -2,7 +2,8 @@ import * as pty from 'node-pty'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { hasSessionHistory } from '../claudeSessions'
-import type { Workspace } from '../../shared/types'
+import { sshArgs, shQuote, remoteHasSessionHistory, type SshTarget } from '../ssh'
+import type { Workspace, Project } from '../../shared/types'
 
 type SendFn = (channel: string, payload: unknown) => void
 
@@ -56,8 +57,24 @@ function claudeLaunchCommand(workspace: Workspace): string {
   return parts.join(' ')
 }
 
+// Remote counterpart of claudeLaunchCommand: cd into the folder on the
+// server, then land in an interactive login shell when Claude exits/crashes
+// (the ssh analog of the local spawn's -NoExit) instead of dropping the
+// connection.
+function remoteClaudeCommand(workspace: Workspace, hasHistory: boolean): string {
+  const parts = ['claude', '--dangerously-skip-permissions']
+  if (hasHistory) parts.push('--continue')
+  if (workspace.model) parts.push('--model', workspace.model)
+  if (workspace.effort) parts.push('--effort', workspace.effort)
+  return `cd ${shQuote(workspace.worktreePath)} && ${parts.join(' ')}; exec $SHELL -l`
+}
+
 export class PtyManager {
   private ptys = new Map<string, PtyEntry>()
+  // workspaceId -> in-flight create() spawn, so concurrent callers dedupe
+  // onto one spawn instead of racing (create() now awaits a remote preflight
+  // check before spawning, so it's no longer atomic per call).
+  private creating = new Map<string, Promise<void>>()
 
   // Taps for the live-share server: mirror output/resize/exit to viewers.
   onData: ((workspaceId: string, data: string) => void) | null = null
@@ -72,35 +89,72 @@ export class PtyManager {
 
   // Spawns the session shell (auto-running the Claude TUI) on first call; on
   // later calls replays recent output so a re-attached xterm isn't blank.
-  create(workspaceId: string, cols: number, rows: number): void {
+  // Remote spawns await a preflight ssh check before spawning, so concurrent
+  // calls (e.g. a tab mounting its terminal while Share also asks for one)
+  // are deduped onto a single in-flight spawn instead of double-spawning.
+  create(workspaceId: string, cols: number, rows: number): Promise<void> {
     const existing = this.ptys.get(workspaceId)
     if (existing) {
       if (existing.buffer) {
         this.send(IPC.EvPtyData, { workspaceId, data: existing.buffer })
       }
-      return
+      return Promise.resolve()
     }
+    const inFlight = this.creating.get(workspaceId)
+    if (inFlight) return inFlight
 
+    const promise = this.doCreate(workspaceId, cols, rows).finally(() =>
+      this.creating.delete(workspaceId)
+    )
+    this.creating.set(workspaceId, promise)
+    return promise
+  }
+
+  private async doCreate(workspaceId: string, cols: number, rows: number): Promise<void> {
     // 'setup' is the onboarding terminal: plain shell in the home folder for
     // running `gh auth login` / `claude` login flows.
     const workspace = workspaceId === 'setup' ? null : db.workspaces.get(workspaceId)
     if (workspaceId !== 'setup' && !workspace) {
       throw new Error(`Unknown workspace: ${workspaceId}`)
     }
+    const project: Project | undefined = workspace
+      ? db.projects.get(workspace.projectId)
+      : undefined
 
-    // -NoExit: when Claude exits (/exit, crash), you land in a shell in the
-    // same folder instead of a dead tab.
-    const args = workspace
-      ? ['-NoLogo', '-NoExit', '-Command', claudeLaunchCommand(workspace)]
-      : ['-NoLogo']
-    const proc = pty.spawn('powershell.exe', args, {
-      name: 'xterm-color',
-      cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
-      env: process.env as Record<string, string>,
-      cols,
-      rows,
-      useConpty: true
-    })
+    let proc: pty.IPty
+    if (workspace && project?.sshHost) {
+      const target: SshTarget = {
+        host: project.sshHost,
+        user: project.sshUser!,
+        port: project.sshPort
+      }
+      const hasHistory = await remoteHasSessionHistory(target, workspace.worktreePath)
+      const remoteCommand = remoteClaudeCommand(workspace, hasHistory)
+      // -tt forces pty allocation: ssh only auto-allocates one when no
+      // command is given, and without it the remote Claude TUI gets no tty.
+      proc = pty.spawn('ssh.exe', [...sshArgs(target, { batch: false }), '-tt', remoteCommand], {
+        name: 'xterm-color',
+        cwd: process.env.USERPROFILE,
+        env: process.env as Record<string, string>,
+        cols,
+        rows,
+        useConpty: true
+      })
+    } else {
+      // -NoExit: when Claude exits (/exit, crash), you land in a shell in the
+      // same folder instead of a dead tab.
+      const args = workspace
+        ? ['-NoLogo', '-NoExit', '-Command', claudeLaunchCommand(workspace)]
+        : ['-NoLogo']
+      proc = pty.spawn('powershell.exe', args, {
+        name: 'xterm-color',
+        cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
+        env: process.env as Record<string, string>,
+        cols,
+        rows,
+        useConpty: true
+      })
+    }
     const entry: PtyEntry = {
       proc,
       buffer: '',
@@ -180,7 +234,7 @@ export class PtyManager {
   // its terminal was never opened (TUI needs a few seconds before input).
   async dispatchPrompt(workspaceId: string, prompt: string): Promise<void> {
     if (!this.ptys.has(workspaceId)) {
-      this.create(workspaceId, 120, 30)
+      await this.create(workspaceId, 120, 30)
       // A booting TUI (--continue repaints history) silently eats input typed
       // while it's still painting. An idle TUI emits nothing over ConPTY, so
       // quiet output means the prompt is ready — but only after real output:
@@ -270,9 +324,9 @@ export class PtyManager {
   }
 
   // Kill and respawn (picks up model/effort changes; resumes conversation).
-  restart(workspaceId: string, cols: number, rows: number): void {
+  async restart(workspaceId: string, cols: number, rows: number): Promise<void> {
     this.kill(workspaceId)
-    this.create(workspaceId, cols, rows)
+    await this.create(workspaceId, cols, rows)
   }
 
   killAll(): void {

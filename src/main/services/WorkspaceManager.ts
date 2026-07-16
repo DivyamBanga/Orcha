@@ -48,6 +48,9 @@ export class WorkspaceManager {
   ): Promise<Workspace> {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
+    if (project.sshHost) {
+      throw new Error('Parallel sessions are not supported for remote projects yet')
+    }
 
     return this.enqueue(projectId, async () => {
       const base = slugify(name)
@@ -97,7 +100,7 @@ export class WorkspaceManager {
       projectId,
       name: project.name,
       branch: '',
-      worktreePath: project.repoPath,
+      worktreePath: project.remotePath ?? project.repoPath,
       sessionId: null,
       status: 'active',
       createdAt: Date.now(),

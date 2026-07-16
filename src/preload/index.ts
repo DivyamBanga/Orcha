@@ -21,6 +21,12 @@ const api = {
       ipcRenderer.invoke(IPC.ProjectsListGithub),
     cloneGithub: (nameWithOwner: string): Promise<Project> =>
       ipcRenderer.invoke(IPC.ProjectsCloneGithub, nameWithOwner),
+    addRemote: (
+      host: string,
+      user: string,
+      port: number | null,
+      remotePath: string
+    ): Promise<Project> => ipcRenderer.invoke(IPC.ProjectsAddRemote, host, user, port, remotePath),
     remove: (projectId: string): Promise<void> => ipcRenderer.invoke(IPC.ProjectsRemove, projectId)
   },
   shell: {
