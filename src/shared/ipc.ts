@@ -33,6 +33,11 @@ export const IPC = {
 
   UiGetState: 'ui:getState',
   UiSaveState: 'ui:saveState',
+  CodexStatus: 'codex:status',
+  CodexSetup: 'codex:setup',
+  SessionUsage: 'session:usage',
+  WorkspaceAuthGet: 'workspace:authGet',
+  WorkspaceAuthSet: 'workspace:authSet',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',

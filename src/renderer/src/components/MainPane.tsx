@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore, useActiveWorkspace } from '../store'
 import ChatView from './ChatView'
 import TerminalView from './TerminalView'
+import SessionPopover from './SessionPopover'
 
 function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
   const status = useStore((s) => s.gitStatus[workspaceId])
@@ -31,19 +32,37 @@ function MainPane(): React.JSX.Element {
   const gitStatus = useStore((s) => (workspace ? s.gitStatus[workspace.id] : undefined))
   const setLinkModal = useStore((s) => s.setLinkModal)
   const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
+  const setUsage = useStore((s) => s.setUsage)
   const [gitBusy, setGitBusy] = useState(false)
-
-  // Refresh the git chip when switching sessions and every 30s while focused.
+  const [showSession, setShowSession] = useState(false)
   const workspaceId = workspace?.id
+
+  // Close the popover when switching tabs so it doesn't linger open showing
+  // stale data for the newly active session — adjusted during render (React's
+  // recommended pattern for resetting state on prop change) rather than in an
+  // effect, since setState-in-effect would cause an extra render every time.
+  const [lastWorkspaceId, setLastWorkspaceId] = useState(workspaceId)
+  if (workspaceId !== lastWorkspaceId) {
+    setLastWorkspaceId(workspaceId)
+    setShowSession(false)
+  }
+
+  // Refresh the git chip and token usage when switching sessions and every
+  // 30s while focused. Skipped for remote (SSH) workspaces — no local repo
+  // or transcript to read either way.
   useEffect(() => {
     if (!workspaceId || project?.sshHost) return
     const refresh = (): void => {
       window.orcha.git.status(workspaceId).catch(() => {})
+      window.orcha.session
+        .usage(workspaceId)
+        .then((u) => setUsage(workspaceId, u))
+        .catch(() => {})
     }
     refresh()
     const interval = setInterval(refresh, 30_000)
     return () => clearInterval(interval)
-  }, [workspaceId, project?.sshHost])
+  }, [workspaceId, project?.sshHost, setUsage])
 
   // Terminals for every open session stay mounted below regardless of which
   // view is showing, so restored sessions boot and keep running unattended.
@@ -140,7 +159,7 @@ function MainPane(): React.JSX.Element {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
+      <header className="relative flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
         <span className="font-medium text-zinc-100">{workspace.name}</span>
         {!project?.sshHost && (
           <>
@@ -191,6 +210,7 @@ function MainPane(): React.JSX.Element {
             >
               GitHub
             </button>
+            <span className="mx-1 h-4 w-px bg-edge" />
           </>
         )}
         <button
@@ -210,6 +230,18 @@ function MainPane(): React.JSX.Element {
         >
           Phone
         </button>
+        <span className="mx-1 h-4 w-px bg-edge" />
+        {!project?.sshHost && (
+          <button
+            onClick={() => setShowSession((v) => !v)}
+            className={`rounded-md px-2 py-1 hover:bg-surface-2 ${
+              showSession ? 'text-zinc-200' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+            title="Session usage and auth mode"
+          >
+            Session ▾
+          </button>
+        )}
         <button
           onClick={handleRestart}
           className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
@@ -223,6 +255,9 @@ function MainPane(): React.JSX.Element {
         >
           Close
         </button>
+        {showSession && (
+          <SessionPopover workspace={workspace} onClose={() => setShowSession(false)} />
+        )}
       </header>
 
       <div className="relative min-h-0 flex-1">{terminalHost}</div>

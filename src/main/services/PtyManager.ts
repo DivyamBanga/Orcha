@@ -110,6 +110,21 @@ export class PtyManager {
     return promise
   }
 
+  // Copies process.env, applying the workspace's stored auth-mode override.
+  // 'apiKey' sets ANTHROPIC_API_KEY; 'subscription' (including default/unset)
+  // strips it, since Claude Code's own precedence lets a global env var
+  // silently beat an OAuth login otherwise.
+  private authEnv(workspaceId: string): Record<string, string> {
+    const auth = db.workspaceAuth.get(workspaceId)
+    const env = { ...process.env } as Record<string, string>
+    if (auth.mode === 'apiKey' && auth.apiKey) {
+      env.ANTHROPIC_API_KEY = auth.apiKey
+    } else {
+      delete env.ANTHROPIC_API_KEY
+    }
+    return env
+  }
+
   private async doCreate(workspaceId: string, cols: number, rows: number): Promise<void> {
     // 'setup' is the onboarding terminal: plain shell in the home folder for
     // running `gh auth login` / `claude` login flows.
@@ -149,7 +164,7 @@ export class PtyManager {
       proc = pty.spawn('powershell.exe', args, {
         name: 'xterm-color',
         cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
-        env: process.env as Record<string, string>,
+        env: workspace ? this.authEnv(workspaceId) : (process.env as Record<string, string>),
         cols,
         rows,
         useConpty: true

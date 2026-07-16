@@ -11,6 +11,7 @@ import { ProjectService } from './services/ProjectService'
 import { OrchestratorService } from './services/OrchestratorService'
 import { ShareService } from './services/ShareService'
 import { ActivityMonitor } from './services/ActivityMonitor'
+import { CodexService } from './services/CodexService'
 import { IPC } from '../shared/ipc'
 
 function createWindow(): void {
@@ -62,6 +63,7 @@ function createWindow(): void {
     projectService
   )
   const shareService = new ShareService(send, ptyManager)
+  const codexService = new CodexService()
   workspaceManager.onBeforeArchive = async (workspaceId) => {
     shareService.stop(workspaceId)
     ptyManager.kill(workspaceId)
@@ -92,7 +94,8 @@ function createWindow(): void {
     gitService,
     projectService,
     orchestratorService,
-    shareService
+    shareService,
+    codexService
   })
 }
 

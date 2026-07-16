@@ -48,3 +48,25 @@ export interface GitStatus {
   ahead: number
   behind: number
 }
+
+// Per-workspace override of how the spawned `claude` process authenticates.
+// 'subscription' (default) uses whatever OAuth login is active machine-wide;
+// 'apiKey' spawns with ANTHROPIC_API_KEY set to `apiKey`, overriding it.
+export interface WorkspaceAuth {
+  mode: 'subscription' | 'apiKey'
+  apiKey?: string
+}
+
+export interface SessionUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  estimatedCostUsd: number | null // null if model is unrecognized/default
+}
+
+export interface CodexStatus {
+  cliInstalled: boolean
+  authenticated: boolean
+  pluginInstalled: boolean
+}

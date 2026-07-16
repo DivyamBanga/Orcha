@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc'
-import type { GitStatus, Project, Workspace } from '../shared/types'
+import type {
+  GitStatus,
+  Project,
+  Workspace,
+  WorkspaceAuth,
+  CodexStatus,
+  SessionUsage
+} from '../shared/types'
 
 const api = {
   setup: {
@@ -41,14 +48,20 @@ const api = {
     ): Promise<Workspace> => ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name, model, effort),
     list: (): Promise<Workspace[]> => ipcRenderer.invoke(IPC.WorkspacesList),
     archive: (workspaceId: string): Promise<void> =>
-      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId)
+      ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId),
+    authGet: (workspaceId: string): Promise<WorkspaceAuth> =>
+      ipcRenderer.invoke(IPC.WorkspaceAuthGet, workspaceId),
+    authSet: (workspaceId: string, auth: WorkspaceAuth): Promise<void> =>
+      ipcRenderer.invoke(IPC.WorkspaceAuthSet, workspaceId, auth)
   },
   // Types a prompt into a session's Claude terminal.
   session: {
     send: (workspaceId: string, text: string): Promise<void> =>
       ipcRenderer.invoke(IPC.SessionSend, workspaceId, text),
     remoteControl: (workspaceId: string): Promise<{ url: string }> =>
-      ipcRenderer.invoke(IPC.SessionRemoteControl, workspaceId)
+      ipcRenderer.invoke(IPC.SessionRemoteControl, workspaceId),
+    usage: (workspaceId: string): Promise<SessionUsage | null> =>
+      ipcRenderer.invoke(IPC.SessionUsage, workspaceId)
   },
   share: {
     start: (workspaceId: string): Promise<{ url: string }> =>
@@ -70,6 +83,10 @@ const api = {
     pull: (workspaceId: string): Promise<void> => ipcRenderer.invoke(IPC.GitPull, workspaceId),
     openGithub: (workspaceId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GitOpenGithub, workspaceId)
+  },
+  codex: {
+    status: (): Promise<CodexStatus> => ipcRenderer.invoke(IPC.CodexStatus),
+    setup: (): Promise<void> => ipcRenderer.invoke(IPC.CodexSetup)
   },
   pty: {
     create: (workspaceId: string, cols: number, rows: number): Promise<void> =>

@@ -204,6 +204,7 @@ function Sidebar(): React.JSX.Element {
   const openCount = useStore((s) => s.openSessions.length)
   const setActive = useStore((s) => s.setActive)
   const setShowNewProject = useStore((s) => s.setShowNewProject)
+  const setShowSettings = useStore((s) => s.setShowSettings)
   const { menu, closeMenu, openSessionMenu, openProjectMenu } = useSessionMenu()
 
   return (
@@ -216,6 +217,14 @@ function Sidebar(): React.JSX.Element {
             {openCount} live
           </span>
         )}
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowSettings(true)}
+          className="rounded px-1.5 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+          title="Settings"
+        >
+          ⚙
+        </button>
       </div>
 
       {/* Mission Control — pinned */}

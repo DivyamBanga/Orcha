@@ -6,13 +6,15 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { IPC } from '../shared/ipc'
 import * as db from './db'
-import type { Project } from '../shared/types'
+import { sessionUsage } from './claudeSessions'
+import type { Project, WorkspaceAuth } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { PtyManager } from './services/PtyManager'
 import type { GitService } from './services/GitService'
 import type { ProjectService } from './services/ProjectService'
 import type { OrchestratorService } from './services/OrchestratorService'
 import type { ShareService } from './services/ShareService'
+import type { CodexService } from './services/CodexService'
 
 const execFileAsync = promisify(execFile)
 
@@ -23,6 +25,7 @@ interface Services {
   projectService: ProjectService
   orchestratorService: OrchestratorService
   shareService: ShareService
+  codexService: CodexService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
@@ -32,7 +35,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     gitService,
     projectService,
     orchestratorService,
-    shareService
+    shareService,
+    codexService
   } = services
 
   // --- setup / onboarding ---------------------------------------------------
@@ -140,6 +144,26 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     ptyManager.dispatchPrompt(workspaceId, text)
   )
 
+  // Token usage/estimated cost for a workspace's current session, parsed
+  // from its local transcript. Remote (SSH) workspaces have no local
+  // transcript to read, so this returns null for those.
+  ipcMain.handle(IPC.SessionUsage, (_e, workspaceId: string) => {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace) return null
+    const project = db.projects.get(workspace.projectId)
+    if (project?.sshHost) return null
+    return sessionUsage(workspace.worktreePath, workspace.model)
+  })
+
+  // Per-workspace auth-mode override (subscription login vs. API key).
+  // Applies on the next restart of that workspace's pty (see PtyManager.authEnv).
+  ipcMain.handle(IPC.WorkspaceAuthGet, (_e, workspaceId: string) =>
+    db.workspaceAuth.get(workspaceId)
+  )
+  ipcMain.handle(IPC.WorkspaceAuthSet, (_e, workspaceId: string, auth: WorkspaceAuth) =>
+    db.workspaceAuth.set(workspaceId, auth)
+  )
+
   // Connect a session to your phone via Claude Code's official Remote Control:
   // type /remote-control into the TUI, then watch its output for the session
   // link. The link only counts if printed after the command was sent, so a
@@ -191,6 +215,11 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(IPC.ShareStart, (_e, workspaceId: string) => shareService.start(workspaceId))
   ipcMain.handle(IPC.ShareStop, (_e, workspaceId: string) => shareService.stop(workspaceId))
+
+  // --- codex plugin ------------------------------------------------------
+
+  ipcMain.handle(IPC.CodexStatus, () => codexService.status())
+  ipcMain.handle(IPC.CodexSetup, () => codexService.setup())
 
   // Small persisted UI state (open sessions, last active) in app_state.
   ipcMain.handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)

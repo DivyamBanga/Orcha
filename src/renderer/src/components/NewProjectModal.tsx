@@ -119,10 +119,10 @@ function NewProjectModal(): React.JSX.Element | null {
         <div className="mb-4 flex rounded-md border border-edge">
           {(
             [
-              ['new', 'Create repo'],
-              ['github', 'From GitHub'],
-              ['local', 'Local folder'],
-              ['remote', 'Remote server']
+              ['new', 'New repo'],
+              ['github', 'GitHub'],
+              ['local', 'Local'],
+              ['remote', 'Remote']
             ] as [Mode, string][]
           ).map(([m, label]) => (
             <button

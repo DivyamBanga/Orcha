@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { reduceMessage } from './wireIpc'
-import type { Project, Workspace, SessionStatus, GitStatus, ChatItem } from '../../shared/types'
+import type {
+  Project,
+  Workspace,
+  SessionStatus,
+  GitStatus,
+  ChatItem,
+  SessionUsage
+} from '../../shared/types'
 
 const MC = 'orchestrator'
 
@@ -16,6 +23,7 @@ interface OrchaStore {
   openSessions: string[] // terminals kept mounted
   activity: Record<string, 'working' | 'waiting' | 'off'>
   gitStatus: Record<string, GitStatus>
+  usage: Record<string, SessionUsage | null>
   unread: Record<string, boolean>
   mcQueue: string[]
   // Live-share state per session: progress phase while the tunnel spins up,
@@ -33,6 +41,7 @@ interface OrchaStore {
   showNewProject: boolean
   // Project id to preselect in the parallel-session dialog, or null = closed.
   showNewSession: string | null
+  showSettings: boolean
 
   checkSetup: () => Promise<void>
   load: () => Promise<void>
@@ -51,7 +60,9 @@ interface OrchaStore {
   mcLoadHistory: () => Promise<void>
   setShowNewProject: (show: boolean) => void
   setShowNewSession: (projectId: string | null) => void
+  setShowSettings: (show: boolean) => void
   setLinkModal: (modal: { kind: 'share' | 'phone'; workspaceId: string } | null) => void
+  setUsage: (workspaceId: string, usage: SessionUsage | null) => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -62,6 +73,7 @@ export const useStore = create<OrchaStore>((set) => ({
   openSessions: [],
   activity: {},
   gitStatus: {},
+  usage: {},
   unread: {},
   mcQueue: [],
   shareStatus: {},
@@ -72,6 +84,7 @@ export const useStore = create<OrchaStore>((set) => ({
   slashCommands: {},
   showNewProject: false,
   showNewSession: null,
+  showSettings: false,
 
   checkSetup: async () => {
     const setup = await window.orcha.setup.status()
@@ -202,7 +215,9 @@ export const useStore = create<OrchaStore>((set) => ({
 
   setShowNewProject: (show) => set({ showNewProject: show }),
   setShowNewSession: (projectId) => set({ showNewSession: projectId }),
-  setLinkModal: (modal) => set({ linkModal: modal })
+  setShowSettings: (show) => set({ showSettings: show }),
+  setLinkModal: (modal) => set({ linkModal: modal }),
+  setUsage: (workspaceId, usage) => set((s) => ({ usage: { ...s.usage, [workspaceId]: usage } }))
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {

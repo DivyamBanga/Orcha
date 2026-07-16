@@ -2,7 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
-import type { Project, Workspace } from '../shared/types'
+import type { Project, Workspace, WorkspaceAuth } from '../shared/types'
 
 let db: Database.Database
 
@@ -220,5 +220,23 @@ export const appState = {
     db.prepare(
       'INSERT INTO app_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?'
     ).run(key, value, value)
+  }
+}
+
+// Per-workspace auth-mode override, backed by the generic app_state table
+// (no schema migration needed) — same trust model as Claude Code's own
+// plaintext ~/.claude/.credentials.json on this OS.
+export const workspaceAuth = {
+  get(workspaceId: string): WorkspaceAuth {
+    const raw = appState.get(`authMode:${workspaceId}`)
+    if (!raw) return { mode: 'subscription' }
+    try {
+      return JSON.parse(raw) as WorkspaceAuth
+    } catch {
+      return { mode: 'subscription' }
+    }
+  },
+  set(workspaceId: string, auth: WorkspaceAuth): void {
+    appState.set(`authMode:${workspaceId}`, JSON.stringify(auth))
   }
 }

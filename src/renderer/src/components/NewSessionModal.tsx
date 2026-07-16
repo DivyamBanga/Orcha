@@ -70,35 +70,54 @@ function NewSessionModal(): React.JSX.Element | null {
           className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
         />
 
-        <div className="mb-4 flex gap-2">
-          <div className="flex-1">
-            <label className="mb-1 block text-zinc-500">Model</label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200"
+        <label className="mb-1 block text-zinc-500">Model</label>
+        <div className="mb-3 flex rounded-md border border-edge">
+          {(
+            [
+              ['', 'Default'],
+              ['opus', 'Opus'],
+              ['sonnet', 'Sonnet'],
+              ['haiku', 'Haiku']
+            ] as [string, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setModel(value)}
+              className={`flex-1 px-2 py-1.5 ${
+                model === value ? 'bg-surface-2 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
+              }`}
             >
-              <option value="">Default</option>
-              <option value="opus">Opus</option>
-              <option value="sonnet">Sonnet</option>
-              <option value="haiku">Haiku</option>
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="mb-1 block text-zinc-500">Effort</label>
-            <select
-              value={effort}
-              onChange={(e) => setEffort(e.target.value)}
-              className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200"
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <label className="mb-1 block text-zinc-500">Effort</label>
+        <div className="mb-4 flex rounded-md border border-edge">
+          {(
+            [
+              ['', 'Default'],
+              ['low', 'Low'],
+              ['medium', 'Medium'],
+              ['high', 'High'],
+              ['xhigh', 'X-High'],
+              ['max', 'Max']
+            ] as [string, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setEffort(value)}
+              className={`flex-1 px-1 py-1.5 text-[11px] ${
+                effort === value
+                  ? 'bg-surface-2 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
             >
-              <option value="">Default</option>
-              <option value="low">Low — fastest</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="xhigh">X-High</option>
-              <option value="max">Max — deepest</option>
-            </select>
-          </div>
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="flex justify-end gap-2">
