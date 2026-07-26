@@ -46,6 +46,18 @@ function App(): React.JSX.Element {
     }
   }, [])
 
+  // A file dropped anywhere but a terminal would otherwise navigate the whole
+  // app to that file, which looks exactly like a crash.
+  useEffect(() => {
+    const prevent = (e: DragEvent): void => e.preventDefault()
+    window.addEventListener('dragover', prevent)
+    window.addEventListener('drop', prevent)
+    return () => {
+      window.removeEventListener('dragover', prevent)
+      window.removeEventListener('drop', prevent)
+    }
+  }, [])
+
   // Ctrl+1..9 jumps to a session (0 = Mission Control).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {

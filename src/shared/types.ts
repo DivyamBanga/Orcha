@@ -134,3 +134,21 @@ export interface CodexStatus {
   authenticated: boolean
   pluginInstalled: boolean
 }
+
+// One remembered clipboard item, as shown in the paste-history overlay. The
+// full text and the saved PNG stay in the main process — only what the list
+// needs to draw crosses IPC, so a 200 KB clip doesn't ship on every change.
+export interface ClipEntry {
+  id: string
+  kind: 'text' | 'image'
+  preview: string
+  lines: number
+  chars: number
+  thumb: string | null // data URL, images only
+}
+
+// What a paste resolved to for a given session. Images and dropped/copied
+// files become a path the session can reference with @ (copied to the server
+// first for remote sessions), never a stream of bytes through the terminal.
+export type PasteTarget =
+  { kind: 'text'; text: string } | { kind: 'path'; path: string } | { kind: 'empty' }

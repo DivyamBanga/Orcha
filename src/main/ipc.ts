@@ -16,6 +16,7 @@ import type { ProjectService } from './services/ProjectService'
 import type { OrchestratorService } from './services/OrchestratorService'
 import type { ShareService } from './services/ShareService'
 import type { CodexService } from './services/CodexService'
+import type { ClipboardService } from './services/ClipboardService'
 
 const execFileAsync = promisify(execFile)
 
@@ -27,6 +28,7 @@ interface Services {
   orchestratorService: OrchestratorService
   shareService: ShareService
   codexService: CodexService
+  clipboardService: ClipboardService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
@@ -37,7 +39,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     projectService,
     orchestratorService,
     shareService,
-    codexService
+    codexService,
+    clipboardService
   } = services
 
   // --- setup / onboarding ---------------------------------------------------
@@ -221,6 +224,22 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(IPC.ShareStart, (_e, workspaceId: string) => shareService.start(workspaceId))
   ipcMain.handle(IPC.ShareStop, (_e, workspaceId: string) => shareService.stop(workspaceId))
+
+  // --- clipboard -------------------------------------------------------------
+
+  ipcMain.handle(IPC.ClipboardPaste, (_e, workspaceId: string) =>
+    clipboardService.paste(workspaceId)
+  )
+  ipcMain.handle(IPC.ClipboardCopy, (_e, text: string) => clipboardService.copy(text))
+  ipcMain.handle(IPC.ClipboardHistory, () => clipboardService.entries())
+  ipcMain.handle(IPC.ClipboardUse, (_e, workspaceId: string, id: string) =>
+    clipboardService.use(workspaceId, id)
+  )
+  // Files dropped onto a session: local sessions reference them where they
+  // are, remote ones get a copy on the server first.
+  ipcMain.handle(IPC.SessionPathFor, (_e, workspaceId: string, localPath: string) =>
+    clipboardService.pathFor(workspaceId, localPath)
+  )
 
   // --- codex plugin ------------------------------------------------------
 

@@ -39,6 +39,11 @@ export const IPC = {
   WorkspaceAuthGet: 'workspace:authGet',
   WorkspaceAuthSet: 'workspace:authSet',
   UsageSummary: 'usage:summary',
+  ClipboardPaste: 'clipboard:paste',
+  ClipboardCopy: 'clipboard:copy',
+  ClipboardHistory: 'clipboard:history',
+  ClipboardUse: 'clipboard:use',
+  SessionPathFor: 'session:pathFor',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',

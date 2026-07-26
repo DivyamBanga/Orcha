@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -12,7 +12,45 @@ import { OrchestratorService } from './services/OrchestratorService'
 import { ShareService } from './services/ShareService'
 import { ActivityMonitor } from './services/ActivityMonitor'
 import { CodexService } from './services/CodexService'
+import { ClipboardService } from './services/ClipboardService'
 import { IPC } from '../shared/ipc'
+
+// Replaces Electron's default menu so the editing roles — and the
+// Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
+// text field rather than left to whatever Chromium does by default. The bar
+// itself stays hidden (autoHideMenuBar).
+function buildMenu(): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'pasteAndMatchStyle' },
+          { role: 'selectAll' }
+        ]
+      },
+      {
+        label: 'View',
+        submenu: [
+          { role: 'reload' },
+          { role: 'toggleDevTools' },
+          { type: 'separator' },
+          { role: 'resetZoom' },
+          { role: 'zoomIn' },
+          { role: 'zoomOut' },
+          { type: 'separator' },
+          { role: 'togglefullscreen' }
+        ]
+      }
+    ])
+  )
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -42,6 +80,19 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Right-click in any text field gets the standard editing menu. The
+  // terminal cancels this event and draws its own styled menu instead.
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable) return
+    Menu.buildFromTemplate([
+      { role: 'cut', enabled: params.editFlags.canCut },
+      { role: 'copy', enabled: params.editFlags.canCopy },
+      { role: 'paste', enabled: params.editFlags.canPaste },
+      { type: 'separator' },
+      { role: 'selectAll' }
+    ]).popup({ window: mainWindow })
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -64,6 +115,8 @@ function createWindow(): void {
   )
   const shareService = new ShareService(send, ptyManager)
   const codexService = new CodexService()
+  const clipboardService = new ClipboardService()
+  clipboardService.start()
   workspaceManager.onBeforeArchive = async (workspaceId) => {
     shareService.stop(workspaceId)
     ptyManager.kill(workspaceId)
@@ -85,6 +138,7 @@ function createWindow(): void {
   activityMonitor.start()
   app.on('before-quit', () => {
     activityMonitor.stop()
+    clipboardService.stop()
     shareService.stopAll()
     ptyManager.killAll()
   })
@@ -95,12 +149,14 @@ function createWindow(): void {
     projectService,
     orchestratorService,
     shareService,
-    codexService
+    codexService,
+    clipboardService
   })
 }
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.orcha.app')
+  buildMenu()
   initDb()
 
   app.on('browser-window-created', (_, window) => {

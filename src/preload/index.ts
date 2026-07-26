@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC } from '../shared/ipc'
 import type {
   GitStatus,
@@ -7,7 +7,9 @@ import type {
   WorkspaceAuth,
   CodexStatus,
   SessionUsage,
-  UsageSummary
+  UsageSummary,
+  ClipEntry,
+  PasteTarget
 } from '../shared/types'
 
 const api = {
@@ -91,6 +93,19 @@ const api = {
   codex: {
     status: (): Promise<CodexStatus> => ipcRenderer.invoke(IPC.CodexStatus),
     setup: (): Promise<void> => ipcRenderer.invoke(IPC.CodexSetup)
+  },
+  clipboard: {
+    paste: (workspaceId: string): Promise<PasteTarget> =>
+      ipcRenderer.invoke(IPC.ClipboardPaste, workspaceId),
+    copy: (text: string): Promise<void> => ipcRenderer.invoke(IPC.ClipboardCopy, text),
+    history: (): Promise<ClipEntry[]> => ipcRenderer.invoke(IPC.ClipboardHistory),
+    use: (workspaceId: string, id: string): Promise<PasteTarget> =>
+      ipcRenderer.invoke(IPC.ClipboardUse, workspaceId, id),
+    pathFor: (workspaceId: string, localPath: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.SessionPathFor, workspaceId, localPath),
+    // Electron strips File.path in the renderer; this is the supported way to
+    // recover the real path of a dropped file.
+    pathForFile: (file: File): string => webUtils.getPathForFile(file)
   },
   pty: {
     create: (workspaceId: string, cols: number, rows: number): Promise<void> =>

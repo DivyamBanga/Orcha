@@ -28,6 +28,14 @@ body {
   background: var(--color-surface-0);
 }
 
+/* Selection is off app-wide (this is chrome, not a document), but never
+   inside a text field — inheriting `none` there breaks selecting and copying
+   what you just typed. */
+input,
+textarea {
+  user-select: text;
+}
+
 /* Subtle scanline grain so large empty areas aren't dead flat. */
 .console-bg {
   background-image: repeating-linear-gradient(
