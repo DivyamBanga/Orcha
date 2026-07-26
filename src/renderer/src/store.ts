@@ -6,7 +6,8 @@ import type {
   SessionStatus,
   GitStatus,
   ChatItem,
-  SessionUsage
+  SessionUsage,
+  UsageSummary
 } from '../../shared/types'
 
 const MC = 'orchestrator'
@@ -24,6 +25,13 @@ interface OrchaStore {
   activity: Record<string, 'working' | 'waiting' | 'off'>
   gitStatus: Record<string, GitStatus>
   usage: Record<string, SessionUsage | null>
+  // Real plan limits plus local attribution, polled at the App level so the
+  // sidebar glance stays live regardless of which tab is focused.
+  usageSummary: UsageSummary | null
+  // When usageSummary was fetched — used instead of a live Date.now() call
+  // in components, since React's purity rule bans impure calls in render.
+  usageSummaryFetchedAt: number | null
+  showUsageDashboard: boolean
   unread: Record<string, boolean>
   mcQueue: string[]
   // Live-share state per session: progress phase while the tunnel spins up,
@@ -63,6 +71,8 @@ interface OrchaStore {
   setShowSettings: (show: boolean) => void
   setLinkModal: (modal: { kind: 'share' | 'phone'; workspaceId: string } | null) => void
   setUsage: (workspaceId: string, usage: SessionUsage | null) => void
+  setShowUsageDashboard: (show: boolean) => void
+  loadUsageSummary: () => Promise<void>
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -74,6 +84,9 @@ export const useStore = create<OrchaStore>((set) => ({
   activity: {},
   gitStatus: {},
   usage: {},
+  usageSummary: null,
+  usageSummaryFetchedAt: null,
+  showUsageDashboard: false,
   unread: {},
   mcQueue: [],
   shareStatus: {},
@@ -217,7 +230,12 @@ export const useStore = create<OrchaStore>((set) => ({
   setShowNewSession: (projectId) => set({ showNewSession: projectId }),
   setShowSettings: (show) => set({ showSettings: show }),
   setLinkModal: (modal) => set({ linkModal: modal }),
-  setUsage: (workspaceId, usage) => set((s) => ({ usage: { ...s.usage, [workspaceId]: usage } }))
+  setUsage: (workspaceId, usage) => set((s) => ({ usage: { ...s.usage, [workspaceId]: usage } })),
+  setShowUsageDashboard: (show) => set({ showUsageDashboard: show }),
+  loadUsageSummary: async () => {
+    const usageSummary = await window.orcha.usage.summary()
+    set({ usageSummary, usageSummaryFetchedAt: Date.now() })
+  }
 }))
 
 export function useActiveWorkspace(): Workspace | undefined {

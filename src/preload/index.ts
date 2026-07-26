@@ -6,7 +6,8 @@ import type {
   Workspace,
   WorkspaceAuth,
   CodexStatus,
-  SessionUsage
+  SessionUsage,
+  UsageSummary
 } from '../shared/types'
 
 const api = {
@@ -62,6 +63,9 @@ const api = {
       ipcRenderer.invoke(IPC.SessionRemoteControl, workspaceId),
     usage: (workspaceId: string): Promise<SessionUsage | null> =>
       ipcRenderer.invoke(IPC.SessionUsage, workspaceId)
+  },
+  usage: {
+    summary: (): Promise<UsageSummary> => ipcRenderer.invoke(IPC.UsageSummary)
   },
   share: {
     start: (workspaceId: string): Promise<{ url: string }> =>

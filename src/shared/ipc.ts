@@ -38,6 +38,7 @@ export const IPC = {
   SessionUsage: 'session:usage',
   WorkspaceAuthGet: 'workspace:authGet',
   WorkspaceAuthSet: 'workspace:authSet',
+  UsageSummary: 'usage:summary',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',

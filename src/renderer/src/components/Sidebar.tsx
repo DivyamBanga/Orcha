@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import ContextMenu, { type MenuItem } from './ContextMenu'
+import UsageGlance from './UsageGlance'
 import type { Project, Workspace } from '../../../shared/types'
 
 interface MenuState {
@@ -218,6 +219,7 @@ function Sidebar(): React.JSX.Element {
           </span>
         )}
         <div className="flex-1" />
+        <UsageGlance />
         <button
           onClick={() => setShowSettings(true)}
           className="rounded px-1.5 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"

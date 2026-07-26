@@ -65,6 +65,70 @@ export interface SessionUsage {
   estimatedCostUsd: number | null // null if model is unrecognized/default
 }
 
+// One real subscription limit, exactly as Anthropic reports it to Claude
+// Code's own `/usage` view (GET /api/oauth/usage) — not a local estimate.
+// Which limits exist depends on the plan: Pro currently returns only the
+// session window, Max adds weekly and per-model weekly ones.
+export interface PlanLimit {
+  key: string
+  label: string
+  utilization: number // percent 0-100, as returned; may exceed 100
+  resetsAt: number | null // ms epoch
+}
+
+export type PlanStatus = 'ok' | 'stale' | 'no-auth' | 'unavailable'
+
+export interface PlanUsage {
+  status: PlanStatus
+  plan: string | null // 'pro' | 'max' | ... from the local credentials file
+  limits: PlanLimit[] // empty unless status is 'ok' or 'stale'
+  message: string | null // why the numbers are stale/missing
+}
+
+export interface ProjectUsage {
+  cwd: string
+  name: string
+  costUsd: number
+  share: number // 0-1 of the window's local cost
+}
+
+export interface ModelUsage {
+  tier: string // 'opus' | 'sonnet' | 'haiku'
+  costUsd: number
+  share: number // 0-1
+}
+
+export interface DailyUsagePoint {
+  date: string // YYYY-MM-DD, local time
+  costUsd: number
+}
+
+export interface BurnRate {
+  pctPerHour: number // real quota percent per hour
+  hitsLimitAt: number | null // ms epoch; null when not burning
+  reachesReset: boolean // true if the window resets before the limit is hit
+}
+
+// Everything derived from local ~/.claude/projects transcripts: approximate,
+// this machine only. Used to answer "what is burning the quota", never to
+// state the quota itself — that comes from PlanUsage.
+export interface UsageInsights {
+  projects: ProjectUsage[]
+  models: ModelUsage[]
+  cacheHitRate: number | null // 0-1 of input tokens served from cache, 7d
+  burn: BurnRate | null
+  windowCostUsd: number // API-equivalent $ inside the current session window
+  weekCostUsd: number // API-equivalent $ over the last 7 days
+  monthlyProjectionUsd: number // weekCostUsd extrapolated to 30 days
+  daily: DailyUsagePoint[] // last 14 days
+}
+
+export interface UsageSummary {
+  plan: PlanUsage
+  insights: UsageInsights
+  fetchedAt: number
+}
+
 export interface CodexStatus {
   cliInstalled: boolean
   authenticated: boolean

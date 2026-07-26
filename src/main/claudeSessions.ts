@@ -32,17 +32,54 @@ function latestSessionFile(cwd: string): string | null {
 }
 
 // Published per-million-token rates (input/output/5m-cache-write/cache-read),
-// as of 2026-07-16 (platform.claude.com/docs/en/about-claude/pricing). These
-// drift over time (e.g. Sonnet 5's introductory rate below ends 2026-08-31,
-// after which it rises to $3/$15) — treat the resulting dollar figure as
-// illustrative, not a billing-accurate total.
-const MODEL_PRICING: Record<
-  string,
-  { input: number; output: number; cacheWrite: number; cacheRead: number }
-> = {
+// verified 2026-07-26 against platform.claude.com/docs/en/pricing. Cache
+// writes are 1.25x input (5-minute TTL) and cache reads 0.1x input.
+interface Rates {
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+}
+
+// Sonnet 5 is on an introductory rate that ends 2026-08-31, after which it
+// rises to $3/$15. Events are priced by their own timestamp so a trend that
+// spans the changeover stays correct on both sides of it.
+const SONNET_INTRO_ENDS = Date.parse('2026-09-01T00:00:00Z')
+
+const MODEL_PRICING: Record<string, Rates> = {
   opus: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
   sonnet: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
   haiku: { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 }
+}
+
+const SONNET_STANDARD: Rates = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 }
+
+function ratesFor(model: string | null, at: number): Rates | undefined {
+  if (!model) return undefined
+  if (model === 'sonnet' && at >= SONNET_INTRO_ENDS) return SONNET_STANDARD
+  return MODEL_PRICING[model]
+}
+
+// Shared by sessionUsage() below and usageStats.ts's cross-project aggregator.
+export function estimateCostUsd(
+  model: string | null,
+  usage: {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
+  },
+  at: number = Date.now()
+): number | null {
+  const rates = ratesFor(model, at)
+  if (!rates) return null
+  return (
+    (usage.inputTokens * rates.input +
+      usage.outputTokens * rates.output +
+      usage.cacheCreationTokens * rates.cacheWrite +
+      usage.cacheReadTokens * rates.cacheRead) /
+    1_000_000
+  )
 }
 
 // Token usage (and an estimated cost) for the workspace's current session,
@@ -77,14 +114,12 @@ export function sessionUsage(cwd: string, model: string | null): SessionUsage | 
     return null
   }
 
-  const rates = model ? MODEL_PRICING[model] : undefined
-  const estimatedCostUsd = rates
-    ? (inputTokens * rates.input +
-        outputTokens * rates.output +
-        cacheCreationTokens * rates.cacheWrite +
-        cacheReadTokens * rates.cacheRead) /
-      1_000_000
-    : null
+  const estimatedCostUsd = estimateCostUsd(model, {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheCreationTokens
+  })
 
   return { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, estimatedCostUsd }
 }
