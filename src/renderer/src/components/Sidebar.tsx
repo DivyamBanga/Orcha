@@ -210,19 +210,26 @@ function Sidebar(): React.JSX.Element {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface-1">
-      <div className="flex h-11 items-center gap-2 border-b border-edge px-4">
-        <span className="font-mono text-sm font-semibold tracking-tight text-zinc-100">orcha</span>
+      {/* One line, four items, 240px to play with — everything is shrink-0 and
+          nowrap so nothing collapses into a second row when the counts grow. */}
+      <div className="flex h-11 items-center gap-1.5 border-b border-edge px-3">
+        <span className="shrink-0 font-mono text-sm font-semibold tracking-tight text-zinc-100">
+          orcha
+        </span>
         {openCount > 0 && (
-          <span className="flex items-center gap-1.5 font-mono text-[11px] text-accent">
-            <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />
-            {openCount} live
+          <span
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-accent"
+            title={`${openCount} session${openCount === 1 ? '' : 's'} running`}
+          >
+            <span className="pulse-dot h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+            {openCount}
           </span>
         )}
         <div className="flex-1" />
         <UsageGlance />
         <button
           onClick={() => setShowSettings(true)}
-          className="rounded px-1.5 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+          className="shrink-0 rounded px-1 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
           title="Settings"
         >
           ⚙

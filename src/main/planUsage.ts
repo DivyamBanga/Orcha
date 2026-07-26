@@ -111,7 +111,10 @@ function fromCache(message: string): PlanUsage {
   return { status: 'stale', plan: cache.plan, limits: cache.limits, message }
 }
 
-export async function fetchPlanUsage(): Promise<PlanUsage> {
+// `force` skips the short refresh cache for an explicit user-initiated
+// refresh. It deliberately still respects the 429 backoff — bypassing that
+// would only push the account further into rate limiting.
+export async function fetchPlanUsage(force = false): Promise<PlanUsage> {
   const credentials = readCredentials()
   if (!credentials) {
     return {
@@ -123,7 +126,7 @@ export async function fetchPlanUsage(): Promise<PlanUsage> {
   }
 
   const now = Date.now()
-  if (cache && now - cache.fetchedAt < REFRESH_MIN_MS) {
+  if (!force && cache && now - cache.fetchedAt < REFRESH_MIN_MS) {
     return { status: 'ok', plan: cache.plan, limits: cache.limits, message: null }
   }
   if (now < backoffUntil) return fromCache('Usage endpoint is rate limited — showing last known.')

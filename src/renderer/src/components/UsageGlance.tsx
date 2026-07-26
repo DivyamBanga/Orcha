@@ -47,7 +47,7 @@ function UsageGlance(): React.JSX.Element | null {
   return (
     <button
       onClick={() => setShow(true)}
-      className={`flex items-center gap-1.5 rounded px-1.5 py-1 font-mono text-[11px] hover:bg-surface-2 ${
+      className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 py-1 font-mono text-[11px] hover:bg-surface-2 ${
         stale ? 'opacity-50' : ''
       }`}
       title={`Session window ${percent}% used${stale ? ' (last known)' : ''} — click for details`}

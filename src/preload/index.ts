@@ -65,7 +65,7 @@ const api = {
       ipcRenderer.invoke(IPC.SessionUsage, workspaceId)
   },
   usage: {
-    summary: (): Promise<UsageSummary> => ipcRenderer.invoke(IPC.UsageSummary)
+    summary: (force?: boolean): Promise<UsageSummary> => ipcRenderer.invoke(IPC.UsageSummary, force)
   },
   share: {
     start: (workspaceId: string): Promise<{ url: string }> =>

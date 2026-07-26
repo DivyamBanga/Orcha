@@ -72,7 +72,7 @@ interface OrchaStore {
   setLinkModal: (modal: { kind: 'share' | 'phone'; workspaceId: string } | null) => void
   setUsage: (workspaceId: string, usage: SessionUsage | null) => void
   setShowUsageDashboard: (show: boolean) => void
-  loadUsageSummary: () => Promise<void>
+  loadUsageSummary: (force?: boolean) => Promise<void>
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -232,8 +232,8 @@ export const useStore = create<OrchaStore>((set) => ({
   setLinkModal: (modal) => set({ linkModal: modal }),
   setUsage: (workspaceId, usage) => set((s) => ({ usage: { ...s.usage, [workspaceId]: usage } })),
   setShowUsageDashboard: (show) => set({ showUsageDashboard: show }),
-  loadUsageSummary: async () => {
-    const usageSummary = await window.orcha.usage.summary()
+  loadUsageSummary: async (force) => {
+    const usageSummary = await window.orcha.usage.summary(force)
     set({ usageSummary, usageSummaryFetchedAt: Date.now() })
   }
 }))

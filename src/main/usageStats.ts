@@ -267,8 +267,8 @@ function computeDaily(events: UsageEvent[], now: number): DailyUsagePoint[] {
   return points
 }
 
-export async function computeUsageSummary(): Promise<UsageSummary> {
-  const plan = await fetchPlanUsage()
+export async function computeUsageSummary(force = false): Promise<UsageSummary> {
+  const plan = await fetchPlanUsage(force)
   const events = allEvents()
   const now = Date.now()
 

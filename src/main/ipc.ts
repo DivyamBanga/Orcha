@@ -168,7 +168,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   // Real subscription limits from Anthropic's usage endpoint, plus local
   // transcript-derived attribution for what's consuming them — see
   // planUsage.ts and usageStats.ts.
-  ipcMain.handle(IPC.UsageSummary, () => computeUsageSummary())
+  ipcMain.handle(IPC.UsageSummary, (_e, force?: boolean) => computeUsageSummary(force === true))
 
   // Connect a session to your phone via Claude Code's official Remote Control:
   // type /remote-control into the TUI, then watch its output for the session

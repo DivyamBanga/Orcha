@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useStore } from '../store'
 import { percentColors } from '../usageColors'
 import type {
@@ -181,9 +182,23 @@ function UsageDashboard(): React.JSX.Element | null {
   const setShow = useStore((s) => s.setShowUsageDashboard)
   const summary = useStore((s) => s.usageSummary)
   const now = useStore((s) => s.usageSummaryFetchedAt)
+  const loadUsageSummary = useStore((s) => s.loadUsageSummary)
+  const [refreshing, setRefreshing] = useState(false)
 
   if (!show) return null
   const onClose = (): void => setShow(false)
+
+  // Forces past the main process's short refresh cache, so this re-reads the
+  // credentials file (plan changes) and re-asks the endpoint (new window
+  // after a reset) rather than replaying what it already had.
+  const onRefresh = async (): Promise<void> => {
+    setRefreshing(true)
+    try {
+      await loadUsageSummary(true)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const session = summary?.plan.limits.find((l) => l.key === 'five_hour') ?? null
   const insights = summary?.insights
@@ -199,13 +214,31 @@ function UsageDashboard(): React.JSX.Element | null {
         className="w-[26rem] rounded-lg border border-edge-bright bg-surface-1 p-4"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-baseline justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <span className="font-medium text-zinc-100">Usage</span>
-          {summary?.plan.plan && (
-            <span className="font-mono text-[11px] uppercase tracking-wide text-zinc-500">
-              {summary.plan.plan} plan
-            </span>
-          )}
+          <span className="flex items-center gap-2">
+            {summary?.plan.plan && (
+              <span className="font-mono text-[11px] uppercase tracking-wide text-zinc-500">
+                {summary.plan.plan} plan
+              </span>
+            )}
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="rounded px-1.5 py-0.5 text-[13px] leading-none text-zinc-500 hover:bg-surface-2 hover:text-zinc-300 disabled:hover:bg-transparent"
+              title={
+                now !== null
+                  ? `Refresh — updated ${new Date(now).toLocaleTimeString([], {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      second: '2-digit'
+                    })}`
+                  : 'Refresh'
+              }
+            >
+              <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>↻</span>
+            </button>
+          </span>
         </div>
 
         {!summary ? (
