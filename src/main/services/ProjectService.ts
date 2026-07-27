@@ -1,5 +1,4 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { execFileAsync } from '../exec'
 import { existsSync, mkdirSync } from 'fs'
 import { join, basename, posix } from 'path'
 import { homedir } from 'os'
@@ -9,7 +8,6 @@ import type { Project } from '../../shared/types'
 import type { WorkspaceManager } from './WorkspaceManager'
 import { verifyRemotePath } from '../ssh'
 
-const execFileAsync = promisify(execFile)
 
 export const PROJECTS_ROOT = join(homedir(), 'Desktop', 'Projects')
 

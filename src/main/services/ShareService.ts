@@ -177,7 +177,11 @@ export class ShareService {
     if (this.tunnel) return this.tunnel.url
     const bin = await this.findCloudflared(workspaceId)
     this.send(IPC.EvShareStatus, { workspaceId, phase: 'tunnel' })
-    const proc = spawn(bin, ['tunnel', '--url', `http://127.0.0.1:${this.port}`, '--no-autoupdate'])
+    const proc = spawn(
+      bin,
+      ['tunnel', '--url', `http://127.0.0.1:${this.port}`, '--no-autoupdate'],
+      { windowsHide: true }
+    )
     const url = await new Promise<string>((resolve, reject) => {
       let out = ''
       const timer = setTimeout(() => {
@@ -213,7 +217,9 @@ export class ShareService {
   // cloudflared from PATH if present, else a copy downloaded to ~/.orcha/bin
   // (one time, ~60 MB) so sharing needs zero manual setup.
   private async findCloudflared(workspaceId: string): Promise<string> {
-    if (spawnSync('cloudflared', ['--version']).status === 0) return 'cloudflared'
+    if (spawnSync('cloudflared', ['--version'], { windowsHide: true }).status === 0) {
+      return 'cloudflared'
+    }
     const local = join(homedir(), '.orcha', 'bin', 'cloudflared.exe')
     if (existsSync(local)) return local
     this.send(IPC.EvShareStatus, { workspaceId, phase: 'downloading' })

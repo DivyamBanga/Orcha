@@ -1,11 +1,9 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { execFileAsync } from '../exec'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { CodexStatus } from '../../shared/types'
 
-const execFileAsync = promisify(execFile)
 
 export class CodexService {
   async status(): Promise<CodexStatus> {

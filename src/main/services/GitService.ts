@@ -1,10 +1,8 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { execFileAsync } from '../exec'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import type { GitStatus } from '../../shared/types'
 
-const execFileAsync = promisify(execFile)
 
 type SendFn = (channel: string, payload: unknown) => void
 

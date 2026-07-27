@@ -1,6 +1,5 @@
+import { execFileAsync } from './exec'
 import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -18,7 +17,6 @@ import type { ShareService } from './services/ShareService'
 import type { CodexService } from './services/CodexService'
 import type { ClipboardService } from './services/ClipboardService'
 
-const execFileAsync = promisify(execFile)
 
 interface Services {
   workspaceManager: WorkspaceManager

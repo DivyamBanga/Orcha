@@ -1,13 +1,10 @@
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { execFileAsync } from '../exec'
 import { mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import * as db from '../db'
 import type { Workspace } from '../../shared/types'
-
-const execFileAsync = promisify(execFile)
 
 const WORKTREE_ROOT = join(homedir(), '.orcha', 'worktrees')
 
