@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import { useStore } from '../store'
+import { Check, Close } from './Icon'
 import type { ChatItem } from '../../../shared/types'
 
 const HISTORY_KEY = 'orcha-prompt-history'
@@ -43,9 +44,13 @@ function ToolRow({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): React
         {running ? (
           <span className="busy-ring shrink-0" />
         ) : item.isError ? (
-          <span className="shrink-0 font-mono text-[11px] text-red-500">✕</span>
+          <span className="shrink-0 text-red-400">
+            <Close size={11} />
+          </span>
         ) : (
-          <span className="shrink-0 font-mono text-[11px] text-accent-dim">✓</span>
+          <span className="shrink-0 text-zinc-500">
+            <Check size={11} />
+          </span>
         )}
         <span className="shrink-0 font-mono text-[12px] font-medium text-zinc-400">
           {item.name}
@@ -116,7 +121,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   }
 
   return (
-    <div className="console-bg flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {items.length === 0 && !streamingText && (
           <div className="flex h-full items-center justify-center font-mono text-zinc-700">
@@ -213,7 +218,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             }}
             placeholder={busy ? 'working — Enter queues your next message' : 'prompt this session'}
             rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-            className="flex-1 resize-none rounded-md border border-edge bg-surface-1 px-3 py-2 text-zinc-200 transition-colors duration-100 placeholder:text-zinc-600 focus:border-accent-dim focus:outline-none"
+            className="flex-1 resize-none rounded-md border border-edge bg-surface-1 px-3 py-2 text-zinc-200 transition-colors duration-100 placeholder:text-zinc-600 focus:border-edge-bright focus:outline-none"
           />
           {busy ? (
             <button
@@ -226,7 +231,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             <button
               onClick={handleSend}
               disabled={!draft.trim()}
-              className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-2 font-medium text-accent transition-colors duration-100 hover:bg-accent-dim/30 disabled:opacity-40"
+              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-2 font-medium text-surface-0 transition-colors duration-100 hover:border-white hover:bg-white disabled:opacity-40"
             >
               Send
             </button>

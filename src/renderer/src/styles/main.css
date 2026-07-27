@@ -5,14 +5,21 @@
     'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Cascadia Code', 'IBM Plex Mono', Consolas, ui-monospace, monospace;
 
-  /* Phosphor console palette — one accent, everything else neutral. */
-  --color-accent: #34d399;
-  --color-accent-dim: #059669;
-  --color-surface-0: #0b0b0d;
-  --color-surface-1: #111114;
-  --color-surface-2: #18181c;
-  --color-edge: #232329;
-  --color-edge-bright: #34343c;
+  /* Four surfaces over a cool floor. Blue-biased on every step (b > r), since
+     a blue cast reads as screen and a warm one reads as paper. */
+  --color-surface-0: #0a0a0c;
+  --color-surface-1: #0f0f12;
+  --color-surface-2: #16161a;
+  --color-surface-3: #1d1d22;
+
+  /* Hairlines rather than rules — same separation, a fraction of the weight. */
+  --color-edge: rgba(255, 255, 255, 0.06);
+  --color-edge-bright: rgba(255, 255, 255, 0.1);
+
+  /* The only colour in the app, and every use of it means session state.
+     Chrome is neutral throughout so these two actually stand out. */
+  --color-work: #34d399;
+  --color-wait: #f59e0b;
 }
 
 html,
@@ -34,17 +41,6 @@ body {
 input,
 textarea {
   user-select: text;
-}
-
-/* Subtle scanline grain so large empty areas aren't dead flat. */
-.console-bg {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgb(255 255 255 / 0.006) 2px,
-    rgb(255 255 255 / 0.006) 4px
-  );
 }
 
 ::-webkit-scrollbar {
@@ -112,36 +108,186 @@ textarea {
   color: #f4f4f5;
   margin: 0.8em 0 0.3em;
 }
+/* Underline carries "link" so colour doesn't have to. */
 .prose-chat a {
-  color: var(--color-accent);
+  color: #d4d4d8;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-/* Busy ring — a thin arc, not a chunky spinner. */
-@keyframes orcha-spin {
+@keyframes orcha-turn {
   to {
     transform: rotate(360deg);
   }
 }
+
+/* A session mid-turn. One slow rotation is the only ambient motion left in
+   the app — continuous rather than flashing, so it reads as live without
+   pulling the eye. Built as a bordered div, not an animated SVG: transforms
+   on an inner <svg> group repaint into the parent layer every frame, which
+   with several sessions visible is a steady main-thread cost. */
+.state-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-edge-bright);
+  border-top-color: var(--color-work);
+  animation: orcha-turn 2s linear infinite;
+  will-change: transform;
+}
+
+/* Transient in-flight spinner (cloning a repo, opening a tunnel). Same
+   geometry as the state ring so they read as relatives, but neutral — it is
+   chrome, not state — and faster, because it is a wait rather than a mood. */
 .busy-ring {
   width: 10px;
   height: 10px;
   border-radius: 9999px;
   border: 1.5px solid var(--color-edge-bright);
-  border-top-color: var(--color-accent);
-  animation: orcha-spin 0.8s linear infinite;
+  border-top-color: #a1a1aa;
+  animation: orcha-turn 0.9s linear infinite;
 }
 
-@keyframes orcha-pulse {
-  0%,
-  100% {
+/* ---- opening reveal -------------------------------------------------------
+
+   Two opaque halves part from the centre to uncover the app. Only transform
+   and opacity animate; those are the properties Chromium runs on the
+   compositor, so the reveal holds 60fps even while React mounts and the
+   terminals spawn behind it. A clip-path wipe would look identical but is not
+   reliably composited yet and would stutter exactly when the main thread is
+   busiest.
+
+   Deliberately nothing animates on the app subtree itself. Fading or scaling
+   it would force the whole tree — xterm canvases included — into a layer and
+   re-rasterise it at a fractional scale, which is the one thing here that
+   would actually judder. */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* A hair over half each, so the two always overlap at the seam instead of
+   leaving a sub-pixel gap on odd window widths. will-change is set up front,
+   not at animation start, so the layers are promoted before the first frame
+   rather than costing one. */
+.boot-half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: calc(50% + 1px);
+  background: var(--color-surface-0);
+  will-change: transform;
+}
+.boot-half-left {
+  left: 0;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.07);
+}
+.boot-half-right {
+  right: 0;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.07);
+}
+
+.boot-seam {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  margin-left: -0.5px;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.85) 18%,
+    rgba(255, 255, 255, 0.85) 82%,
+    rgba(255, 255, 255, 0)
+  );
+  transform: scaleY(0);
+  transform-origin: 50% 50%;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.boot-bloom {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 72px;
+  margin-left: -36px;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0) 70%
+  );
+  will-change: opacity;
+}
+
+@keyframes orcha-seam-draw {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
     opacity: 1;
   }
-  50% {
-    opacity: 0.35;
+}
+@keyframes orcha-seam-fade {
+  to {
+    opacity: 0;
   }
 }
-.pulse-dot {
-  animation: orcha-pulse 1.6s ease-in-out infinite;
+@keyframes orcha-bloom-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes orcha-bloom-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes orcha-part-left {
+  to {
+    transform: translateX(-100%);
+  }
+}
+@keyframes orcha-part-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* The seam runs two animations: the draw owns transform for the whole run via
+   its forwards fill, while the later fade only touches opacity and so wins
+   that property once its delay elapses. */
+.boot-playing .boot-seam {
+  animation:
+    orcha-seam-draw 180ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards,
+    orcha-seam-fade 340ms 200ms linear forwards;
+}
+.boot-playing .boot-bloom {
+  animation:
+    orcha-bloom-in 180ms ease-out forwards,
+    orcha-bloom-out 300ms 200ms ease-out forwards;
+}
+.boot-playing .boot-half-left {
+  animation: orcha-part-left 440ms 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.boot-playing .boot-half-right {
+  animation: orcha-part-right 440ms 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-ring,
+  .busy-ring {
+    animation: none;
+  }
+  .boot {
+    display: none;
+  }
 }

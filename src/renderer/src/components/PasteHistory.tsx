@@ -77,7 +77,7 @@ function PasteHistory({
               onMouseEnter={() => setSelected(i)}
               className={`flex w-full items-start gap-2.5 rounded-md border-l-2 px-2 py-1.5 text-left transition-colors duration-100 ${
                 i === selected
-                  ? 'border-accent bg-surface-2'
+                  ? 'border-zinc-300 bg-surface-2'
                   : 'border-transparent hover:bg-surface-2/60'
               }`}
             >

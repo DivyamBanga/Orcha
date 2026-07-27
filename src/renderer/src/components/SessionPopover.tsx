@@ -112,7 +112,7 @@ function SessionPopover({
       <button
         onClick={handleApply}
         disabled={saving || (auth.mode === 'apiKey' && !apiKeyInput.trim())}
-        className="w-full rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+        className="w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 text-[12px] font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
       >
         {saving ? 'Restarting…' : 'Restart to apply'}
       </button>

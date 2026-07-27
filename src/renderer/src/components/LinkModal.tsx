@@ -118,7 +118,7 @@ function LinkModalInner({
               />
               <button
                 onClick={copy}
-                className="shrink-0 rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30"
+                className="shrink-0 rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
               >
                 {copied ? 'Copied' : 'Copy'}
               </button>
@@ -143,7 +143,7 @@ function LinkModalInner({
                 setError(null)
                 setAttempt((a) => a + 1)
               }}
-              className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30"
+              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
             >
               Try again
             </button>

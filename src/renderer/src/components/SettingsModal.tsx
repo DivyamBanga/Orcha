@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { Check as CheckIcon, Circle } from './Icon'
 import type { CodexStatus } from '../../../shared/types'
 
 function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
   return (
     <span className="flex items-center gap-2">
-      <span className={`font-mono text-[13px] ${ok ? 'text-accent' : 'text-zinc-600'}`}>
-        {ok ? '✓' : '○'}
+      <span className={ok ? 'text-zinc-200' : 'text-zinc-600'}>
+        {ok ? <CheckIcon size={14} /> : <Circle size={14} />}
       </span>
       <span className={ok ? 'text-zinc-300' : 'text-zinc-500'}>{label}</span>
     </span>
@@ -81,7 +82,7 @@ function SettingsModal(): React.JSX.Element | null {
           <button
             onClick={handleSetup}
             disabled={working || (status?.pluginInstalled ?? false)}
-            className="mt-3 w-full rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+            className="mt-3 w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
           >
             {working
               ? 'Setting up…'

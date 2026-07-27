@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import BootReveal from './components/BootReveal'
 import Sidebar from './components/Sidebar'
 import MainPane from './components/MainPane'
 import NewProjectModal from './components/NewProjectModal'
@@ -12,13 +13,19 @@ import { useStore } from './store'
 
 function App(): React.JSX.Element {
   const setup = useStore((s) => s.setup)
+  // Drives the opening reveal: it stays shut until there is something real
+  // behind it. Local rather than in the store since nothing else needs it.
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => wireIpc(), [])
 
   useEffect(() => {
     const s = useStore.getState()
     s.checkSetup()
-    s.load().then(() => s.restoreOpenSessions())
+    s.load().then(() => {
+      s.restoreOpenSessions()
+      setLoaded(true)
+    })
   }, [])
 
   // Usage — polled here (not per-workspace) so the sidebar's glance widget
@@ -79,25 +86,28 @@ function App(): React.JSX.Element {
   const ready = setup !== null && setup.gh && setup.claude
 
   return (
-    <div className="flex h-full bg-surface-0 text-zinc-300">
-      {ready ? (
-        <>
-          <Sidebar />
-          <MainPane />
-          <NewProjectModal />
-          <NewSessionModal />
-          <LinkModal />
-          <SettingsModal />
-          <UsageDashboard />
-        </>
-      ) : setup === null ? (
-        <div className="flex flex-1 items-center justify-center font-mono text-zinc-700">
-          checking connections…
-        </div>
-      ) : (
-        <SetupGate />
-      )}
-    </div>
+    <>
+      <div className="flex h-full bg-surface-0 text-zinc-300">
+        {ready ? (
+          <>
+            <Sidebar />
+            <MainPane />
+            <NewProjectModal />
+            <NewSessionModal />
+            <LinkModal />
+            <SettingsModal />
+            <UsageDashboard />
+          </>
+        ) : setup === null ? (
+          <div className="flex flex-1 items-center justify-center font-mono text-zinc-700">
+            checking connections…
+          </div>
+        ) : (
+          <SetupGate />
+        )}
+      </div>
+      <BootReveal ready={setup !== null && loaded} />
+    </>
   )
 }
 

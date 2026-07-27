@@ -3,20 +3,35 @@ import { useStore, useActiveWorkspace } from '../store'
 import ChatView from './ChatView'
 import TerminalView from './TerminalView'
 import SessionPopover from './SessionPopover'
+import { ArrowDown, ArrowUp, ChevronDown, Diamond } from './Icon'
 
 function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
   const status = useStore((s) => s.gitStatus[workspaceId])
   if (!status) return null
   return (
     <span className="flex items-center gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-zinc-400">
+      {/* Clean vs dirty is carried by shape, not colour — a working tree is a
+          git fact, and colour in this app is reserved for session state. */}
       {status.dirty ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Uncommitted changes" />
+        <span className="text-zinc-400" title="Uncommitted changes">
+          <Diamond size={9} />
+        </span>
       ) : (
-        <span className="h-1.5 w-1.5 rounded-full bg-accent-dim" title="Clean" />
+        <span className="h-[7px] w-[7px] rounded-full border border-zinc-600" title="Clean" />
       )}
       {status.branch && <span className="font-mono">{status.branch}</span>}
-      {status.ahead > 0 && <span>↑{status.ahead}</span>}
-      {status.behind > 0 && <span>↓{status.behind}</span>}
+      {status.ahead > 0 && (
+        <span className="flex items-center gap-0.5">
+          <ArrowUp size={10} />
+          {status.ahead}
+        </span>
+      )}
+      {status.behind > 0 && (
+        <span className="flex items-center gap-0.5">
+          <ArrowDown size={10} />
+          {status.behind}
+        </span>
+      )}
     </span>
   )
 }
@@ -85,7 +100,7 @@ function MainPane(): React.JSX.Element {
       <main className="flex min-w-0 flex-1 flex-col">
         {activeId === 'orchestrator' ? (
           <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
-            <span className="h-2 w-2 rounded-full bg-accent" />
+            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
             <span className="font-medium text-zinc-100">Mission Control</span>
             <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
           </header>
@@ -168,10 +183,12 @@ function MainPane(): React.JSX.Element {
               <button
                 onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
                 disabled={gitBusy}
-                className="rounded-md border border-amber-700/60 px-2 py-0.5 text-[11px] text-amber-500 hover:bg-amber-950/40 disabled:opacity-40"
+                className="flex items-center gap-1 rounded-md border border-edge-bright px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-surface-2 hover:text-zinc-100 disabled:opacity-40"
                 title="Remote has new commits — git pull --ff-only"
               >
-                Pull ↓{gitStatus?.behind}
+                Pull
+                <ArrowDown size={10} />
+                {gitStatus?.behind}
               </button>
             )}
           </>
@@ -216,11 +233,13 @@ function MainPane(): React.JSX.Element {
         <button
           onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
           className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${
-            sharing ? 'text-accent' : 'text-zinc-400 hover:text-zinc-200'
+            sharing ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
           }`}
           title="Share a live read-only view of this terminal — any browser, no install"
         >
-          {sharing && <span className="pulse-dot h-1.5 w-1.5 rounded-full bg-accent" />}
+          {/* Broadcasting is signalled by the pressed state and the label
+              itself rather than colour, which stays reserved for sessions. */}
+          {sharing && <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
           {sharing ? 'Sharing' : 'Share'}
         </button>
         <button
@@ -234,12 +253,13 @@ function MainPane(): React.JSX.Element {
         {!project?.sshHost && (
           <button
             onClick={() => setShowSession((v) => !v)}
-            className={`rounded-md px-2 py-1 hover:bg-surface-2 ${
-              showSession ? 'text-zinc-200' : 'text-zinc-400 hover:text-zinc-200'
+            className={`flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-2 ${
+              showSession ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
             }`}
             title="Session usage and auth mode"
           >
-            Session ▾
+            Session
+            <ChevronDown size={11} />
           </button>
         )}
         <button

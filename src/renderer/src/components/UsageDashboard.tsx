@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { percentColors } from '../usageColors'
+import { Refresh } from './Icon'
 import type {
   PlanLimit,
   PlanUsage,
@@ -72,7 +73,7 @@ function BurnLine({
   if (burn.hitsLimitAt === null || burn.reachesReset) {
     return (
       <div className="mb-3 text-[12px] text-zinc-500">
-        <span className="text-accent">{rate}</span> · won&apos;t hit 100% before reset
+        <span className="text-zinc-300">{rate}</span> · won&apos;t hit 100% before reset
       </div>
     )
   }
@@ -98,7 +99,7 @@ function ProjectBars({ projects }: { projects: ProjectUsage[] }): React.JSX.Elem
           </span>
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
             <div
-              className="h-full rounded-full bg-accent-dim"
+              className="h-full rounded-full bg-zinc-600"
               style={{ width: `${(p.share / max) * 100}%` }}
             />
           </div>
@@ -141,7 +142,7 @@ function DailyChart({ data }: { data: DailyUsagePoint[] }): React.JSX.Element {
   const barWidth = width / data.length - gap
   const max = Math.max(...data.map((d) => d.costUsd), 0.01)
   return (
-    <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="text-accent">
+    <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="text-zinc-500">
       {data.map((d, i) => {
         const h = d.costUsd > 0 ? Math.max((d.costUsd / max) * height, 2) : 0
         return (
@@ -225,7 +226,7 @@ function UsageDashboard(): React.JSX.Element | null {
             <button
               onClick={onRefresh}
               disabled={refreshing}
-              className="rounded px-1.5 py-0.5 text-[13px] leading-none text-zinc-500 hover:bg-surface-2 hover:text-zinc-300 disabled:hover:bg-transparent"
+              className="rounded p-1 leading-none text-zinc-500 hover:bg-surface-2 hover:text-zinc-300 disabled:hover:bg-transparent"
               title={
                 now !== null
                   ? `Refresh — updated ${new Date(now).toLocaleTimeString([], {
@@ -236,7 +237,9 @@ function UsageDashboard(): React.JSX.Element | null {
                   : 'Refresh'
               }
             >
-              <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>↻</span>
+              <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>
+                <Refresh size={14} />
+              </span>
             </button>
           </span>
         </div>

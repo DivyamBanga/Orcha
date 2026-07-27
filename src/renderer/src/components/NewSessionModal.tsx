@@ -130,7 +130,7 @@ function NewSessionModal(): React.JSX.Element | null {
           <button
             onClick={handleCreate}
             disabled={creating || !name.trim()}
-            className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+            className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
           >
             {creating ? 'Creating…' : 'Create'}
           </button>

@@ -175,7 +175,7 @@ function NewProjectModal(): React.JSX.Element | null {
               <button
                 onClick={handleCreate}
                 disabled={!name.trim()}
-                className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+                className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
               >
                 Create
               </button>
@@ -217,7 +217,7 @@ function NewProjectModal(): React.JSX.Element | null {
             </div>
             <button
               onClick={handleLocal}
-              className="w-full rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-2 font-medium text-accent hover:bg-accent-dim/30"
+              className="w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-2 font-medium text-surface-0 hover:border-white hover:bg-white"
             >
               Choose folder…
             </button>
@@ -275,7 +275,7 @@ function NewProjectModal(): React.JSX.Element | null {
               <button
                 onClick={handleRemote}
                 disabled={!host.trim() || !user.trim() || !remotePath.trim()}
-                className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30 disabled:opacity-50"
+                className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
               >
                 Connect
               </button>

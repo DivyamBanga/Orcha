@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import TerminalView from './TerminalView'
+import { Check as CheckIcon, Circle, Mark } from './Icon'
 
 function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
   return (
     <span className="flex items-center gap-2">
-      <span className={`font-mono text-[13px] ${ok ? 'text-accent' : 'text-zinc-600'}`}>
-        {ok ? '✓' : '○'}
+      <span className={ok ? 'text-zinc-200' : 'text-zinc-600'}>
+        {ok ? <CheckIcon size={14} /> : <Circle size={14} />}
       </span>
       <span className={ok ? 'text-zinc-300' : 'text-zinc-500'}>{label}</span>
     </span>
@@ -33,9 +34,14 @@ function SetupGate(): React.JSX.Element {
   }
 
   return (
-    <div className="console-bg flex h-full flex-1 flex-col items-center justify-center gap-6 p-8">
+    <div className="flex h-full flex-1 flex-col items-center justify-center gap-6 p-8">
       <div className="text-center">
-        <div className="font-mono text-2xl font-semibold tracking-tight text-zinc-100">orcha</div>
+        <div className="flex items-center justify-center gap-2.5">
+          <Mark size={22} className="text-zinc-100" />
+          <span className="font-mono text-2xl font-semibold tracking-tight text-zinc-100">
+            orcha
+          </span>
+        </div>
         <div className="mt-1 text-zinc-500">Connect your accounts to get started</div>
       </div>
 
@@ -45,7 +51,7 @@ function SetupGate(): React.JSX.Element {
           {!setup?.gh && (
             <button
               onClick={() => runInTerminal('gh auth login')}
-              className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30"
+              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
             >
               Connect GitHub
             </button>
@@ -56,7 +62,7 @@ function SetupGate(): React.JSX.Element {
           {!setup?.claude && (
             <button
               onClick={() => runInTerminal('claude')}
-              className="rounded-md border border-accent-dim bg-accent-dim/15 px-3 py-1.5 font-medium text-accent hover:bg-accent-dim/30"
+              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
             >
               Connect Claude
             </button>

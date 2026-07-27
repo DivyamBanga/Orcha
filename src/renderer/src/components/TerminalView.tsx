@@ -63,7 +63,7 @@ function TerminalView({
       fontSize: 13,
       fontFamily: "'Cascadia Code', Consolas, monospace",
       theme: {
-        background: '#09090b',
+        background: '#0a0a0c',
         foreground: '#d4d4d8',
         cursor: '#d4d4d8',
         selectionBackground: '#3f3f46'
@@ -160,8 +160,8 @@ function TerminalView({
 
   return (
     <div
-      className={`relative h-full w-full bg-[#09090b] p-2 ${
-        dropActive ? 'ring-1 ring-inset ring-accent-dim' : ''
+      className={`relative h-full w-full bg-surface-0 p-2 ${
+        dropActive ? 'ring-1 ring-inset ring-edge-bright' : ''
       }`}
       style={{ display: visible ? 'block' : 'none' }}
       onContextMenu={(event) => {
