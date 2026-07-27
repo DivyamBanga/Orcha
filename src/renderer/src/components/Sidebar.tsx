@@ -262,7 +262,7 @@ function Sidebar(): React.JSX.Element {
               <div key={project.id} className="mb-2 overflow-hidden rounded-md border border-edge">
                 <div
                   onContextMenu={(e) => openProjectMenu(e, project)}
-                  className="group flex items-center gap-1 bg-white/[0.014] px-2.5 py-2"
+                  className="group flex items-center gap-1 border-b border-edge bg-white/[0.014] px-2.5 py-2"
                 >
                   <button
                     onClick={() => mainSession && setActive(mainSession.id)}

@@ -6,13 +6,13 @@ const MIN_HOLD_MS = 400
 // ...and never trap: a setup check that hangs or rejects can't leave you
 // staring at a closed curtain.
 const MAX_HOLD_MS = 2000
-// Seam draws 0-180ms, halves part 200-640ms. Matches the CSS.
-const PLAY_MS = 640
+// The seam is already lit by the time this starts, so it is just the part.
+const PLAY_MS = 440
 
-// The opening reveal. Holds shut while the app mounts, loads its projects and
-// spawns any restored terminals, then parts from the centre — so the curtain
-// is the loading screen rather than something that plays and then hands you a
-// half-built window.
+// The opening reveal. The seam lights up immediately and holds while the app
+// mounts, loads its projects and spawns any restored terminals; then the two
+// halves part from it — so the curtain is the loading screen rather than
+// something that plays and then hands you a half-built window.
 function BootReveal({ ready }: { ready: boolean }): React.JSX.Element | null {
   const [minHoldDone, setMinHoldDone] = useState(false)
   const [phase, setPhase] = useState<'hold' | 'playing' | 'done'>('hold')
@@ -53,7 +53,7 @@ function BootReveal({ ready }: { ready: boolean }): React.JSX.Element | null {
   if (phase === 'done') return null
 
   return (
-    <div className={`boot${phase === 'playing' ? ' boot-playing' : ''}`}>
+    <div className={`boot boot-armed${phase === 'playing' ? ' boot-playing' : ''}`}>
       <div className="boot-half boot-half-left" />
       <div className="boot-half boot-half-right" />
       <div className="boot-bloom" />
