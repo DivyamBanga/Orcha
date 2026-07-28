@@ -22,8 +22,10 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const s = useStore.getState()
     s.checkSetup()
-    s.load().then(() => {
-      s.restoreOpenSessions()
+    s.load().then(async () => {
+      // Awaited so the restored tab is set before the curtain parts — the
+      // reveal should uncover it, not have it pop in mid-animation.
+      await s.restoreOpenSessions()
       setLoaded(true)
     })
   }, [])

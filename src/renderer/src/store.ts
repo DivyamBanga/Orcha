@@ -16,6 +16,10 @@ function persistOpenSessions(ids: string[]): void {
   window.orcha.ui.saveState('openSessions', JSON.stringify(ids)).catch(() => {})
 }
 
+function persistActive(id: string | null): void {
+  window.orcha.ui.saveState('activeId', id ?? '').catch(() => {})
+}
+
 interface OrchaStore {
   setup: { gh: boolean; claude: boolean } | null
   projects: Project[]
@@ -112,19 +116,31 @@ export const useStore = create<OrchaStore>((set) => ({
     set({ projects, workspaces })
   },
 
-  // Reopen the sessions that were live when the app last quit.
+  // Reopen the sessions that were live when the app last quit, and land on
+  // the tab that was focused then — so the opening reveal uncovers the screen
+  // you left, not an empty pane.
   restoreOpenSessions: async () => {
-    const raw = await window.orcha.ui.getState('openSessions')
-    if (!raw) return
-    let ids: string[]
-    try {
-      ids = JSON.parse(raw)
-    } catch {
-      return
+    const [rawOpen, rawActive] = await Promise.all([
+      window.orcha.ui.getState('openSessions'),
+      window.orcha.ui.getState('activeId')
+    ])
+    let ids: string[] = []
+    if (rawOpen) {
+      try {
+        ids = JSON.parse(rawOpen)
+      } catch {
+        ids = []
+      }
     }
     const valid = ids.filter((id) => useStore.getState().workspaces.some((w) => w.id === id))
     if (valid.length > 0) {
       set((s) => ({ openSessions: [...new Set([...s.openSessions, ...valid])] }))
+    }
+    // Only a tab that actually has a terminal restored (or Mission Control)
+    // qualifies — a workspace outside openSessions would show a header over a
+    // dead pane.
+    if (rawActive && (rawActive === MC || useStore.getState().openSessions.includes(rawActive))) {
+      set({ activeId: rawActive })
     }
   },
 
@@ -135,6 +151,7 @@ export const useStore = create<OrchaStore>((set) => ({
           ? [...s.openSessions, id]
           : s.openSessions
       if (openSessions !== s.openSessions) persistOpenSessions(openSessions)
+      persistActive(id)
       return {
         activeId: id,
         unread: id ? { ...s.unread, [id]: false } : s.unread,

@@ -199,36 +199,40 @@ function Sidebar(): React.JSX.Element {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-edge bg-surface-1">
       {/* One line, five items, 240px to play with — everything is shrink-0 and
-          nowrap so nothing collapses into a second row when the counts grow. */}
-      <div className="flex h-11 items-center gap-1.5 border-b border-edge px-3">
-        <Mark size={13} className="shrink-0 text-zinc-100" />
-        <span className="shrink-0 font-mono text-sm font-semibold tracking-tight text-zinc-100">
-          orcha
-        </span>
-        {openCount > 0 && (
-          <span
-            className="flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-zinc-400"
-            title={`${openCount} session${openCount === 1 ? '' : 's'} running`}
-          >
-            <span className="state-ring shrink-0" />
-            {openCount}
+          nowrap so nothing collapses into a second row when the counts grow.
+          Contents sit in a boot-item wrapper (not the bar itself) so the rise
+          moves the text while the bar and its border stay put. */}
+      <div className="flex h-11 items-center border-b border-edge px-3">
+        <div className="boot-item boot-d2 flex min-w-0 flex-1 items-center gap-1.5">
+          <Mark size={13} className="shrink-0 text-zinc-100" />
+          <span className="shrink-0 font-mono text-sm font-semibold tracking-tight text-zinc-100">
+            orcha
           </span>
-        )}
-        <div className="flex-1" />
-        <UsageGlance />
-        <button
-          onClick={() => setShowSettings(true)}
-          className="shrink-0 rounded p-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
-          title="Settings"
-        >
-          <Settings size={15} />
-        </button>
+          {openCount > 0 && (
+            <span
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-zinc-400"
+              title={`${openCount} session${openCount === 1 ? '' : 's'} running`}
+            >
+              <span className="state-ring shrink-0" />
+              {openCount}
+            </span>
+          )}
+          <div className="flex-1" />
+          <UsageGlance />
+          <button
+            onClick={() => setShowSettings(true)}
+            className="shrink-0 rounded p-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+            title="Settings"
+          >
+            <Settings size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Mission Control — pinned */}
       <button
         onClick={() => setActive('orchestrator')}
-        className={`mx-2 mt-2 flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors duration-100 ${
+        className={`boot-item boot-d3 mx-2 mt-2 flex items-center gap-2 rounded-md border px-3 py-2 text-left transition-colors duration-100 ${
           activeId === 'orchestrator'
             ? 'border-edge-bright bg-surface-3 text-zinc-100'
             : 'border-edge bg-surface-1 text-zinc-300 hover:border-edge-bright hover:bg-surface-2'
@@ -249,17 +253,23 @@ function Sidebar(): React.JSX.Element {
 
       <div className="mt-3 flex-1 overflow-y-auto px-2 pb-2">
         {projects.length === 0 ? (
-          <div className="px-2 py-8 text-center leading-relaxed text-zinc-600">
+          <div className="boot-item boot-d4 px-2 py-8 text-center leading-relaxed text-zinc-600">
             No projects yet.
             <br />
             Create or open one below.
           </div>
         ) : (
-          projects.map((project) => {
+          projects.map((project, i) => {
             const sessions = workspaces.filter((w) => w.projectId === project.id)
             const mainSession = sessions.find((w) => w.kind === 'main')
+            // Cards follow the wipe top-to-bottom; beyond the third the step
+            // stops growing so a long list doesn't drag the cascade out.
+            const cascade = ['boot-d4', 'boot-d5', 'boot-d6'][i] ?? 'boot-d7'
             return (
-              <div key={project.id} className="mb-2 overflow-hidden rounded-md border border-edge">
+              <div
+                key={project.id}
+                className={`${cascade} boot-item mb-2 overflow-hidden rounded-md border border-edge`}
+              >
                 <div
                   onContextMenu={(e) => openProjectMenu(e, project)}
                   className="group flex items-center gap-1 border-b border-edge bg-white/[0.014] px-2.5 py-2"
@@ -300,7 +310,7 @@ function Sidebar(): React.JSX.Element {
       <div className="border-t border-edge p-2">
         <button
           onClick={() => setShowNewProject(true)}
-          className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-zinc-500 transition-colors duration-100 hover:bg-surface-2 hover:text-zinc-200"
+          className="boot-item boot-d7 flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-zinc-500 transition-colors duration-100 hover:bg-surface-2 hover:text-zinc-200"
         >
           <Plus size={14} />
           New project

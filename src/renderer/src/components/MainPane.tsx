@@ -9,7 +9,7 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
   const status = useStore((s) => s.gitStatus[workspaceId])
   if (!status) return null
   return (
-    <span className="flex items-center gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-zinc-400">
+    <span className="fade-late flex items-center gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-zinc-400">
       {/* Clean vs dirty is carried by shape, not colour — a working tree is a
           git fact, and colour in this app is reserved for session state. */}
       {status.dirty ? (
@@ -99,10 +99,14 @@ function MainPane(): React.JSX.Element {
     return (
       <main className="flex min-w-0 flex-1 flex-col">
         {activeId === 'orchestrator' ? (
-          <header className="flex h-11 shrink-0 items-center gap-3 border-b border-edge px-4">
-            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
-            <span className="font-medium text-zinc-100">Mission Control</span>
-            <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
+          <header className="flex h-11 shrink-0 items-center border-b border-edge px-4">
+            {/* Contents in a boot-item wrapper so the rise moves the words,
+                not the bar or its border. */}
+            <div className="boot-item boot-d1 flex items-center gap-3">
+              <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
+              <span className="font-medium text-zinc-100">Mission Control</span>
+              <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
+            </div>
           </header>
         ) : (
           <header className="h-11 shrink-0 border-b border-edge" />
@@ -112,7 +116,7 @@ function MainPane(): React.JSX.Element {
             <ChatView workspaceId="orchestrator" />
           ) : (
             <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
+              <div className="boot-item text-center">
                 <div className="text-lg font-medium text-zinc-500">No session selected</div>
                 <div className="mt-1 text-zinc-600">
                   Pick a session on the left, or create a project to start one
@@ -174,107 +178,112 @@ function MainPane(): React.JSX.Element {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col">
-      <header className="relative flex h-11 shrink-0 items-center gap-2 border-b border-edge px-4">
-        <span className="font-medium text-zinc-100">{workspace.name}</span>
-        {!project?.sshHost && (
-          <>
-            <GitChip workspaceId={workspace.id} />
-            {(gitStatus?.behind ?? 0) > 0 && (
+      <header className="relative flex h-11 shrink-0 items-center border-b border-edge px-4">
+        {/* Contents in a boot-item wrapper so the rise moves the controls
+            while the bar and its border stay put; the popover anchors to the
+            header itself, outside the animated wrapper. */}
+        <div className="boot-item boot-d1 flex min-w-0 flex-1 items-center gap-2">
+          <span className="font-medium text-zinc-100">{workspace.name}</span>
+          {!project?.sshHost && (
+            <>
+              <GitChip workspaceId={workspace.id} />
+              {(gitStatus?.behind ?? 0) > 0 && (
+                <button
+                  onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
+                  disabled={gitBusy}
+                  className="flex items-center gap-1 rounded-md border border-edge-bright px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-surface-2 hover:text-zinc-100 disabled:opacity-40"
+                  title="Remote has new commits — git pull --ff-only"
+                >
+                  Pull
+                  <ArrowDown size={10} />
+                  {gitStatus?.behind}
+                </button>
+              )}
+            </>
+          )}
+          <div className="flex-1" />
+          {!project?.sshHost && (
+            <>
               <button
-                onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
-                disabled={gitBusy}
-                className="flex items-center gap-1 rounded-md border border-edge-bright px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-surface-2 hover:text-zinc-100 disabled:opacity-40"
-                title="Remote has new commits — git pull --ff-only"
-              >
-                Pull
-                <ArrowDown size={10} />
-                {gitStatus?.behind}
-              </button>
-            )}
-          </>
-        )}
-        <div className="flex-1" />
-        {!project?.sshHost && (
-          <>
-            <button
-              onClick={handleCommitPush}
-              disabled={gitBusy}
-              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
-            >
-              Commit + Push
-            </button>
-            <button
-              onClick={handleAskClaude}
-              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-              title="Types a commit-and-push instruction into this session"
-            >
-              Ask Claude
-            </button>
-            {workspace.kind === 'worktree' && (
-              <button
-                onClick={handlePr}
+                onClick={handleCommitPush}
                 disabled={gitBusy}
                 className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
-                title="Push this branch and open a pull request"
               >
-                PR
+                Commit + Push
               </button>
-            )}
-            <button
-              onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
-              className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-              title="Open this repo on GitHub"
-            >
-              GitHub
-            </button>
-            <span className="mx-1 h-4 w-px bg-edge" />
-          </>
-        )}
-        <button
-          onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${
-            sharing ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-          title="Share a live read-only view of this terminal — any browser, no install"
-        >
-          {/* Broadcasting is signalled by the pressed state and the label
-              itself rather than colour, which stays reserved for sessions. */}
-          {sharing && <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
-          {sharing ? 'Sharing' : 'Share'}
-        </button>
-        <button
-          onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
-          className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-          title="Continue this session from your phone (Claude Code Remote Control)"
-        >
-          Phone
-        </button>
-        <span className="mx-1 h-4 w-px bg-edge" />
-        {!project?.sshHost && (
+              <button
+                onClick={handleAskClaude}
+                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+                title="Types a commit-and-push instruction into this session"
+              >
+                Ask Claude
+              </button>
+              {workspace.kind === 'worktree' && (
+                <button
+                  onClick={handlePr}
+                  disabled={gitBusy}
+                  className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+                  title="Push this branch and open a pull request"
+                >
+                  PR
+                </button>
+              )}
+              <button
+                onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
+                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+                title="Open this repo on GitHub"
+              >
+                GitHub
+              </button>
+              <span className="mx-1 h-4 w-px bg-edge" />
+            </>
+          )}
           <button
-            onClick={() => setShowSession((v) => !v)}
-            className={`flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-2 ${
-              showSession ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+            onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${
+              sharing ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
             }`}
-            title="Session usage and auth mode"
+            title="Share a live read-only view of this terminal — any browser, no install"
           >
-            Session
-            <ChevronDown size={11} />
+            {/* Broadcasting is signalled by the pressed state and the label
+                itself rather than colour, which stays reserved for sessions. */}
+            {sharing && <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
+            {sharing ? 'Sharing' : 'Share'}
           </button>
-        )}
-        <button
-          onClick={handleRestart}
-          className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
-          title="Restart the Claude session (resumes conversation, applies model/effort)"
-        >
-          Restart
-        </button>
-        <button
-          onClick={handleClose}
-          className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
-        >
-          Close
-        </button>
+          <button
+            onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
+            className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+            title="Continue this session from your phone (Claude Code Remote Control)"
+          >
+            Phone
+          </button>
+          <span className="mx-1 h-4 w-px bg-edge" />
+          {!project?.sshHost && (
+            <button
+              onClick={() => setShowSession((v) => !v)}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-2 ${
+                showSession ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Session usage and auth mode"
+            >
+              Session
+              <ChevronDown size={11} />
+            </button>
+          )}
+          <button
+            onClick={handleRestart}
+            className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+            title="Restart the Claude session (resumes conversation, applies model/effort)"
+          >
+            Restart
+          </button>
+          <button
+            onClick={handleClose}
+            className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
+          >
+            Close
+          </button>
+        </div>
         {showSession && (
           <SessionPopover workspace={workspace} onClose={() => setShowSession(false)} />
         )}

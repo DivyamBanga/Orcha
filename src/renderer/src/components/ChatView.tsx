@@ -121,7 +121,9 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // boot-item: on a boot that lands here, Mission Control's content rises in
+    // first — it sits at the seam, where the reveal begins.
+    <div className="boot-item flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {items.length === 0 && !streamingText && (
           <div className="flex h-full items-center justify-center font-mono text-zinc-700">

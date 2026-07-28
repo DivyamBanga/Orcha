@@ -50,12 +50,28 @@ function BootReveal({ ready }: { ready: boolean }): React.JSX.Element | null {
     return () => clearTimeout(done)
   }, [phase])
 
+  // The cascade trigger: while this class is on <body>, marked app elements
+  // rise in behind the parting edges (see main.css). Set imperatively rather
+  // than through React state so no app-wide render lands on the frame the
+  // animation starts. The removal is fire-and-forget — this component
+  // unmounts before the last items finish settling, and removing the class on
+  // unmount would clip them mid-rise.
+  useEffect(() => {
+    if (phase !== 'playing') return
+    document.body.classList.add('boot-cascade')
+    setTimeout(() => document.body.classList.remove('boot-cascade'), 800)
+  }, [phase])
+
   if (phase === 'done') return null
 
   return (
     <div className={`boot boot-armed${phase === 'playing' ? ' boot-playing' : ''}`}>
-      <div className="boot-half boot-half-left" />
-      <div className="boot-half boot-half-right" />
+      <div className="boot-half boot-half-left">
+        <div className="boot-edge" />
+      </div>
+      <div className="boot-half boot-half-right">
+        <div className="boot-edge" />
+      </div>
       <div className="boot-bloom" />
       <div className="boot-seam" />
     </div>

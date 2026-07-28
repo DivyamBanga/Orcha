@@ -157,16 +157,27 @@ textarea {
    reliably composited yet and would stutter exactly when the main thread is
    busiest.
 
-   Deliberately nothing animates on the app subtree itself. Fading or scaling
-   it would force the whole tree — xterm canvases included — into a layer and
+   The app subtree is never animated as a whole. Fading or scaling it would
+   force the whole tree — xterm canvases included — into a layer and
    re-rasterise it at a fractional scale, which is the one thing here that
-   would actually judder. */
+   would actually judder. The cascade further down animates individual leaf
+   items instead (headers, cards, buttons): small one-shot layers, never a
+   terminal canvas. */
 
 .boot {
   position: fixed;
   inset: 0;
   z-index: 100;
   pointer-events: none;
+  /* One definition of "the line" — the seam at rest and the two edges it
+     splits into share it, so they are indistinguishable at the handoff. */
+  --boot-line: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0.85) 18%,
+    rgba(255, 255, 255, 0.85) 82%,
+    rgba(255, 255, 255, 0)
+  );
 }
 
 /* A hair over half each, so the two always overlap at the seam instead of
@@ -197,13 +208,7 @@ textarea {
   bottom: 0;
   width: 1px;
   margin-left: -0.5px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0),
-    rgba(255, 255, 255, 0.85) 18%,
-    rgba(255, 255, 255, 0.85) 82%,
-    rgba(255, 255, 255, 0)
-  );
+  background: var(--boot-line);
   /* Rests at full height and invisible: the draw animates in from scaleY(0)
      and its forwards fill holds it lit, then the part only touches opacity so
      the transform falls back to this and the seam cannot snap shut. */
@@ -211,6 +216,27 @@ textarea {
   transform-origin: 50% 50%;
   opacity: 0;
   will-change: transform, opacity;
+}
+
+/* The line the seam splits into: one lit edge riding the inside of each half,
+   positioned to sit exactly over the seam while the curtain is shut. Hidden
+   until the part so the held line stays a single pixel; each is its own tiny
+   promoted layer, so lighting it touches neither half's texture, and the
+   sweep itself is inherited from the parent's transform for free. */
+.boot-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--boot-line);
+  opacity: 0;
+  will-change: opacity;
+}
+.boot-half-left .boot-edge {
+  right: 0.5px;
+}
+.boot-half-right .boot-edge {
+  left: 0.5px;
 }
 
 .boot-bloom {
@@ -286,12 +312,18 @@ textarea {
 }
 
 /* Listed after the armed rules so they win on equal specificity. These touch
-   opacity only; the seam's transform stays on its base scaleY(1). */
+   opacity only; the seam's transform stays on its base scaleY(1). The edges
+   light the instant the part starts — at that frame they sit exactly under
+   the seam, so the line reads as splitting in two — and the centre seam gets
+   out quickly rather than ghosting over content rising in its place. */
+.boot-playing .boot-edge {
+  opacity: 1;
+}
 .boot-playing .boot-seam {
-  animation: orcha-seam-fade 300ms linear forwards;
+  animation: orcha-seam-fade 150ms linear forwards;
 }
 .boot-playing .boot-bloom {
-  animation: orcha-bloom-out 260ms ease-out forwards;
+  animation: orcha-bloom-out 180ms ease-out forwards;
 }
 .boot-playing .boot-half-left {
   animation: orcha-part-left 440ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -300,9 +332,68 @@ textarea {
   animation: orcha-part-right 440ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ---- boot cascade ---------------------------------------------------------
+
+   While the halves part, <body> carries .boot-cascade (flipped imperatively
+   by BootReveal so no React render lands on the animation's first frame) and
+   marked items rise into place behind the passing edge. 'both' fill keeps an
+   item absent until its slot. Delays run centre-out to match the wipe: the
+   main pane sits at the seam so it leads; the sidebar hugs the left screen
+   edge, which the wipe reaches last, and cascades top-to-bottom. The class
+   comes off once the choreography ends, so nothing mounted later re-runs it. */
+body.boot-cascade .boot-item {
+  animation: orcha-rise 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+body.boot-cascade .boot-d1 {
+  animation-delay: 30ms; /* main-pane header */
+}
+body.boot-cascade .boot-d2 {
+  animation-delay: 90ms; /* sidebar header */
+}
+body.boot-cascade .boot-d3 {
+  animation-delay: 115ms; /* Mission Control */
+}
+body.boot-cascade .boot-d4 {
+  animation-delay: 140ms; /* first project card */
+}
+body.boot-cascade .boot-d5 {
+  animation-delay: 165ms;
+}
+body.boot-cascade .boot-d6 {
+  animation-delay: 190ms;
+}
+body.boot-cascade .boot-d7 {
+  animation-delay: 215ms; /* later cards, New project */
+}
+
+@keyframes orcha-rise {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Content that appears when a fetch lands after boot (the usage ring, git
+   chips) eases in instead of popping. Mount-scoped, so it also softens the
+   same widgets when a tab is opened later. */
+.fade-late {
+  animation: orcha-fade-late 150ms ease-out;
+}
+@keyframes orcha-fade-late {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .state-ring,
-  .busy-ring {
+  .busy-ring,
+  body.boot-cascade .boot-item,
+  .fade-late {
     animation: none;
   }
   .boot {
