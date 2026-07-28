@@ -131,6 +131,45 @@ export function lastActivityAgeSeconds(cwd: string): number | null {
   return (Date.now() - statSync(file).mtimeMs) / 1000
 }
 
+// The question Claude is currently asking, read from the latest transcript.
+// The terminal screen cannot be trusted for copy (ConPTY diffs glue words
+// together), but the transcript carries the ask verbatim: an AskUserQuestion
+// tool call, or a trailing question sentence in the last assistant text.
+// Scans only the most recent assistant entry — older questions are history.
+export function pendingQuestion(cwd: string): string | null {
+  const file = latestSessionFile(cwd)
+  if (!file) return null
+  try {
+    const raw = readFileSync(file, 'utf8').trim().split('\n')
+    for (const line of raw.slice(-40).reverse()) {
+      let entry: { type?: string; message?: { content?: unknown } }
+      try {
+        entry = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (entry.type !== 'assistant') continue
+      const content = entry.message?.content
+      if (!Array.isArray(content)) return null
+      const blocks = content as { type: string; text?: string; name?: string; input?: unknown }[]
+      for (const block of blocks) {
+        if (block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+          const input = block.input as { questions?: { question?: string }[] } | undefined
+          const q = input?.questions?.[0]?.question
+          if (typeof q === 'string' && q.trim()) return q.trim().slice(0, 140)
+        }
+      }
+      const texts = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string')
+      const lastText = texts[texts.length - 1]?.text?.trim()
+      const ask = lastText?.match(/[^.!?\n]{8,140}\?\s*$/)
+      return ask ? ask[0].trim() : null
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 // One-line summaries of the tail of the latest session transcript.
 export function readRecentActivity(cwd: string, limit: number): string[] {
   const file = latestSessionFile(cwd)

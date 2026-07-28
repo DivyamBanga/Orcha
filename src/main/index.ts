@@ -125,6 +125,8 @@ function createWindow(): void {
   }
   const activityMonitor = new ActivityMonitor(send, ptyManager)
   activityMonitor.isWindowFocused = () => mainWindow.isFocused()
+  ptyManager.onUnexpectedExit = (workspaceId, hadInput) =>
+    activityMonitor.onUnexpectedExit(workspaceId, hadInput)
   activityMonitor.onNotificationClick = (workspaceId) => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()

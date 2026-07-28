@@ -1,6 +1,7 @@
 import { Notification } from 'electron'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
+import { pendingQuestion } from '../claudeSessions'
 import type { PtyManager } from './PtyManager'
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -28,37 +29,87 @@ const MARKER_FRESH_MS = 5000
 // While a turn runs the spinner repaints about once a second, so output never
 // stays quiet mid-turn. Output silent this long = the turn is over.
 const OUTPUT_IDLE_MS = 8000
-// Only notify when the work actually lasted a bit, so quick replies stay quiet.
+// Only notify a finish when the work actually lasted a bit, so quick replies
+// stay quiet. Being blocked on an answer is exempt: a question needs you no
+// matter how early in the turn it appeared.
 const MIN_WORK_BURST_MS = 8000
 // After the turn looks finished, wait this long and make sure it stayed idle
 // before pinging. If the spinner comes back (the turn only paused on a slow
 // command), the pending ping is cancelled and you never get a false "done".
 const CONFIRM_STILL_IDLE_MS = 6000
 
-// Rotating "your session finished" lines. Picked at random, never the same one
-// twice in a row. Human, a little funny, no em dashes.
-const DONE_LINES = [
-  'All done. Get back to work.',
-  'Finished. Your move, boss.',
-  'Wrapped up and twiddling my thumbs.',
-  'Done cooking. Come take a look.',
-  'That one is done. What is next?',
-  'Ready when you are.',
-  'Claude tapped out. Go check the work.',
-  'Stop scrolling, it is done.',
-  'Finished the job. Reporting for duty.',
-  'Done. Time to review the damage.',
-  'Handoff time. It is all yours now.',
-  'Cooked to perfection. Give it a look.',
-  'Back to you. I did my part.',
-  'Task complete. No notes, hopefully.',
-  'Wrapped. Go be a genius.',
-  'The robots have finished. Return to your desk.',
-  'Done and dusted. Quit slacking.',
-  'Finished before you finished your coffee.',
-  'That is a wrap. Roll credits.',
-  'Mission accomplished. Come collect.'
+// What kind of ping a settled screen earns. 'blocked' is Claude waiting on an
+// answer (chimes), 'finished' is a completed turn (silent), 'exited' is the
+// claude process dying under the session (silent).
+type PingKind = 'blocked' | 'finished' | 'exited'
+
+// Signs the TUI stopped to ask something. ConPTY diffs skip cells that are
+// already painted, so chrome phrases can arrive glued ("esctocancel") or even
+// missing a letter ("Enter to elect" — observed live); phrases are therefore
+// matched against a whitespace-free copy, and the primary signal is content
+// the TUI paints fresh: two or more numbered options plus a question mark.
+// The prose variants also catch a turn that ends by asking you a question in
+// words, which equally needs an answer. Deliberately absent: "tabtocycle",
+// which the idle composer's footer contains.
+const FLAT_ASK_HINTS = [
+  /doyouwant/i,
+  /wouldyoulike/i,
+  /\(y\/n\)/i,
+  /esctocancel/i,
+  /enterto(?:select|confirm|continue)/i
 ]
+// A picker option: "1. Semantic", "❯ 2. Calendar" — digit, dot, then a fresh
+// capital or paren (which keeps version numbers like "1.4.2" from counting).
+const OPTION_DIGIT = /(?:^|[\s❯>])([1-9])\.\s?[A-Z(]/g
+// The pty wraps claude in `powershell -NoExit`, so claude dying leaves a
+// PowerShell prompt as the last thing drawn (spaced and glued variants).
+const SHELL_PROMPT = /PS [A-Za-z]:[^>\n]{0,200}>\s*$/
+const FLAT_SHELL_PROMPT = /PS[A-Za-z]:[^>]{0,200}>$/
+// The CSI strip in PtyManager leaves OSC title sets, box drawing and stray
+// control bytes behind; clear those before matching text.
+// eslint-disable-next-line no-control-regex
+const OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
+// eslint-disable-next-line no-control-regex
+const CTRL = /[\x00-\x08\x0b-\x1f]/g
+const BOX = /[─-▟]/g
+// A question sentence, for showing the actual ask in the toast body.
+const QUESTION = /[A-Za-z][^.?!\n]{8,140}\?/g
+
+// Decide what a settled screen means from its visible tail. ConPTY repaints
+// are cursor-addressed fragments, so this reads the tail as text soup rather
+// than trusting line structure.
+function classifyScreen(raw: string): { kind: PingKind; question: string | null } {
+  const tail = raw.replace(OSC, '').replace(BOX, ' ').replace(CTRL, ' ').slice(-1200)
+  const flat = tail.replace(/\s+/g, '')
+  if (SHELL_PROMPT.test(tail.trimEnd()) || FLAT_SHELL_PROMPT.test(flat)) {
+    return { kind: 'exited', question: null }
+  }
+  const digits = new Set<string>()
+  for (const m of tail.matchAll(OPTION_DIGIT)) digits.add(m[1])
+  const picker = digits.size >= 2 && tail.includes('?')
+  if (picker || FLAT_ASK_HINTS.some((h) => h.test(flat))) {
+    // Search the whole tail: verbose picker options easily push the question
+    // itself several hundred characters back from the end of the screen.
+    const asks = tail.match(QUESTION)
+    // Long space runs are screen-layout gaps; keep only the segment after the
+    // last one so headers to the left of the question don't ride along. A
+    // 25+ character unbroken run means the diff glued the words — unusable.
+    const last = asks ? asks[asks.length - 1] : null
+    const seg = last ? (last.split(/\s{3,}/).pop() ?? last) : null
+    const clean = seg && seg.length >= 12 && !/\S{25,}/.test(seg)
+    const question = clean ? seg.replace(/\s+/g, ' ').trim() : null
+    return { kind: 'blocked', question }
+  }
+  return { kind: 'finished', question: null }
+}
+
+function fmtDuration(ms: number): string {
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
+}
 
 export class ActivityMonitor {
   private states = new Map<string, ActivityState>()
@@ -66,10 +117,10 @@ export class ActivityMonitor {
   // Consecutive polls with output flowing, and when that flow started.
   private flowStreak = new Map<string, number>()
   private flowStart = new Map<string, number>()
-  // Sessions that looked done and are serving out the confirmation window.
-  private pendingNotify = new Map<string, number>()
+  // Sessions that looked done and are serving out the confirmation window,
+  // with the ping already classified and worded at transition time.
+  private pendingNotify = new Map<string, { at: number; kind: PingKind; body: string }>()
   private timer: NodeJS.Timeout | null = null
-  private lastLine = ''
 
   onNotificationClick: ((workspaceId: string) => void) | null = null
   isWindowFocused: (() => boolean) | null = null
@@ -131,48 +182,93 @@ export class ActivityMonitor {
         this.states.set(workspace.id, next)
         this.send(IPC.EvActivity, { workspaceId: workspace.id, state: next })
 
-        // Turn looks finished: start the confirmation window instead of firing
-        // right away, so a mid-turn pause can't masquerade as "done". The
-        // burst runs from the turn's opening marker to its last output, so a
-        // stray marker flash measures ~0 and stays quiet. Sessions that never
-        // got any input cannot have finished anything, so they stay quiet too
-        // (that is what used to fire right after app startup).
+        // Turn settled: classify the screen and start the confirmation window
+        // instead of firing right away, so a mid-turn pause can't masquerade
+        // as "done". Two gates keep launches and recap repaints silent: the
+        // session must have had real input, and the burst must have drawn the
+        // busy marker at least once (a real turn always does; a `--continue`
+        // recap or startup flash never does).
         if (prev === 'working' && next === 'waiting') {
           const idleFor = this.ptyManager.outputAgeMs(workspace.id) ?? 0
-          const burst = now - idleFor - (this.workingSince.get(workspace.id) ?? now)
-          if (burst >= MIN_WORK_BURST_MS && this.ptyManager.hadInput(workspace.id)) {
-            this.pendingNotify.set(workspace.id, now)
+          const started = this.workingSince.get(workspace.id) ?? now
+          const burst = now - idleFor - started
+          const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
+          const markerInBurst = markerAge !== null && now - markerAge >= started - 5000
+          if (markerInBurst && this.ptyManager.hadInput(workspace.id)) {
+            const { kind, question } = classifyScreen(this.ptyManager.screenText(workspace.id))
+            if (kind === 'blocked') {
+              // The transcript has the ask verbatim; the screen-scraped text
+              // is the fallback for sessions without a local transcript (ssh).
+              const ask = pendingQuestion(workspace.worktreePath) ?? question
+              this.pendingNotify.set(workspace.id, {
+                at: now,
+                kind,
+                body: ask ?? 'Waiting on your input to continue'
+              })
+            } else if (kind === 'exited') {
+              this.pendingNotify.set(workspace.id, {
+                at: now,
+                kind,
+                body: 'The Claude process exited'
+              })
+            } else if (burst >= MIN_WORK_BURST_MS) {
+              this.pendingNotify.set(workspace.id, {
+                at: now,
+                kind,
+                body: `Worked ${fmtDuration(burst)}, back to you`
+              })
+            }
           }
         }
       }
 
-      // A resumed (or closed) session cancels any pending "finished" ping.
+      // A resumed (or closed) session cancels any pending ping.
       if (next !== 'waiting') this.pendingNotify.delete(workspace.id)
 
       // Still idle after the confirmation window: fire once, but only if you're
       // not already looking at the window.
-      const pendingAt = this.pendingNotify.get(workspace.id)
-      if (pendingAt !== undefined && now - pendingAt >= CONFIRM_STILL_IDLE_MS) {
+      const pending = this.pendingNotify.get(workspace.id)
+      if (pending !== undefined && now - pending.at >= CONFIRM_STILL_IDLE_MS) {
         this.pendingNotify.delete(workspace.id)
-        if (!(this.isWindowFocused?.() ?? false)) this.notify(workspace.id, workspace.name)
+        if (!(this.isWindowFocused?.() ?? false)) {
+          this.notify(workspace.id, pending.kind, pending.body)
+        }
       }
     }
   }
 
-  private nextLine(): string {
-    const pool = DONE_LINES.filter((l) => l !== this.lastLine)
-    const line = pool[Math.floor(Math.random() * pool.length)]
-    this.lastLine = line
-    return line
+  // Wired to PtyManager.onUnexpectedExit: the process died on its own.
+  // Deliberate closes and restarts never land here, and sessions that were
+  // never typed into stay quiet (nothing of yours was lost).
+  onUnexpectedExit(workspaceId: string, hadInput: boolean): void {
+    this.pendingNotify.delete(workspaceId)
+    if (!hadInput) return
+    if (this.isWindowFocused?.() ?? false) return
+    this.notify(workspaceId, 'exited', 'The session ended unexpectedly')
   }
 
-  private notify(workspaceId: string, name: string): void {
+  // "project · session", matching the sidebar's language for main sessions.
+  private label(workspaceId: string): string {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace) return 'Claude session'
+    const project = db.projects.get(workspace.projectId)?.name
+    const session = workspace.kind === 'main' ? 'main' : workspace.name
+    return project ? `${project} · ${session}` : workspace.name
+  }
+
+  private notify(workspaceId: string, kind: PingKind, body: string): void {
     if (!Notification.isSupported()) return
-    const notification = new Notification({
-      title: `${name} is done`,
-      body: this.nextLine()
-    })
+    const label = this.label(workspaceId)
+    const title =
+      kind === 'blocked'
+        ? `${label} needs your answer`
+        : kind === 'exited'
+          ? `${label} exited`
+          : `${label} is done`
+    // Only being blocked chimes; results and deaths arrive as silent toasts.
+    const notification = new Notification({ title, body, silent: kind !== 'blocked' })
     notification.on('click', () => this.onNotificationClick?.(workspaceId))
     notification.show()
+    console.log('[notify]', kind, '|', title, '|', body)
   }
 }

@@ -42,8 +42,11 @@ interface PtyEntry {
   remoteUrlAt: number
 }
 
-// The TUI repaints this constantly while Claude is running a turn.
-const BUSY_MARKER = /esc to interrupt/i
+// The TUI repaints this constantly while Claude is running a turn. Matched
+// whitespace-free: ConPTY diffs skip cells that are already painted, so the
+// phrase's spaces often arrive as cursor jumps and strip away with the ANSI
+// ("esctointerrupt" — observed live).
+const BUSY_MARKER = /esctointerrupt/i
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
 // Remote Control session link shown by /remote-control.
@@ -80,6 +83,9 @@ export class PtyManager {
   onData: ((workspaceId: string, data: string) => void) | null = null
   onResize: ((workspaceId: string, cols: number, rows: number) => void) | null = null
   onExit: ((workspaceId: string) => void) | null = null
+  // Fires only when the process died on its own — deliberate kills (Close,
+  // Restart, quit, archive) remove the entry before killing and never land here.
+  onUnexpectedExit: ((workspaceId: string, hadInput: boolean) => void) | null = null
 
   constructor(private send: SendFn) {}
 
@@ -189,7 +195,7 @@ export class PtyManager {
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
       entry.lastOutputAt = Date.now()
-      entry.markerTail = (entry.markerTail + data.replace(ANSI, '')).slice(-64)
+      entry.markerTail = (entry.markerTail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-64)
       if (BUSY_MARKER.test(entry.markerTail)) {
         entry.lastBusyMarkerAt = Date.now()
       }
@@ -207,9 +213,15 @@ export class PtyManager {
       this.onData?.(workspaceId, data)
     })
     proc.onExit(({ exitCode }) => {
-      this.ptys.delete(workspaceId)
+      // Identity check: kill()/restart() removed (or replaced) the entry
+      // before this event, so the entry still being current means the process
+      // died on its own. Guarding the delete also keeps a late exit event
+      // from a restart's old process from clobbering the fresh entry.
+      const unexpected = this.ptys.get(workspaceId) === entry
+      if (unexpected) this.ptys.delete(workspaceId)
       this.send(IPC.EvPtyExit, { workspaceId, exitCode })
       this.onExit?.(workspaceId)
+      if (unexpected) this.onUnexpectedExit?.(workspaceId, entry.hadInput)
     })
   }
 
@@ -283,6 +295,15 @@ export class PtyManager {
 
   buffer(workspaceId: string): string {
     return this.ptys.get(workspaceId)?.buffer ?? ''
+  }
+
+  // The tail of the session's screen with CSI sequences stripped — enough to
+  // read what the TUI settled on (a question, a picker, a shell prompt after
+  // claude exits). ConPTY repaints are cursor-addressed fragments, so callers
+  // should treat this as text soup, not lines.
+  screenText(workspaceId: string): string {
+    const entry = this.ptys.get(workspaceId)
+    return entry ? entry.buffer.slice(-8000).replace(ANSI, '') : ''
   }
 
   size(workspaceId: string): { cols: number; rows: number } | null {
