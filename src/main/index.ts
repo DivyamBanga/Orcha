@@ -13,6 +13,7 @@ import { ShareService } from './services/ShareService'
 import { ActivityMonitor } from './services/ActivityMonitor'
 import { CodexService } from './services/CodexService'
 import { ClipboardService } from './services/ClipboardService'
+import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
 
 // Replaces Electron's default menu so the editing roles — and the
@@ -127,6 +128,11 @@ function createWindow(): void {
   activityMonitor.isWindowFocused = () => mainWindow.isFocused()
   ptyManager.onUnexpectedExit = (workspaceId, hadInput) =>
     activityMonitor.onUnexpectedExit(workspaceId, hadInput)
+  const mobileService = new MobileService(ptyManager, activityMonitor)
+  activityMonitor.onPing = (workspaceId, kind, body, focused) =>
+    mobileService.handlePing(workspaceId, kind, body, focused)
+  activityMonitor.onState = (workspaceId, state) => mobileService.handleState(workspaceId, state)
+  mobileService.start().catch((err) => console.log('[mobile] failed to start:', err))
   activityMonitor.onNotificationClick = (workspaceId) => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
@@ -142,6 +148,7 @@ function createWindow(): void {
     activityMonitor.stop()
     clipboardService.stop()
     shareService.stopAll()
+    mobileService.stop()
     ptyManager.killAll()
   })
   registerIpc(mainWindow, {
@@ -152,7 +159,8 @@ function createWindow(): void {
     orchestratorService,
     shareService,
     codexService,
-    clipboardService
+    clipboardService,
+    mobileService
   })
 }
 

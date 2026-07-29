@@ -16,6 +16,7 @@ import type { OrchestratorService } from './services/OrchestratorService'
 import type { ShareService } from './services/ShareService'
 import type { CodexService } from './services/CodexService'
 import type { ClipboardService } from './services/ClipboardService'
+import type { MobileService } from './services/MobileService'
 
 
 interface Services {
@@ -27,6 +28,7 @@ interface Services {
   shareService: ShareService
   codexService: CodexService
   clipboardService: ClipboardService
+  mobileService: MobileService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
@@ -38,7 +40,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     orchestratorService,
     shareService,
     codexService,
-    clipboardService
+    clipboardService,
+    mobileService
   } = services
 
   // --- setup / onboarding ---------------------------------------------------
@@ -243,6 +246,9 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(IPC.CodexStatus, () => codexService.status())
   ipcMain.handle(IPC.CodexSetup, () => codexService.setup())
+
+  // Pairing info for the phone companion (Settings → Phone shows it as a QR).
+  ipcMain.handle(IPC.MobileInfo, () => mobileService.info())
 
   // Small persisted UI state (open sessions, last active) in app_state.
   ipcMain.handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)

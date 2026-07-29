@@ -15,6 +15,7 @@ Every project in the sidebar is a real Claude Code terminal running in that repo
 - **Mission Control.** A chat that lists sessions, reads their recent activity, types prompts into their terminals, and creates projects or parallel sessions on request.
 - **Share a live view.** One click gives you a link anyone can open in a browser to watch that session's terminal live, read-only. No install on their end; stop sharing anytime. (First share downloads a small tunnel helper once.)
 - **Connect your phone.** The Phone button hooks a session up to Claude's official Remote Control: scan the QR and keep steering the same session from the Claude app or claude.ai/code. Needs a claude.ai Pro/Max login.
+- **Orcha on your phone.** A native Android companion app (see `mobile/`) shows every project and session, pushes the actual question when a session is blocked (answer from the notification shade), renders sessions as clean chat, and suggests tappable next steps per project. Connects over Tailscale; pair from Settings → Phone.
 - **Everything survives restarts.** Conversations live in Claude Code's own session files, so closing the app or rebooting loses nothing.
 
 ## First run

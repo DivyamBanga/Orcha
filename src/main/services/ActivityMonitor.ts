@@ -41,7 +41,7 @@ const CONFIRM_STILL_IDLE_MS = 6000
 // What kind of ping a settled screen earns. 'blocked' is Claude waiting on an
 // answer (chimes), 'finished' is a completed turn (silent), 'exited' is the
 // claude process dying under the session (silent).
-type PingKind = 'blocked' | 'finished' | 'exited'
+export type PingKind = 'blocked' | 'finished' | 'exited'
 
 // Signs the TUI stopped to ask something. ConPTY diffs skip cells that are
 // already painted, so chrome phrases can arrive glued ("esctocancel") or even
@@ -124,6 +124,13 @@ export class ActivityMonitor {
 
   onNotificationClick: ((workspaceId: string) => void) | null = null
   isWindowFocused: (() => boolean) | null = null
+  // Fires for every earned ping regardless of window focus (the desktop toast
+  // below still only shows unfocused) — the phone companion applies its own
+  // delivery rules and uses 'finished' to refresh next-step suggestions.
+  onPing: ((workspaceId: string, kind: PingKind, body: string, focused: boolean) => void) | null =
+    null
+  // Fires on every state flip, alongside the renderer event.
+  onState: ((workspaceId: string, state: ActivityState) => void) | null = null
 
   constructor(
     private send: SendFn,
@@ -181,6 +188,7 @@ export class ActivityMonitor {
         }
         this.states.set(workspace.id, next)
         this.send(IPC.EvActivity, { workspaceId: workspace.id, state: next })
+        this.onState?.(workspace.id, next)
 
         // Turn settled: classify the screen and start the confirmation window
         // instead of firing right away, so a mid-turn pause can't masquerade
@@ -230,7 +238,9 @@ export class ActivityMonitor {
       const pending = this.pendingNotify.get(workspace.id)
       if (pending !== undefined && now - pending.at >= CONFIRM_STILL_IDLE_MS) {
         this.pendingNotify.delete(workspace.id)
-        if (!(this.isWindowFocused?.() ?? false)) {
+        const focused = this.isWindowFocused?.() ?? false
+        this.onPing?.(workspace.id, pending.kind, pending.body, focused)
+        if (!focused) {
           this.notify(workspace.id, pending.kind, pending.body)
         }
       }
@@ -243,7 +253,9 @@ export class ActivityMonitor {
   onUnexpectedExit(workspaceId: string, hadInput: boolean): void {
     this.pendingNotify.delete(workspaceId)
     if (!hadInput) return
-    if (this.isWindowFocused?.() ?? false) return
+    const focused = this.isWindowFocused?.() ?? false
+    this.onPing?.(workspaceId, 'exited', 'The session ended unexpectedly', focused)
+    if (focused) return
     this.notify(workspaceId, 'exited', 'The session ended unexpectedly')
   }
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 import { useStore } from '../store'
 import { Check as CheckIcon, Circle } from './Icon'
-import type { CodexStatus } from '../../../shared/types'
+import type { CodexStatus, MobileInfo } from '../../../shared/types'
 
 function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
   return (
@@ -22,14 +23,31 @@ function SettingsModal(): React.JSX.Element | null {
   const [status, setStatus] = useState<CodexStatus | null>(null)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mobile, setMobile] = useState<MobileInfo | null>(null)
+  const [pairQr, setPairQr] = useState<string | null>(null)
 
   const refresh = (): void => {
     window.orcha.codex.status().then(setStatus)
+    window.orcha.mobile.info().then(setMobile)
   }
 
   useEffect(() => {
     if (show) refresh()
   }, [show])
+
+  // The QR only ever renders behind the `mobile.urls.length > 0` gate below,
+  // so a stale data URL from a previous open can never show.
+  useEffect(() => {
+    if (!mobile || mobile.urls.length === 0) return
+    let alive = true
+    const payload = JSON.stringify({ v: 1, urls: mobile.urls, token: mobile.token })
+    QRCode.toDataURL(payload, { margin: 1, width: 176 })
+      .then((data) => alive && setPairQr(data))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [mobile])
 
   if (!show) return null
 
@@ -56,6 +74,39 @@ function SettingsModal(): React.JSX.Element | null {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 font-medium text-zinc-100">Settings</div>
+
+        <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
+          Phone
+        </div>
+        <div className="mb-3 rounded-lg border border-edge bg-surface-2/40 p-3">
+          {mobile && mobile.urls.length > 0 ? (
+            <div className="flex items-start gap-3">
+              {pairQr && (
+                <div className="shrink-0 rounded-md bg-white p-1.5">
+                  <img src={pairQr} alt="Pairing QR code" className="block h-32 w-32" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <Check
+                  ok={mobile.pushReady}
+                  label={mobile.pushReady ? 'Phone paired' : 'No phone paired yet'}
+                />
+                <div className="mt-2 font-mono text-[11px] leading-relaxed text-zinc-500">
+                  Scan from the Orcha app on your phone. Both devices need Tailscale signed in to
+                  the same account.
+                </div>
+                <div className="mt-2 truncate font-mono text-[10px] text-zinc-600">
+                  {mobile.urls[0]}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="font-mono text-[11px] leading-relaxed text-zinc-500">
+              Companion server isn&apos;t running (no reachable address). Check that this machine
+              has a network connection, then reopen Settings.
+            </div>
+          )}
+        </div>
 
         <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
           Codex

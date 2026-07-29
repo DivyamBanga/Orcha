@@ -38,9 +38,9 @@ export class ShareService {
     private ptyManager: PtyManager
   ) {
     // Mirror live pty traffic to any attached viewers.
-    ptyManager.onData = (id, data) => this.broadcast(id, { t: 'd', d: data })
-    ptyManager.onResize = (id, cols, rows) => this.broadcast(id, { t: 'resize', cols, rows })
-    ptyManager.onExit = (id) => this.broadcast(id, { t: 'end' })
+    ptyManager.tapData((id, data) => this.broadcast(id, { t: 'd', d: data }))
+    ptyManager.tapResize((id, cols, rows) => this.broadcast(id, { t: 'resize', cols, rows }))
+    ptyManager.tapExit((id) => this.broadcast(id, { t: 'end' }))
   }
 
   urlFor(workspaceId: string): string | null {

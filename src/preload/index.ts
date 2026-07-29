@@ -6,6 +6,7 @@ import type {
   Workspace,
   WorkspaceAuth,
   CodexStatus,
+  MobileInfo,
   SessionUsage,
   UsageSummary,
   ClipEntry,
@@ -93,6 +94,9 @@ const api = {
   codex: {
     status: (): Promise<CodexStatus> => ipcRenderer.invoke(IPC.CodexStatus),
     setup: (): Promise<void> => ipcRenderer.invoke(IPC.CodexSetup)
+  },
+  mobile: {
+    info: (): Promise<MobileInfo> => ipcRenderer.invoke(IPC.MobileInfo)
   },
   clipboard: {
     paste: (workspaceId: string): Promise<PasteTarget> =>

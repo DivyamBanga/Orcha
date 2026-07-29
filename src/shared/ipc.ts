@@ -35,6 +35,7 @@ export const IPC = {
   UiSaveState: 'ui:saveState',
   CodexStatus: 'codex:status',
   CodexSetup: 'codex:setup',
+  MobileInfo: 'mobile:info',
   SessionUsage: 'session:usage',
   WorkspaceAuthGet: 'workspace:authGet',
   WorkspaceAuthSet: 'workspace:authSet',

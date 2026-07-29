@@ -79,13 +79,27 @@ export class PtyManager {
   // check before spawning, so it's no longer atomic per call).
   private creating = new Map<string, Promise<void>>()
 
-  // Taps for the live-share server: mirror output/resize/exit to viewers.
-  onData: ((workspaceId: string, data: string) => void) | null = null
-  onResize: ((workspaceId: string, cols: number, rows: number) => void) | null = null
-  onExit: ((workspaceId: string) => void) | null = null
+  // Taps mirroring output/resize/exit to interested services (live share,
+  // the phone companion). Multiple subscribers, so services never clobber
+  // each other's callback.
+  private dataTaps: ((workspaceId: string, data: string) => void)[] = []
+  private resizeTaps: ((workspaceId: string, cols: number, rows: number) => void)[] = []
+  private exitTaps: ((workspaceId: string) => void)[] = []
   // Fires only when the process died on its own — deliberate kills (Close,
   // Restart, quit, archive) remove the entry before killing and never land here.
   onUnexpectedExit: ((workspaceId: string, hadInput: boolean) => void) | null = null
+
+  tapData(fn: (workspaceId: string, data: string) => void): void {
+    this.dataTaps.push(fn)
+  }
+
+  tapResize(fn: (workspaceId: string, cols: number, rows: number) => void): void {
+    this.resizeTaps.push(fn)
+  }
+
+  tapExit(fn: (workspaceId: string) => void): void {
+    this.exitTaps.push(fn)
+  }
 
   constructor(private send: SendFn) {}
 
@@ -210,7 +224,7 @@ export class PtyManager {
         entry.urlTail = entry.urlTail.slice(entry.urlTail.lastIndexOf(last) + last.length)
       }
       this.send(IPC.EvPtyData, { workspaceId, data })
-      this.onData?.(workspaceId, data)
+      for (const tap of this.dataTaps) tap(workspaceId, data)
     })
     proc.onExit(({ exitCode }) => {
       // Identity check: kill()/restart() removed (or replaced) the entry
@@ -220,7 +234,7 @@ export class PtyManager {
       const unexpected = this.ptys.get(workspaceId) === entry
       if (unexpected) this.ptys.delete(workspaceId)
       this.send(IPC.EvPtyExit, { workspaceId, exitCode })
-      this.onExit?.(workspaceId)
+      for (const tap of this.exitTaps) tap(workspaceId)
       if (unexpected) this.onUnexpectedExit?.(workspaceId, entry.hadInput)
     })
   }
@@ -290,7 +304,7 @@ export class PtyManager {
     entry.cols = cols
     entry.rows = rows
     entry.proc.resize(cols, rows)
-    this.onResize?.(workspaceId, cols, rows)
+    for (const tap of this.resizeTaps) tap(workspaceId, cols, rows)
   }
 
   buffer(workspaceId: string): string {

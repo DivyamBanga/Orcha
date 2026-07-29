@@ -135,6 +135,45 @@ export interface CodexStatus {
   pluginInstalled: boolean
 }
 
+// A pending ask parsed verbatim from the transcript: the question plus any
+// AskUserQuestion options, so a remote surface can render real answer buttons
+// instead of raw JSON (which is where other mobile clients fall down).
+export interface AskOption {
+  label: string
+  description: string | null
+}
+
+export interface PendingAsk {
+  question: string
+  options: AskOption[]
+}
+
+// One rendered block of a session transcript for the phone's chat view.
+// Consecutive tool calls collapse into a single 'tools' block so the feed
+// reads as a digest, not a log.
+export interface ChatBlock {
+  kind: 'user' | 'assistant' | 'tools'
+  text: string | null
+  tools: { name: string; arg: string | null }[] | null
+  at: number | null // ms epoch of the transcript entry, when present
+}
+
+// One AI-suggested next action for a project, shown as a tappable chip on
+// the phone. `prompt` is the full instruction the chip dispatches (always
+// shown editable before sending — chips preview a dispatch, never blind-send).
+export interface NextStep {
+  label: string
+  prompt: string
+}
+
+// Pairing/status info for the phone companion (Settings → Phone).
+export interface MobileInfo {
+  port: number
+  token: string
+  urls: string[] // http://<addr>:<port>, Tailscale address first when present
+  pushReady: boolean // a phone has registered a push token
+}
+
 // One remembered clipboard item, as shown in the paste-history overlay. The
 // full text and the saved PNG stay in the main process — only what the list
 // needs to draw crosses IPC, so a 200 KB clip doesn't ship on every change.

@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Orcha",
+    "slug": "orcha",
+    "version": "0.1.0",
+    "scheme": "orcha",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b0b0d",
+    "android": {
+      "package": "com.orcha.mobile",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#14141a"
+      },
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#34d399"
+    },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-camera",
+        { "cameraPermission": "Orcha scans the pairing QR code shown in the desktop app." }
+      ],
+      [
+        "expo-build-properties",
+        { "android": { "usesCleartextTraffic": true } }
+      ]
+    ]
+  }
+}
