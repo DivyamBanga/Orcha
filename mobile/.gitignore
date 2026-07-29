@@ -4,4 +4,6 @@ android/
 ios/
 dist/
 google-services.json
+pairing.json
+Orcha.apk
 *.log

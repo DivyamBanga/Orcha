@@ -5,65 +5,60 @@ session needs your answer (with the actual question), answer it in two taps — 
 from the notification shade — read sessions as clean chat, and dispatch new tasks from
 AI-suggested next steps.
 
-Native Android app (Expo / React Native). It talks to the desktop app's companion server
-(port 4680) over Tailscale, so it works from anywhere with nothing exposed to the internet.
+Native Android app (Expo / React Native) talking to the desktop app's companion server
+(port 4680) with a baked-in pairing token. Everything is free: no accounts are required
+to use it, and the optional extras below all have free tiers.
 
-## One-time setup
+## Install (the whole setup)
 
-### 1. Tailscale (connects phone ↔ PC)
+1. Get `mobile/Orcha.apk` onto the phone — either plug the phone in (USB debugging on)
+   and run `npm run build:apk` here, which auto-installs, or just copy the file over
+   (Quick Share / Drive / USB) and tap it.
+2. Open the app. It auto-connects to this PC — the pairing was baked in at build time.
+   (If it can't reach the PC it falls back to a QR scan: Orcha → Settings → Phone.)
 
-- Install [Tailscale](https://tailscale.com/download) on the PC and the phone
-  (Play Store), sign in to the **same account** on both (Google/GitHub login works).
-- That's it — the PC gets a stable private address the phone can always reach.
+That's it for use at home (phone and PC on the same WiFi).
 
-### 2. Firebase (powers push notifications)
+## Optional upgrades
 
-- Go to [console.firebase.google.com](https://console.firebase.google.com) → Add project
-  (any name, Analytics off is fine).
-- In the project: Add app → Android, package name **`com.orcha.mobile`**.
-- Download **`google-services.json`** and drop it into this `mobile/` folder.
-  (It's gitignored; without it the app still works, just without push.)
+### Work from anywhere — Tailscale (free, ~5 min)
 
-### 3. Build the APK
+Install [Tailscale](https://tailscale.com/download) on PC + phone, sign in to the same
+account on both. Then run `npm run build:apk` once more so the stable Tailscale address
+gets baked in (or re-pair via QR) — after that the app reaches your PC from anywhere,
+with nothing exposed to the internet.
 
-You need a free [Expo](https://expo.dev) account. From this `mobile/` folder:
+### Push notifications — Firebase (free, ~5 min + a rebuild)
 
-```bash
-npm install
-npx expo install --fix     # aligns native package versions with the Expo SDK
-npm install -g eas-cli
-eas login
-eas init                   # links the project (gives push its projectId)
-eas build -p android --profile preview
-```
+Without this the app still shows everything live when you open it; with it, your phone
+buzzes when a session is blocked (question in the notification, inline Reply) and pings
+quietly when work finishes.
 
-`eas build` runs in Expo's cloud — no Android Studio needed. When it finishes it prints a
-link to download the APK. Either open that link on the phone and install directly, or:
+1. [console.firebase.google.com](https://console.firebase.google.com) → Add project
+   (any name, Analytics off).
+2. Add app → Android → package name **`com.orcha.mobile`** → download
+   **`google-services.json`** into this `mobile/` folder (it's gitignored).
+3. `npm run build:apk` again and reinstall — updates keep your pairing and settings.
 
-```bash
-adb install <downloaded>.apk    # with USB debugging enabled on the phone
-```
+## Rebuilding
 
-(If you'd rather build locally, install Android Studio + JDK 17 and run
-`npx expo run:android --variant release` with the phone plugged in.)
-
-### 4. Pair
-
-- On the PC: Orcha → **Settings → Phone**.
-- On the phone: open Orcha, scan the QR. Done — the pairing survives restarts on both ends.
+`npm run build:apk` does everything: bakes the current pairing/addresses, regenerates the
+native project, builds, and installs if the phone's plugged in. It uses the JDK and
+Android SDK already on this machine — no Expo account, no cloud. (If you'd rather build
+in the cloud: `eas build -p android --profile preview` with a free [Expo](https://expo.dev)
+account works too; `eas.json` is set up for it.)
 
 ## Notes
 
-- **Pushes** arrive when a session is blocked on you (buzzes, question in the body) or
-  finishes real work (silent) — and never while you're actively at the PC. The blocked
-  notification has an inline **Reply** action: answer without opening the app.
-- **Next steps** chips regenerate automatically when a session finishes (a tiny haiku call
-  against your plan), or on demand with ↻. Tapping a chip opens the full prompt for editing
-  before anything is sent.
+- Pushes are suppressed while you're actively at the PC, mirror the desktop's
+  blocked/finished classification, and never spam progress.
+- **Next steps** chips regenerate automatically when a session finishes (a tiny haiku
+  call against your plan — the only ongoing "cost" of any of this), or on demand with ↻.
+  Tapping a chip opens the full prompt for editing before anything is sent.
 - The **▣** button in a session shows the live read-only terminal; **◼** sends Esc to
   interrupt a runaway session.
-- Rebuilding the app is only needed when `mobile/` changes; the APK never expires.
-  ADB installs remain exempt from Google's 2026 sideloading verification.
-- The companion server binds all interfaces on port 4680 with a bearer token (the QR).
-  Tailscale is the intended transport; on an untrusted LAN, treat the QR like a password
-  (regenerate by deleting the `mobile:token` row in orcha.db if it ever leaks).
+- The companion server binds all interfaces on port 4680 behind the pairing token. On an
+  untrusted LAN, treat the token like a password (delete the `mobile:token` row in
+  orcha.db to rotate it, then rebuild/re-pair).
+- ADB/file-copy installs are exempt from Google's 2026 sideloading verification; the APK
+  never expires.

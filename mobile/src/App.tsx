@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState, BackHandler, Platform, StatusBar as RNStatusBar, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as Notifications from 'expo-notifications'
-import { Api, clearPairing, loadPairing, savePairing } from './api'
+import Constants from 'expo-constants'
+import { Api, clearPairing, loadPairing, probePairing, savePairing } from './api'
 import { setupPush } from './push'
 import { C } from './theme'
 import PairingScreen from './screens/Pairing'
@@ -31,8 +32,30 @@ export default function App(): React.JSX.Element {
   const apiRef = useRef<Api | null>(null)
   apiRef.current = api
 
+  // First launch: if this APK was built on the PC it pairs with, the pairing
+  // is baked into the build — connect silently, no QR needed. The scan screen
+  // is the fallback for a moved PC or a build from someone else's machine.
   useEffect(() => {
-    loadPairing().then((stored) => setPairing(stored))
+    loadPairing().then(async (stored) => {
+      if (stored) {
+        setPairing(stored)
+        return
+      }
+      const baked = (
+        Constants.expoConfig?.extra as
+          | { defaultPairing?: { urls?: string[]; token?: string } }
+          | undefined
+      )?.defaultPairing
+      if (Array.isArray(baked?.urls) && baked.urls.length > 0 && baked.token) {
+        const fresh = await probePairing(baked.urls, baked.token)
+        if (fresh) {
+          await savePairing(fresh)
+          setPairing(fresh)
+          return
+        }
+      }
+      setPairing(null)
+    })
   }, [])
 
   const refresh = useCallback((manual = false): void => {
