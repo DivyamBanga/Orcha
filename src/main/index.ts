@@ -128,7 +128,7 @@ function createWindow(): void {
   activityMonitor.isWindowFocused = () => mainWindow.isFocused()
   ptyManager.onUnexpectedExit = (workspaceId, hadInput) =>
     activityMonitor.onUnexpectedExit(workspaceId, hadInput)
-  const mobileService = new MobileService(ptyManager, activityMonitor)
+  const mobileService = new MobileService(ptyManager, activityMonitor, gitService)
   activityMonitor.onPing = (workspaceId, kind, body, focused) =>
     mobileService.handlePing(workspaceId, kind, body, focused)
   activityMonitor.onState = (workspaceId, state) => mobileService.handleState(workspaceId, state)

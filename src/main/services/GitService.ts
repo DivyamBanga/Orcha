@@ -64,6 +64,50 @@ export class GitService {
     await this.status(workspaceId)
   }
 
+  // Compact per-session git snapshot for remote surfaces (the phone, Daisy's
+  // WhatsApp door): status plus the last commit in one call. Local repos only —
+  // ssh projects have no local checkout to ask.
+  async summary(workspaceId: string): Promise<{
+    branch: string
+    dirtyFiles: number
+    ahead: number
+    behind: number
+    lastCommit: { subject: string; ageS: number } | null
+  }> {
+    const workspace = db.workspaces.get(workspaceId)
+    if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
+    const cwd = workspace.worktreePath
+
+    const out = await this.git(cwd, ['status', '--porcelain=v2', '--branch'])
+    let branch = workspace.branch
+    let ahead = 0
+    let behind = 0
+    let dirtyFiles = 0
+    for (const line of out.split('\n')) {
+      if (line.startsWith('# branch.head ')) branch = line.slice(14).trim()
+      else if (line.startsWith('# branch.ab ')) {
+        const m = line.match(/\+(\d+) -(\d+)/)
+        if (m) {
+          ahead = Number(m[1])
+          behind = Number(m[2])
+        }
+      } else if (line && !line.startsWith('#')) dirtyFiles++
+    }
+
+    let lastCommit: { subject: string; ageS: number } | null = null
+    try {
+      const log = await this.git(cwd, ['log', '-1', '--format=%ct%x09%s'])
+      const [ct, ...rest] = log.trim().split('\t')
+      const subject = rest.join('\t')
+      if (subject) {
+        lastCommit = { subject, ageS: Math.max(0, Math.floor(Date.now() / 1000 - Number(ct))) }
+      }
+    } catch {
+      // repo with no commits yet
+    }
+    return { branch, dirtyFiles, ahead, behind, lastCommit }
+  }
+
   // https URL of the repo at the current branch, from the origin remote.
   async githubUrl(workspaceId: string): Promise<string> {
     const workspace = db.workspaces.get(workspaceId)

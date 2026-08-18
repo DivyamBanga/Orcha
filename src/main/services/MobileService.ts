@@ -14,6 +14,7 @@ import {
   readRecentActivity
 } from '../claudeSessions'
 import { generateNextSteps } from './NextSteps'
+import type { GitService } from './GitService'
 import type { PtyManager } from './PtyManager'
 import type { ActivityMonitor, ActivityState, PingKind } from './ActivityMonitor'
 import type { ChatBlock, MobileInfo, NextStep, PendingAsk } from '../../shared/types'
@@ -76,7 +77,8 @@ export class MobileService {
 
   constructor(
     private ptyManager: PtyManager,
-    private activityMonitor: ActivityMonitor
+    private activityMonitor: ActivityMonitor,
+    private gitService: GitService
   ) {
     ptyManager.tapData((id, data) => this.termBroadcast(id, { t: 'd', d: data }))
     ptyManager.tapResize((id, cols, rows) => this.termBroadcast(id, { t: 'resize', cols, rows }))
@@ -191,7 +193,9 @@ export class MobileService {
     if (!focused && (kind === 'blocked' || kind === 'finished')) {
       void this.sendPush(workspaceId, kind, body)
     }
-    this.eventBroadcast({ t: 'ping', sessionId: workspaceId, kind })
+    // body + focused ride along so ws listeners (Daisy's WhatsApp door) can
+    // apply the same at-the-desk suppression rule as the pushes above.
+    this.eventBroadcast({ t: 'ping', sessionId: workspaceId, kind, body, focused })
   }
 
   handleState(workspaceId: string, state: ActivityState): void {
@@ -355,6 +359,20 @@ export class MobileService {
       const limit = Math.min(200, Number(url.searchParams.get('limit')) || 80)
       const blocks: ChatBlock[] = readChatDigest(workspace.worktreePath, limit)
       return this.json(res, { blocks })
+    }
+
+    const gitSession = path.match(/^\/v1\/session\/([A-Za-z0-9-]+)\/git$/)?.[1]
+    if (req.method === 'GET' && gitSession) {
+      const workspace = db.workspaces.get(gitSession)
+      if (!workspace) return this.json(res, { error: 'unknown session' }, 404)
+      if (db.projects.get(workspace.projectId)?.sshHost) {
+        return this.json(res, { error: 'remote project — no local git' }, 404)
+      }
+      try {
+        return this.json(res, await this.gitService.summary(gitSession))
+      } catch (err) {
+        return this.json(res, { error: err instanceof Error ? err.message : 'git failed' }, 500)
+      }
     }
 
     const term = path.match(/^\/v1\/term\/([A-Za-z0-9-]+)$/)?.[1]
