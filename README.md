@@ -2,6 +2,10 @@
 
 Run multiple Claude Code sessions across your GitHub projects from one clean desktop app. Built for Windows, inspired by [Conductor](https://conductor.build).
 
+[![Orcha in 35 seconds](video/orcha-intro.gif)](video/orcha-intro.mp4)
+
+<sup>The whole idea in 35 seconds — [full-quality MP4](video/orcha-intro.mp4), rendered entirely from code you can remix in [`video/`](video/README.md).</sup>
+
 ## What it does
 
 Every project in the sidebar is a real Claude Code terminal running in that repo's folder, with full permissions so it can just work. You switch between projects like tabs. A pinned chat called Mission Control watches over all of them: ask it what every session is doing, tell it to send a prompt to any session, or have it create a whole new repo and put a session to work on it.
