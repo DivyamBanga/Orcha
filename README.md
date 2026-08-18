@@ -17,9 +17,10 @@ Every project in the sidebar is a real Claude Code terminal running in that repo
 - **Parallel sessions.** Need two features going on one repo? The project menu adds a worktree session on its own branch as another tab, so sessions never collide.
 - **Git without leaving.** Branch and status in the header, one-click Commit + Push, a Pull button when the remote is ahead, PRs for branch sessions, and an "Ask Claude" button that tells the session to commit for you.
 - **Mission Control.** A chat that lists sessions, reads their recent activity, types prompts into their terminals, and creates projects or parallel sessions on request.
+- **Your real usage, live.** The ring in the sidebar shows the same 5-hour window Claude's own `/usage` reports — click it for the full picture: every plan limit, your burn rate with an ETA to the cap, which projects are eating the window, and what the week would have cost on the API.
 - **Share a live view.** One click gives you a link anyone can open in a browser to watch that session's terminal live, read-only. No install on their end; stop sharing anytime. (First share downloads a small tunnel helper once.)
 - **Connect your phone.** The Phone button hooks a session up to Claude's official Remote Control: scan the QR and keep steering the same session from the Claude app or claude.ai/code. Needs a claude.ai Pro/Max login.
-- **Orcha on your phone.** A native Android companion app (see `mobile/`) shows every project and session, pushes the actual question when a session is blocked (answer from the notification shade), renders sessions as clean chat, and suggests tappable next steps per project. Connects over Tailscale; pair from Settings → Phone.
+- **Orcha on your phone.** A native Android companion app shows every project and session, pushes the actual question when a session is blocked (answer straight from the notification shade), renders sessions as clean chat, and suggests tappable next steps per project. Connects over Tailscale; pair from Settings → Phone — setup guide in [`mobile/README.md`](mobile/README.md).
 - **Everything survives restarts.** Conversations live in Claude Code's own session files, so closing the app or rebooting loses nothing.
 
 ## First run
@@ -43,3 +44,5 @@ npm run build:win  # installer lands in dist/
 ```
 
 Needs Windows 10 1809 or newer, Node 16+, git, the [GitHub CLI](https://cli.github.com/), and a signed-in [Claude Code](https://claude.com/claude-code).
+
+Two sibling projects live in the repo: the Android companion app ([`mobile/`](mobile/README.md)) and the intro video as code ([`video/`](video/README.md)).
