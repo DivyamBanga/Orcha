@@ -33,12 +33,13 @@ export interface UsageEventInput {
   session: string | null
 }
 
+// Polled every few seconds by Orcha, so it touches only a handful of rows:
+// the guest, their pools, and the session tabs active since `since` (found
+// through an index). Pace and runway come from UsageReply's hourly data.
 export interface BalanceReply {
   guest: GuestState
-  // Spend per Orcha session tab since `since`, summed across pools.
+  // Spend per Orcha session tab, per pool.
   sessions: { session: string; pool: Pool; cost: number; updatedAt: number }[]
-  // Spend in the last 24 hours and 7 days, per pool — the basis for pace.
-  recent: { pool: Pool; day: number; week: number }[]
 }
 
 export interface UsageReply {
@@ -297,20 +298,7 @@ export class Ledger extends DurableObject<LedgerEnv> {
       )
       .toArray()
       .map((s) => ({ session: s.session, pool: s.pool as Pool, cost: s.cost, updatedAt: s.updated_at }))
-    const now = Date.now()
-    const recent = this.sql
-      .exec<{ pool: string; day: number; week: number }>(
-        `SELECT pool,
-                SUM(CASE WHEN hour >= ? THEN cost ELSE 0 END) AS day,
-                SUM(cost) AS week
-         FROM usage_hour WHERE guest_id = ? AND hour >= ? GROUP BY pool`,
-        now - DAY_MS,
-        guestId,
-        now - 7 * DAY_MS
-      )
-      .toArray()
-      .map((r) => ({ pool: r.pool as Pool, day: r.day, week: r.week }))
-    return { guest, sessions, recent }
+    return { guest, sessions }
   }
 
   usage(guestId: string, since: number): UsageReply {

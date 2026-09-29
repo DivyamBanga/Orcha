@@ -115,15 +115,19 @@ function blockReason(guest: GuestState, pool: Pool): string | null {
   return null
 }
 
-// Error bodies in each provider's own shape, so Claude Code and Codex show the
-// message verbatim instead of a generic failure; x-should-retry stops Claude
-// Code from retrying a request that can only fail again.
+// Errors worded for the person reading them in the terminal. Claude Code shows
+// an Anthropic-shaped error's message after "API Error: <status>"; the
+// x-should-retry header stops it retrying a request that can only fail again.
 function anthropicError(status: number, type: string, message: string): Response {
   return json({ type: 'error', error: { type, message } }, status, { 'x-should-retry': 'false' })
 }
 
+// Codex prints a 4xx body verbatim, so plain text reads as a sentence where a
+// JSON error would show up as raw JSON. Only "not paired" keeps the standard
+// JSON shape, which Codex treats as an auth failure.
 function openaiError(status: number, code: string, message: string): Response {
-  return json({ error: { message, type: code, code, param: null } }, status)
+  if (status === 401) return json({ error: { message, type: code, code, param: null } }, status)
+  return new Response(message, { status, headers: { 'content-type': 'text/plain' } })
 }
 
 // ---- metered proxying ---------------------------------------------------------
@@ -214,7 +218,9 @@ async function proxyAnthropic(
     return anthropicError(401, 'authentication_error', 'Orcha relay: this device is not paired.')
   }
   const reason = blockReason(guest, 'claude')
-  if (reason) return anthropicError(403, 'permission_error', reason)
+  // 400, not 403: Claude Code reads any 401/403 as a login problem and
+  // prefixes "Please run /login", which would send a guest the wrong way.
+  if (reason) return anthropicError(400, 'invalid_request_error', reason)
 
   const headers = forwardHeaders(request)
   headers.set('x-api-key', env.ANTHROPIC_API_KEY)
@@ -259,9 +265,9 @@ async function proxyResponses(
     )
   }
   const reason = blockReason(guest, pool)
-  // 429 + insufficient_quota is how the OpenAI API says "out of credits"; Codex
-  // shows it as a final error instead of retrying.
-  if (reason) return openaiError(429, 'insufficient_quota', reason)
+  // 400 rather than 429 + insufficient_quota, which Codex would swap for its
+  // generic "Quota exceeded. Check your plan and billing details."
+  if (reason) return openaiError(400, 'budget_exhausted', reason)
 
   const headers = forwardHeaders(request)
   headers.set('api-key', env.AZURE_API_KEY)

@@ -202,8 +202,9 @@ try {
   await (await message()).text() // 0.075 — the tiny overshoot on the last allowed request
   await sleep(4500) // let the isolate's auth cache expire
   const blocked = await message()
-  assert.equal(blocked.status, 403)
+  assert.equal(blocked.status, 400)
   const blockedBody = await blocked.json()
+  assert.equal(blockedBody.error.type, 'invalid_request_error')
   assert.match(blockedBody.error.message, /Claude budget \(\$0\.06\) is used up\. Ask Div/)
   assert.equal(blocked.headers.get('x-should-retry'), 'false')
   console.log('blocked at the cap:', blockedBody.error.message)
@@ -214,7 +215,7 @@ try {
   assert.equal((await message()).status, 200)
   await admin(`/admin/guests/${guestId}/revoke`, {})
   const revoked = await message()
-  assert.equal(revoked.status, 403)
+  assert.equal(revoked.status, 400)
   assert.match((await revoked.json()).error.message, /turned off/)
   await admin(`/admin/guests/${guestId}/restore`, {})
   assert.equal((await message()).status, 200)
@@ -236,14 +237,16 @@ try {
     headers: guestHeaders,
     body: JSON.stringify({ model: 'gpt-6-astra', input: 'hi' })
   })
-  assert.equal(astra.status, 429)
-  assert.match((await astra.json()).error.message, /no GPT-6 Astra budget/)
+  assert.equal(astra.status, 400)
+  // Plain text, which Codex prints as a sentence.
+  assert.equal(await astra.text(), 'Orcha: no GPT-6 Astra budget on this invite.')
   const wrongModel = await call('/openai/v1/responses', {
     method: 'POST',
     headers: guestHeaders,
     body: JSON.stringify({ model: 'gpt-5-codex', input: 'hi' })
   })
   assert.equal(wrongModel.status, 400)
+  assert.match(await wrongModel.text(), /model "gpt-5-codex" is not available/)
   console.log('sol metered, astra blocked without budget, unknown model refused')
 
   // --- interrupted reply ----------------------------------------------------------
