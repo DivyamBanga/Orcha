@@ -1,0 +1,18 @@
+{
+  // Orcha's budget relay: holds the real provider keys, hands each guest their
+  // own token, and meters every request against that guest's budgets. Built to
+  // stay inside the Workers FREE plan (10ms CPU per request) — see README.md.
+  "name": "orcha-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "LEDGER", "class_name": "Ledger" }]
+  },
+  // SQLite-backed Durable Objects are the only kind the free plan allows.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
+  "observability": { "enabled": true },
+  "vars": { "DOWNLOAD_URL": "https://github.com/DivyamBanga/Orcha/releases/latest" }
+  // Secrets (never in this file): ADMIN_TOKEN, ANTHROPIC_API_KEY,
+  // AZURE_API_KEY, AZURE_ENDPOINT. Set with `npx wrangler secret put <NAME>`.
+}
