@@ -4,7 +4,7 @@ import { join, basename, posix } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import * as db from '../db'
-import type { Project } from '../../shared/types'
+import type { Agent, Project } from '../../shared/types'
 import type { WorkspaceManager } from './WorkspaceManager'
 import { verifyRemotePath } from '../ssh'
 
@@ -15,18 +15,19 @@ export class ProjectService {
   constructor(private workspaceManager: WorkspaceManager) {}
 
   // Ensures a project has a main session tab (idempotent).
-  private ensureMainWorkspace(projectId: string): void {
+  private ensureMainWorkspace(projectId: string, agent: Agent = 'claude'): void {
     const hasMain = db.workspaces
       .listActive()
       .some((w) => w.projectId === projectId && w.kind === 'main')
-    if (!hasMain) this.workspaceManager.createMain(projectId)
+    if (!hasMain) this.workspaceManager.createMain(projectId, agent)
   }
 
   // Idempotent: registers the repo as a project and ensures a main session tab.
-  register(repoPath: string): Project {
+  // `agent` picks what that tab runs when it's first created.
+  register(repoPath: string, agent: Agent = 'claude'): Project {
     const existing = db.projects.byRepoPath(repoPath)
     if (existing) {
-      this.ensureMainWorkspace(existing.id)
+      this.ensureMainWorkspace(existing.id, agent)
       return existing
     }
     const project: Project = {
@@ -40,7 +41,7 @@ export class ProjectService {
       sshPort: null
     }
     db.projects.insert(project)
-    this.workspaceManager.createMain(project.id)
+    this.workspaceManager.createMain(project.id, agent)
     return project
   }
 
@@ -76,16 +77,16 @@ export class ProjectService {
     return project
   }
 
-  addLocal(repoPath: string): Project {
+  addLocal(repoPath: string, agent: Agent = 'claude'): Project {
     if (!existsSync(join(repoPath, '.git'))) {
       throw new Error(`Not a git repository: ${repoPath}`)
     }
-    return this.register(repoPath)
+    return this.register(repoPath, agent)
   }
 
   // Create a new GitHub repo (with README so the clone has a commit), clone it
   // under Desktop\Projects, and register it.
-  async createRepo(name: string, isPrivate: boolean): Promise<Project> {
+  async createRepo(name: string, isPrivate: boolean, agent: Agent = 'claude'): Promise<Project> {
     mkdirSync(PROJECTS_ROOT, { recursive: true })
     const target = join(PROJECTS_ROOT, name)
     if (existsSync(target)) throw new Error(`Folder already exists: ${target}`)
@@ -94,7 +95,7 @@ export class ProjectService {
       ['repo', 'create', name, isPrivate ? '--private' : '--public', '--clone', '--add-readme'],
       { cwd: PROJECTS_ROOT }
     )
-    return this.register(target)
+    return this.register(target, agent)
   }
 
   async listGithub(): Promise<{ nameWithOwner: string; name: string }[]> {
@@ -122,13 +123,13 @@ export class ProjectService {
     db.projects.remove(projectId)
   }
 
-  async cloneGithub(nameWithOwner: string): Promise<Project> {
+  async cloneGithub(nameWithOwner: string, agent: Agent = 'claude'): Promise<Project> {
     mkdirSync(PROJECTS_ROOT, { recursive: true })
     const name = nameWithOwner.split('/').pop() ?? nameWithOwner
     const target = join(PROJECTS_ROOT, name)
     if (!existsSync(target)) {
       await execFileAsync('gh', ['repo', 'clone', nameWithOwner, target])
     }
-    return this.register(target)
+    return this.register(target, agent)
   }
 }

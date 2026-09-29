@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-import { useStore, useActiveWorkspace } from '../store'
+import { useStore, useActiveWorkspace, useIsGuest } from '../store'
+import { useAnimatedNumber } from '../motion'
+import { modelName, poolFor, poolState, sessionCost, usd } from '../money'
 import ChatView from './ChatView'
 import TerminalView from './TerminalView'
 import SessionPopover from './SessionPopover'
 import { ArrowDown, ArrowUp, ChevronDown, Diamond } from './Icon'
+import type { Workspace } from '../../../shared/types'
 
 function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
   const status = useStore((s) => s.gitStatus[workspaceId])
   if (!status) return null
   return (
-    <span className="fade-late flex items-center gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-zinc-400">
+    <span className="fade-late tnum flex h-6 items-center gap-1.5 rounded-md border border-edge px-2 text-[11.5px] text-zinc-400">
       {/* Clean vs dirty is carried by shape, not colour — a working tree is a
           git fact, and colour in this app is reserved for session state. */}
       {status.dirty ? (
@@ -19,7 +22,7 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
       ) : (
         <span className="h-[7px] w-[7px] rounded-full border border-zinc-600" title="Clean" />
       )}
-      {status.branch && <span className="font-mono">{status.branch}</span>}
+      {status.branch && <span className="font-mono text-[11px]">{status.branch}</span>}
       {status.ahead > 0 && (
         <span className="flex items-center gap-0.5">
           <ArrowUp size={10} />
@@ -36,6 +39,73 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
   )
 }
 
+// What this tab runs, for a guest: "Claude · Sonnet 5" / "Codex · GPT-6 Sol".
+function agentLabel(workspace: Workspace): string {
+  if (workspace.agent === 'codex') return `Codex · ${modelName(workspace.model ?? 'gpt-6-sol')}`
+  const model = workspace.model ?? 'sonnet'
+  return `Claude · ${model[0].toUpperCase()}${model.slice(1)}`
+}
+
+// A guest tab's running cost, ticking up as the relay records each reply.
+function TabCost({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
+  const cost = useStore((s) => sessionCost(s.guestBalance, workspaceId))
+  const shown = useAnimatedNumber(cost ?? 0)
+  if (cost === null) return null
+  return (
+    <span
+      className="tnum fade-late font-mono text-[11.5px] text-zinc-400"
+      title="What this tab has cost so far"
+    >
+      {usd(shown)}
+    </span>
+  )
+}
+
+// Shown across the top of a guest tab whose budget has run out: why nothing
+// will run, and the quickest way to keep going.
+function BudgetBanner({ workspace }: { workspace: Workspace }): React.JSX.Element | null {
+  const balance = useStore((s) => s.guestBalance)
+  const pool = poolFor(workspace.agent, workspace.model)
+  const state = poolState(balance, pool)
+  if (!balance || !state || state.spent < state.cap) return null
+  const open = (p: 'claude' | 'sol' | 'astra'): boolean => {
+    const b = poolState(balance, p)
+    return b !== null && b.spent < b.cap
+  }
+  const alternative =
+    pool === 'astra' && open('sol')
+      ? { label: 'Switch this tab to Sol', agent: 'codex' as const, model: 'gpt-6-sol' }
+      : pool === 'sol' && open('astra')
+        ? { label: 'Switch this tab to Astra', agent: 'codex' as const, model: 'gpt-6-astra' }
+        : pool === 'claude' && open('sol')
+          ? { label: 'Switch this tab to Codex', agent: 'codex' as const, model: 'gpt-6-sol' }
+          : pool !== 'claude' && open('claude')
+            ? { label: 'Switch this tab to Claude', agent: 'claude' as const, model: null }
+            : null
+  return (
+    <div className="flex h-9 shrink-0 items-center gap-3 border-b border-red-400/15 bg-red-400/[0.05] px-4 text-[12.5px]">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+      <span className="text-zinc-300">
+        Your {state.label} budget is used up. Ask {balance.hostName} to top it up
+        {alternative ? ', or keep going on another model.' : '.'}
+      </span>
+      {alternative && (
+        <button
+          onClick={() => {
+            window.orcha.session
+              .setAgent(workspace.id, alternative.agent, alternative.model)
+              .then(() => useStore.getState().load())
+              .catch(() => {})
+          }}
+          className="btn btn-secondary btn-sm ml-auto"
+        >
+          {alternative.label}
+        </button>
+      )}
+    </div>
+  )
+}
+
 function MainPane(): React.JSX.Element {
   const activeId = useStore((s) => s.activeId)
   const workspace = useActiveWorkspace()
@@ -48,6 +118,7 @@ function MainPane(): React.JSX.Element {
   const setLinkModal = useStore((s) => s.setLinkModal)
   const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
   const setUsage = useStore((s) => s.setUsage)
+  const isGuest = useIsGuest()
   const [gitBusy, setGitBusy] = useState(false)
   const [showSession, setShowSession] = useState(false)
   const workspaceId = workspace?.id
@@ -81,6 +152,8 @@ function MainPane(): React.JSX.Element {
 
   // Terminals for every open session stay mounted below regardless of which
   // view is showing, so restored sessions boot and keep running unattended.
+  // The veil above them (re-keyed per tab) is what fades on a switch — the
+  // terminals themselves never animate.
   const terminalHost = (
     <>
       {openSessions.map((id) => (
@@ -92,6 +165,7 @@ function MainPane(): React.JSX.Element {
           <TerminalView workspaceId={id} visible={id === activeId} />
         </div>
       ))}
+      <div key={activeId ?? 'none'} className="switch-veil" />
     </>
   )
 
@@ -99,17 +173,16 @@ function MainPane(): React.JSX.Element {
     return (
       <main className="flex min-w-0 flex-1 flex-col">
         {activeId === 'orchestrator' ? (
-          <header className="flex h-11 shrink-0 items-center border-b border-edge px-4">
+          <header className="flex h-12 shrink-0 items-center border-b border-edge px-4">
             {/* Contents in a boot-item wrapper so the rise moves the words,
                 not the bar or its border. */}
             <div className="boot-item boot-d1 flex items-center gap-3">
-              <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
-              <span className="font-medium text-zinc-100">Mission Control</span>
-              <span className="font-mono text-[11px] text-zinc-600">commands every session</span>
+              <span className="font-medium text-zinc-50">Mission Control</span>
+              <span className="text-[12px] text-zinc-500">commands every session</span>
             </div>
           </header>
         ) : (
-          <header className="h-11 shrink-0 border-b border-edge" />
+          <header className="h-12 shrink-0 border-b border-edge" />
         )}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {activeId === 'orchestrator' ? (
@@ -117,7 +190,7 @@ function MainPane(): React.JSX.Element {
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="boot-item text-center">
-                <div className="text-lg font-medium text-zinc-500">No session selected</div>
+                <div className="text-[15px] font-medium text-zinc-400">No session selected</div>
                 <div className="mt-1 text-zinc-600">
                   Pick a session on the left, or create a project to start one
                 </div>
@@ -141,10 +214,12 @@ function MainPane(): React.JSX.Element {
     }
   }
 
+  const agentName = workspace.agent === 'codex' ? 'Codex' : 'Claude'
+
   const handleCommitPush = (): Promise<void> =>
     runGit(() => window.orcha.git.commitPush(workspace.id, `Update from ${workspace.name}`))
 
-  const handleAskClaude = (): void => {
+  const handleAskAgent = (): void => {
     window.orcha.session.send(
       workspace.id,
       'Commit the current changes with a good descriptive message and push to origin.'
@@ -158,7 +233,7 @@ function MainPane(): React.JSX.Element {
     })
 
   const handleRestart = (): void => {
-    if (confirm('Restart this Claude session? The conversation resumes automatically.')) {
+    if (confirm(`Restart this ${agentName} session? The conversation resumes automatically.`)) {
       window.orcha.pty.restart(workspace.id, 120, 30)
     }
   }
@@ -178,12 +253,18 @@ function MainPane(): React.JSX.Element {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col">
-      <header className="relative flex h-11 shrink-0 items-center border-b border-edge px-4">
+      <header className="relative flex h-12 shrink-0 items-center border-b border-edge px-4">
         {/* Contents in a boot-item wrapper so the rise moves the controls
             while the bar and its border stay put; the popover anchors to the
             header itself, outside the animated wrapper. */}
         <div className="boot-item boot-d1 flex min-w-0 flex-1 items-center gap-2">
-          <span className="font-medium text-zinc-100">{workspace.name}</span>
+          <span className="truncate font-medium text-zinc-50">{workspace.name}</span>
+          {isGuest && (
+            <span className="shrink-0 whitespace-nowrap text-[12px] text-zinc-500">
+              {agentLabel(workspace)}
+            </span>
+          )}
+          {isGuest && <TabCost workspaceId={workspace.id} />}
           {!project?.sshHost && (
             <>
               <GitChip workspaceId={workspace.id} />
@@ -191,7 +272,7 @@ function MainPane(): React.JSX.Element {
                 <button
                   onClick={() => runGit(() => window.orcha.git.pull(workspace.id))}
                   disabled={gitBusy}
-                  className="flex items-center gap-1 rounded-md border border-edge-bright px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-surface-2 hover:text-zinc-100 disabled:opacity-40"
+                  className="btn btn-secondary btn-sm"
                   title="Remote has new commits — git pull --ff-only"
                 >
                   Pull
@@ -207,22 +288,22 @@ function MainPane(): React.JSX.Element {
               <button
                 onClick={handleCommitPush}
                 disabled={gitBusy}
-                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+                className="btn btn-ghost btn-sm"
               >
                 Commit + Push
               </button>
               <button
-                onClick={handleAskClaude}
-                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+                onClick={handleAskAgent}
+                className="btn btn-ghost btn-sm"
                 title="Types a commit-and-push instruction into this session"
               >
-                Ask Claude
+                Ask {agentName}
               </button>
               {workspace.kind === 'worktree' && (
                 <button
                   onClick={handlePr}
                   disabled={gitBusy}
-                  className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200 disabled:opacity-40"
+                  className="btn btn-ghost btn-sm"
                   title="Push this branch and open a pull request"
                 >
                   PR
@@ -230,7 +311,7 @@ function MainPane(): React.JSX.Element {
               )}
               <button
                 onClick={() => window.orcha.git.openGithub(workspace.id).catch(() => {})}
-                className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
+                className="btn btn-ghost btn-sm"
                 title="Open this repo on GitHub"
               >
                 GitHub
@@ -240,9 +321,8 @@ function MainPane(): React.JSX.Element {
           )}
           <button
             onClick={() => setLinkModal({ kind: 'share', workspaceId: workspace.id })}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface-2 ${
-              sharing ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+            data-active={sharing}
+            className="btn btn-ghost btn-sm"
             title="Share a live read-only view of this terminal — any browser, no install"
           >
             {/* Broadcasting is signalled by the pressed state and the label
@@ -250,21 +330,22 @@ function MainPane(): React.JSX.Element {
             {sharing && <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
             {sharing ? 'Sharing' : 'Share'}
           </button>
-          <button
-            onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
-            className="rounded-md px-2 py-1 text-zinc-400 hover:bg-surface-2 hover:text-zinc-200"
-            title="Continue this session from your phone (Claude Code Remote Control)"
-          >
-            Phone
-          </button>
+          {!isGuest && (
+            <button
+              onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
+              className="btn btn-ghost btn-sm"
+              title="Continue this session from your phone (Claude Code Remote Control)"
+            >
+              Phone
+            </button>
+          )}
           <span className="mx-1 h-4 w-px bg-edge" />
           {!project?.sshHost && (
             <button
               onClick={() => setShowSession((v) => !v)}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 hover:bg-surface-2 ${
-                showSession ? 'bg-surface-2 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-              title="Session usage and auth mode"
+              data-active={showSession}
+              className="btn btn-ghost btn-sm"
+              title={isGuest ? 'Agent, model and cost for this tab' : 'Session usage and auth mode'}
             >
               Session
               <ChevronDown size={11} />
@@ -272,15 +353,12 @@ function MainPane(): React.JSX.Element {
           )}
           <button
             onClick={handleRestart}
-            className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
-            title="Restart the Claude session (resumes conversation, applies model/effort)"
+            className="btn btn-ghost btn-sm text-zinc-500"
+            title={`Restart the ${agentName} session (resumes the conversation, applies model changes)`}
           >
             Restart
           </button>
-          <button
-            onClick={handleClose}
-            className="rounded-md px-2 py-1 text-zinc-500 hover:bg-surface-2 hover:text-zinc-300"
-          >
+          <button onClick={handleClose} className="btn btn-ghost btn-sm text-zinc-500">
             Close
           </button>
         </div>
@@ -289,6 +367,7 @@ function MainPane(): React.JSX.Element {
         )}
       </header>
 
+      {isGuest && <BudgetBanner workspace={workspace} />}
       <div className="relative min-h-0 flex-1">{terminalHost}</div>
     </main>
   )

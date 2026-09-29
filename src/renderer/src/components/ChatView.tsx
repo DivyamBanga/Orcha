@@ -126,8 +126,11 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
     <div className="boot-item flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {items.length === 0 && !streamingText && (
-          <div className="flex h-full items-center justify-center font-mono text-zinc-700">
-            awaiting instructions
+          <div className="flex h-full flex-col items-center justify-center text-center">
+            <div className="text-[14px] font-medium text-zinc-400">Mission Control</div>
+            <div className="mt-1 max-w-sm text-[12.5px] leading-relaxed text-zinc-600">
+              Ask what every session is doing, send a task to any of them, or start new work.
+            </div>
           </div>
         )}
         {items.map((item, i) => {
@@ -135,7 +138,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             case 'user':
               return (
                 <div key={i} className="my-3 flex justify-end">
-                  <div className="max-w-[80%] select-text whitespace-pre-wrap rounded-md border border-edge-bright bg-surface-2 px-3 py-2 text-zinc-100">
+                  <div className="max-w-[80%] select-text whitespace-pre-wrap rounded-xl border border-edge-bright bg-surface-2 px-3.5 py-2.5 text-zinc-100">
                     {item.text}
                   </div>
                 </div>
@@ -148,7 +151,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
               return (
                 <div
                   key={i}
-                  className="my-2 select-text rounded border border-red-900/60 bg-red-950/30 px-3 py-2 font-mono text-[12px] text-red-400"
+                  className="my-2 select-text rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2 font-mono text-[12px] text-red-300"
                 >
                   {item.text}
                 </div>
@@ -167,12 +170,15 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
 
       <div className="relative border-t border-edge p-3">
         {showSlashPopup && (
-          <div className="absolute bottom-full left-3 mb-1 w-72 overflow-hidden rounded-md border border-edge-bright bg-surface-1">
+          <div
+            style={{ transformOrigin: 'bottom left' }}
+            className="popover absolute bottom-full left-3 mb-1.5 w-72 overflow-hidden p-1"
+          >
             {slashMatches.map((cmd) => (
               <button
                 key={cmd}
                 onClick={() => setDraft(`/${cmd} `)}
-                className="block w-full px-3 py-1.5 text-left font-mono text-[12px] text-zinc-300 hover:bg-surface-2"
+                className="menu-item font-mono text-[12px]"
               >
                 /{cmd}
               </button>
@@ -220,20 +226,17 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             }}
             placeholder={busy ? 'working — Enter queues your next message' : 'prompt this session'}
             rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-            className="flex-1 resize-none rounded-md border border-edge bg-surface-1 px-3 py-2 text-zinc-200 transition-colors duration-100 placeholder:text-zinc-600 focus:border-edge-bright focus:outline-none"
+            className="flex-1 resize-none rounded-xl border border-edge-bright bg-surface-1 px-3.5 py-2.5 text-zinc-200 transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-600 hover:border-edge-strong focus:border-white/25 focus:shadow-[0_0_0_3px_rgba(255,255,255,0.04)] focus:outline-none"
           />
           {busy ? (
-            <button
-              onClick={() => interrupt()}
-              className="rounded-md border border-edge-bright px-3 py-2 text-zinc-300 transition-colors duration-100 hover:border-red-800 hover:text-red-400"
-            >
+            <button onClick={() => interrupt()} className="btn btn-secondary h-10 px-4">
               Stop
             </button>
           ) : (
             <button
               onClick={handleSend}
               disabled={!draft.trim()}
-              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-2 font-medium text-surface-0 transition-colors duration-100 hover:border-white hover:bg-white disabled:opacity-40"
+              className="btn btn-primary h-10 px-4"
             >
               Send
             </button>

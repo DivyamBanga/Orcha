@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../store'
 import { percentColors } from '../usageColors'
+import { useAnimatedNumber } from '../motion'
+import Modal from './Modal'
 import { Refresh } from './Icon'
 import type {
   PlanLimit,
@@ -24,29 +26,26 @@ function formatDuration(ms: number): string {
 }
 
 function Label({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="font-mono text-[11px] uppercase tracking-wide text-zinc-600">{children}</div>
-  )
+  return <div className="eyebrow">{children}</div>
 }
 
 function LimitBar({ limit, now }: { limit: PlanLimit; now: number | null }): React.JSX.Element {
   const colors = percentColors(limit.utilization)
   const width = Math.min(Math.max(limit.utilization, 0), 100)
+  const shown = useAnimatedNumber(Math.floor(limit.utilization))
   return (
-    <div className="mb-2.5">
-      <div className="mb-1 flex items-baseline justify-between">
-        <span className="font-mono text-[11px] uppercase tracking-wide text-zinc-500">
-          {limit.label}
-        </span>
-        <span className={`font-mono text-[12px] ${colors.text}`}>
-          {Math.floor(limit.utilization)}%
+    <div className="card mb-2.5 p-3.5">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="font-medium text-zinc-200">{limit.label}</span>
+        <span className={`tnum text-[18px] font-semibold tracking-tight ${colors.text}`}>
+          {Math.round(shown)}%
         </span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-        <div className={`h-full rounded-full ${colors.bg}`} style={{ width: `${width}%` }} />
+      <div className="meter">
+        <div className={`meter-fill ${colors.bg}`} style={{ width: `${width}%` }} />
       </div>
       {limit.resetsAt !== null && now !== null && (
-        <div className="mt-1 text-right font-mono text-[11px] text-zinc-600">
+        <div className="tnum mt-2 text-right text-[11.5px] text-zinc-500">
           resets in {formatDuration(limit.resetsAt - now)}
         </div>
       )}
@@ -178,7 +177,7 @@ function PlanNotice({ plan }: { plan: PlanUsage }): React.JSX.Element | null {
 // Opened by clicking UsageGlance. Real plan limits up top (from Anthropic's
 // own usage endpoint, so they cover every device and claude.ai), then local
 // transcript-derived attribution for what's consuming them.
-function UsageDashboard(): React.JSX.Element | null {
+function UsageDashboard(): React.JSX.Element {
   const show = useStore((s) => s.showUsageDashboard)
   const setShow = useStore((s) => s.setShowUsageDashboard)
   const summary = useStore((s) => s.usageSummary)
@@ -186,7 +185,6 @@ function UsageDashboard(): React.JSX.Element | null {
   const loadUsageSummary = useStore((s) => s.loadUsageSummary)
   const [refreshing, setRefreshing] = useState(false)
 
-  if (!show) return null
   const onClose = (): void => setShow(false)
 
   // Forces past the main process's short refresh cache, so this re-reads the
@@ -207,108 +205,91 @@ function UsageDashboard(): React.JSX.Element | null {
     (insights?.windowCostUsd ?? 0) > 0 ? 'this session window' : 'last 7 days'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="w-[26rem] rounded-lg border border-edge-bright bg-surface-1 p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-medium text-zinc-100">Usage</span>
-          <span className="flex items-center gap-2">
-            {summary?.plan.plan && (
-              <span className="font-mono text-[11px] uppercase tracking-wide text-zinc-500">
-                {summary.plan.plan} plan
-              </span>
-            )}
-            <button
-              onClick={onRefresh}
-              disabled={refreshing}
-              className="rounded p-1 leading-none text-zinc-500 hover:bg-surface-2 hover:text-zinc-300 disabled:hover:bg-transparent"
-              title={
-                now !== null
-                  ? `Refresh — updated ${new Date(now).toLocaleTimeString([], {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    })}`
-                  : 'Refresh'
-              }
-            >
-              <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>
-                <Refresh size={14} />
-              </span>
-            </button>
-          </span>
-        </div>
-
-        {!summary ? (
-          <div className="font-mono text-[12px] text-zinc-600">Loading…</div>
-        ) : (
-          <>
-            <PlanNotice plan={summary.plan} />
-
-            {summary.plan.limits.map((limit) => (
-              <LimitBar key={limit.key} limit={limit} now={now} />
-            ))}
-
-            {insights?.burn && session && now !== null && (
-              <BurnLine burn={insights.burn} session={session} now={now} />
-            )}
-
-            {insights && insights.projects.length > 0 && (
-              <div className="mb-4 border-t border-edge pt-3">
-                <div className="mb-2 flex items-baseline justify-between">
-                  <Label>What&apos;s burning it</Label>
-                  <span className="font-mono text-[10px] text-zinc-700">
-                    {attributionLabel} · this machine
-                  </span>
-                </div>
-                <ProjectBars projects={insights.projects} />
-                <ModelMix models={insights.models} cacheHitRate={insights.cacheHitRate} />
-              </div>
-            )}
-
-            {insights && (
-              <div className="mb-4 border-t border-edge pt-3">
-                <Label>If this were the API</Label>
-                <div className="mt-1.5 flex items-baseline justify-between">
-                  <span className="text-[12px] text-zinc-400">
-                    Last 7 days{' '}
-                    <span className="font-mono text-zinc-200">
-                      {formatUsd(insights.weekCostUsd)}
-                    </span>
-                  </span>
-                  <span className="font-mono text-[11px] text-zinc-500">
-                    ≈ {formatUsd(insights.monthlyProjectionUsd)}/mo at this rate
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {insights && (
-              <>
-                <Label>Last 14 days</Label>
-                <div className="mt-1">
-                  <DailyChart data={insights.daily} />
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        <div className="mt-3 flex justify-end">
+    <Modal open={show} onClose={onClose} width={460}>
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[15px] font-semibold tracking-tight text-zinc-50">Usage</span>
+        <span className="flex items-center gap-2">
+          {summary?.plan.plan && <span className="eyebrow">{summary.plan.plan} plan</span>}
           <button
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="btn btn-ghost btn-icon text-zinc-500"
+            title={
+              now !== null
+                ? `Refresh — updated ${new Date(now).toLocaleTimeString([], {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })}`
+                : 'Refresh'
+            }
           >
-            Close
+            <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>
+              <Refresh size={14} />
+            </span>
           </button>
-        </div>
+        </span>
       </div>
-    </div>
+
+      {!summary ? (
+        <div className="font-mono text-[12px] text-zinc-600">Loading…</div>
+      ) : (
+        <>
+          <PlanNotice plan={summary.plan} />
+
+          {summary.plan.limits.map((limit) => (
+            <LimitBar key={limit.key} limit={limit} now={now} />
+          ))}
+
+          {insights?.burn && session && now !== null && (
+            <BurnLine burn={insights.burn} session={session} now={now} />
+          )}
+
+          {insights && insights.projects.length > 0 && (
+            <div className="mb-4 border-t border-edge pt-3">
+              <div className="mb-2 flex items-baseline justify-between">
+                <Label>What&apos;s burning it</Label>
+                <span className="font-mono text-[10px] text-zinc-700">
+                  {attributionLabel} · this machine
+                </span>
+              </div>
+              <ProjectBars projects={insights.projects} />
+              <ModelMix models={insights.models} cacheHitRate={insights.cacheHitRate} />
+            </div>
+          )}
+
+          {insights && (
+            <div className="mb-4 border-t border-edge pt-3">
+              <Label>If this were the API</Label>
+              <div className="mt-1.5 flex items-baseline justify-between">
+                <span className="text-[12px] text-zinc-400">
+                  Last 7 days{' '}
+                  <span className="font-mono text-zinc-200">{formatUsd(insights.weekCostUsd)}</span>
+                </span>
+                <span className="font-mono text-[11px] text-zinc-500">
+                  ≈ {formatUsd(insights.monthlyProjectionUsd)}/mo at this rate
+                </span>
+              </div>
+            </div>
+          )}
+
+          {insights && (
+            <>
+              <Label>Last 14 days</Label>
+              <div className="mt-1">
+                <DailyChart data={insights.daily} />
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      <div className="mt-4 flex justify-end">
+        <button onClick={onClose} className="btn btn-ghost">
+          Close
+        </button>
+      </div>
+    </Modal>
   )
 }
 

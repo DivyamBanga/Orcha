@@ -7,8 +7,21 @@ import type {
   GitStatus,
   ChatItem,
   SessionUsage,
-  UsageSummary
+  UsageSummary,
+  GuestBalance,
+  GuestStatus,
+  GuestUsage,
+  ToolsStatus,
+  Agent
 } from '../../shared/types'
+
+// A small in-app message (budget warnings and the like). Not an OS toast:
+// these are about the app itself, so they only matter while you're in it.
+export interface Notice {
+  id: string
+  text: string
+  tone: 'neutral' | 'warn' | 'danger'
+}
 
 const MC = 'orchestrator'
 
@@ -55,6 +68,17 @@ interface OrchaStore {
   showNewSession: string | null
   showSettings: boolean
 
+  // Guest mode (running on a host's credits). null = not checked yet.
+  guest: GuestStatus | null
+  guestBalance: GuestBalance | null
+  guestUsage: GuestUsage | null
+  // When guestUsage was fetched, for pace maths without calling Date.now() in
+  // render (React's purity rule).
+  guestUsageAt: number | null
+  showCredits: boolean
+  tools: ToolsStatus | null
+  notices: Notice[]
+
   checkSetup: () => Promise<void>
   load: () => Promise<void>
   restoreOpenSessions: () => Promise<void>
@@ -65,7 +89,8 @@ interface OrchaStore {
     projectId: string,
     name: string,
     model?: string | null,
-    effort?: string | null
+    effort?: string | null,
+    agent?: Agent
   ) => Promise<void>
   mcSend: (text: string) => void
   mcInterrupt: () => void
@@ -77,6 +102,13 @@ interface OrchaStore {
   setUsage: (workspaceId: string, usage: SessionUsage | null) => void
   setShowUsageDashboard: (show: boolean) => void
   loadUsageSummary: (force?: boolean) => Promise<void>
+  loadGuest: () => Promise<GuestStatus>
+  loadGuestBalance: (force?: boolean) => Promise<void>
+  loadGuestUsage: () => Promise<void>
+  setShowCredits: (show: boolean) => void
+  checkTools: () => Promise<ToolsStatus>
+  pushNotice: (notice: Notice) => void
+  dismissNotice: (id: string) => void
 }
 
 export const useStore = create<OrchaStore>((set) => ({
@@ -102,6 +134,13 @@ export const useStore = create<OrchaStore>((set) => ({
   showNewProject: false,
   showNewSession: null,
   showSettings: false,
+  guest: null,
+  guestBalance: null,
+  guestUsage: null,
+  guestUsageAt: null,
+  showCredits: false,
+  tools: null,
+  notices: [],
 
   checkSetup: async () => {
     const setup = await window.orcha.setup.status()
@@ -185,8 +224,8 @@ export const useStore = create<OrchaStore>((set) => ({
     })
   },
 
-  createParallelSession: async (projectId, name, model = null, effort = null) => {
-    const workspace = await window.orcha.workspaces.create(projectId, name, model, effort)
+  createParallelSession: async (projectId, name, model = null, effort = null, agent = 'claude') => {
+    const workspace = await window.orcha.workspaces.create(projectId, name, model, effort, agent)
     set((s) => ({
       workspaces: [...s.workspaces, workspace],
       activeId: workspace.id,
@@ -252,8 +291,35 @@ export const useStore = create<OrchaStore>((set) => ({
   loadUsageSummary: async (force) => {
     const usageSummary = await window.orcha.usage.summary(force)
     set({ usageSummary, usageSummaryFetchedAt: Date.now() })
-  }
+  },
+  loadGuest: async () => {
+    const guest = await window.orcha.guest.status()
+    set({ guest })
+    return guest
+  },
+  loadGuestBalance: async (force) => {
+    const guestBalance = await window.orcha.guest.balance(force)
+    set({ guestBalance })
+  },
+  loadGuestUsage: async () => {
+    const guestUsage = await window.orcha.guest.usage()
+    set({ guestUsage, guestUsageAt: Date.now() })
+  },
+  setShowCredits: (show) => set({ showCredits: show }),
+  checkTools: async () => {
+    const tools = await window.orcha.tools.status()
+    set({ tools })
+    return tools
+  },
+  pushNotice: (notice) =>
+    set((s) => ({ notices: [...s.notices.filter((n) => n.id !== notice.id), notice] })),
+  dismissNotice: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) }))
 }))
+
+// Whether this app is running on a host's credits.
+export function useIsGuest(): boolean {
+  return useStore((s) => s.guest?.paired ?? false)
+}
 
 export function useActiveWorkspace(): Workspace | undefined {
   const id = useStore((s) => s.activeId)

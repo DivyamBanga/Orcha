@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
+import * as db from './db'
 import { registerIpc } from './ipc'
 import { WorkspaceManager } from './services/WorkspaceManager'
 import { PtyManager } from './services/PtyManager'
@@ -15,6 +16,8 @@ import { CodexService } from './services/CodexService'
 import { ClipboardService } from './services/ClipboardService'
 import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
+import { isGuest } from './guest'
+import { refreshPath } from './tools'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
@@ -132,7 +135,17 @@ function createWindow(): void {
   activityMonitor.onPing = (workspaceId, kind, body, focused) =>
     mobileService.handlePing(workspaceId, kind, body, focused)
   activityMonitor.onState = (workspaceId, state) => mobileService.handleState(workspaceId, state)
-  mobileService.start().catch((err) => console.log('[mobile] failed to start:', err))
+  // The phone companion opens a network port, so it only starts at launch on
+  // a machine where it's already been set up; otherwise the first open of
+  // Settings → Phone starts it (and a fresh install never meets a firewall
+  // prompt for a feature nobody asked for). Guest machines never run it, and
+  // instead pick up tools installed from inside Orcha since Windows last
+  // logged in.
+  if (isGuest()) {
+    refreshPath().catch(() => {})
+  } else if (db.appState.get('mobile:token')) {
+    mobileService.start().catch((err) => console.log('[mobile] failed to start:', err))
+  }
   activityMonitor.onNotificationClick = (workspaceId) => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()

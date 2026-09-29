@@ -2,6 +2,8 @@ import * as pty from 'node-pty'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { hasSessionHistory } from '../claudeSessions'
+import { claudeRelayEnv, isGuest } from '../guest'
+import { codexEnv, codexLaunchCommand } from '../codex'
 import { sshArgs, shQuote, remoteHasSessionHistory, type SshTarget } from '../ssh'
 import type { Workspace, Project } from '../../shared/types'
 
@@ -40,6 +42,16 @@ interface PtyEntry {
   // compared against this so a stale URL from a --continue recap never wins.
   remoteUrl: string | null
   remoteUrlAt: number
+  // Which busy marker this session's TUI draws (Claude and Codex differ).
+  busyMarker: RegExp
+  // Latest terminal title the TUI set, plus a raw tail for sequences split
+  // across chunks. Codex puts "Action Required" there when it needs you.
+  title: string
+  titleTail: string
+  // A guest's Claude session answers Claude Code's one-time "Do you trust this
+  // folder?" dialog itself — it pre-selects "No, exit", which would throw a
+  // newcomer straight out of the folder they just chose. Null = not watching.
+  trustTail: string | null
 }
 
 // The TUI repaints this constantly while Claude is running a turn. Matched
@@ -47,6 +59,13 @@ interface PtyEntry {
 // phrase's spaces often arrive as cursor jumps and strip away with the ANSI
 // ("esctointerrupt" — observed live).
 const BUSY_MARKER = /esctointerrupt/i
+// Codex's status row, "Working (12s • esc to interrupt)", whitespace-free. The
+// elapsed time keeps it apart from the bare phrase Codex's question view also
+// shows.
+const CODEX_BUSY_MARKER = /\ds•esctointerrupt/i
+// OSC 0/2: set window title.
+// eslint-disable-next-line no-control-regex
+const TITLE = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g
 // eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
 // Remote Control session link shown by /remote-control.
@@ -55,7 +74,10 @@ const REMOTE_URL = /https:\/\/claude\.ai\/code\/[A-Za-z0-9_-]{8,}/g
 function claudeLaunchCommand(workspace: Workspace): string {
   const parts = ['claude', '--dangerously-skip-permissions']
   if (hasSessionHistory(workspace.worktreePath)) parts.push('--continue')
-  if (workspace.model) parts.push('--model', workspace.model)
+  // Guests default to Sonnet: it's the best value on a fixed budget, and their
+  // own Claude Code settings may default to Opus.
+  const model = workspace.model ?? (isGuest() ? 'sonnet' : null)
+  if (model) parts.push('--model', model)
   if (workspace.effort) parts.push('--effort', workspace.effort)
   return parts.join(' ')
 }
@@ -133,10 +155,13 @@ export class PtyManager {
   // Copies process.env, applying the workspace's stored auth-mode override.
   // 'apiKey' sets ANTHROPIC_API_KEY; 'subscription' (including default/unset)
   // strips it, since Claude Code's own precedence lets a global env var
-  // silently beat an OAuth login otherwise.
-  private authEnv(workspaceId: string): Record<string, string> {
-    const auth = db.workspaceAuth.get(workspaceId)
+  // silently beat an OAuth login otherwise. A guest's sessions skip all that:
+  // they always go through their host's relay.
+  private authEnv(workspace: Workspace, project: Project | undefined): Record<string, string> {
     const env = { ...process.env } as Record<string, string>
+    if (workspace.agent === 'codex') return codexEnv(env)
+    if (isGuest()) return claudeRelayEnv(env, project?.name ?? workspace.name, workspace.id)
+    const auth = db.workspaceAuth.get(workspace.id)
     if (auth.mode === 'apiKey' && auth.apiKey) {
       env.ANTHROPIC_API_KEY = auth.apiKey
     } else {
@@ -176,15 +201,18 @@ export class PtyManager {
         useConpty: true
       })
     } else {
-      // -NoExit: when Claude exits (/exit, crash), you land in a shell in the
-      // same folder instead of a dead tab.
-      const args = workspace
-        ? ['-NoLogo', '-NoExit', '-Command', claudeLaunchCommand(workspace)]
-        : ['-NoLogo']
+      // -NoExit: when the agent exits (/exit, crash), you land in a shell in
+      // the same folder instead of a dead tab.
+      const launch = workspace
+        ? workspace.agent === 'codex'
+          ? codexLaunchCommand(workspace, project)
+          : claudeLaunchCommand(workspace)
+        : null
+      const args = launch ? ['-NoLogo', '-NoExit', '-Command', launch] : ['-NoLogo']
       proc = pty.spawn('powershell.exe', args, {
         name: 'xterm-color',
         cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
-        env: workspace ? this.authEnv(workspaceId) : (process.env as Record<string, string>),
+        env: workspace ? this.authEnv(workspace, project) : (process.env as Record<string, string>),
         cols,
         rows,
         useConpty: true
@@ -202,16 +230,51 @@ export class PtyManager {
       markerTail: '',
       urlTail: '',
       remoteUrl: null,
-      remoteUrlAt: 0
+      remoteUrlAt: 0,
+      busyMarker: workspace?.agent === 'codex' ? CODEX_BUSY_MARKER : BUSY_MARKER,
+      title: '',
+      titleTail: '',
+      trustTail: workspace?.agent === 'claude' && isGuest() ? '' : null
     }
     this.ptys.set(workspaceId, entry)
+    // The trust dialog only ever shows at startup.
+    if (entry.trustTail !== null) setTimeout(() => (entry.trustTail = null), 90_000)
 
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
       entry.lastOutputAt = Date.now()
       entry.markerTail = (entry.markerTail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-64)
-      if (BUSY_MARKER.test(entry.markerTail)) {
+      if (entry.busyMarker.test(entry.markerTail)) {
         entry.lastBusyMarkerAt = Date.now()
+      }
+      if (data.includes('\x1b]') || entry.titleTail) {
+        const scan = entry.titleTail + data
+        const titles = [...scan.matchAll(TITLE)]
+        if (titles.length > 0) entry.title = titles[titles.length - 1][1]
+        // Keep an unterminated sequence around for the next chunk.
+        const open = scan.lastIndexOf('\x1b]')
+        const closed = titles.length > 0 ? titles[titles.length - 1].index! : -1
+        entry.titleTail = open > closed ? scan.slice(open).slice(0, 512) : ''
+      }
+      if (entry.trustTail !== null) {
+        // Matched whitespace-free and loosely: ConPTY glues and even drops
+        // letters in chrome text ("Enter to elect" has been seen live).
+        entry.trustTail = (entry.trustTail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-400)
+        if (
+          /trustthisfolder/i.test(entry.trustTail) &&
+          /Entertoc|Esctocancel/i.test(entry.trustTail)
+        ) {
+          // "No, exit" is the pre-selected answer; step down to "Yes" first.
+          const yesSelected = /❯Yes/.test(entry.trustTail)
+          entry.trustTail = null
+          setTimeout(() => {
+            if (this.ptys.get(workspaceId) !== entry) return
+            if (!yesSelected) entry.proc.write('\x1b[B')
+            setTimeout(() => {
+              if (this.ptys.get(workspaceId) === entry) entry.proc.write('\r')
+            }, 200)
+          }, 400)
+        }
       }
       entry.urlTail = (entry.urlTail + data.replace(ANSI, '')).slice(-512)
       const urls = entry.urlTail.match(REMOTE_URL)
@@ -263,6 +326,11 @@ export class PtyManager {
   busyMarkerAgeMs(workspaceId: string): number | null {
     const at = this.ptys.get(workspaceId)?.lastBusyMarkerAt
     return at ? Date.now() - at : null
+  }
+
+  // The terminal title the TUI last set ('' if none or not open).
+  title(workspaceId: string): string {
+    return this.ptys.get(workspaceId)?.title ?? ''
   }
 
   // Milliseconds since any output arrived; null if the terminal isn't open.

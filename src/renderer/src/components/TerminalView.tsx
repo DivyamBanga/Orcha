@@ -63,7 +63,7 @@ function TerminalView({
       fontSize: 13,
       fontFamily: "'Cascadia Code', Consolas, monospace",
       theme: {
-        background: '#0a0a0c',
+        background: '#09090b',
         foreground: '#d4d4d8',
         cursor: '#d4d4d8',
         selectionBackground: '#3f3f46'

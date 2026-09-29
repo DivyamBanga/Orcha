@@ -1,21 +1,28 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { useStore } from '../store'
+import Modal from './Modal'
 
 // One modal for both link features: live share (public read-only terminal
 // view) and phone connect (Claude Code Remote Control). Kicks off the request
 // when opened, shows progress, then the QR + link.
-function LinkModal(): React.JSX.Element | null {
+function LinkModal(): React.JSX.Element {
   const modal = useStore((s) => s.linkModal)
   const setLinkModal = useStore((s) => s.setLinkModal)
-  if (!modal) return null
+  // The last request stays rendered while the dialog animates closed.
+  const [last, setLast] = useState(modal)
+  if (modal !== null && modal !== last) setLast(modal)
   return (
-    <LinkModalInner
-      key={`${modal.kind}:${modal.workspaceId}`}
-      kind={modal.kind}
-      workspaceId={modal.workspaceId}
-      onClose={() => setLinkModal(null)}
-    />
+    <Modal open={modal !== null} onClose={() => setLinkModal(null)} width={400}>
+      {last && (
+        <LinkModalInner
+          key={`${last.kind}:${last.workspaceId}`}
+          kind={last.kind}
+          workspaceId={last.workspaceId}
+          onClose={() => setLinkModal(null)}
+        />
+      )}
+    </Modal>
   )
 }
 
@@ -60,12 +67,12 @@ function LinkModalInner({
   const title = kind === 'share' ? 'Share live view' : 'Connect your phone'
   const working =
     kind === 'phone'
-      ? 'connecting — typing /remote-control into the session…'
+      ? 'Connecting — typing /remote-control into the session…'
       : sharePhase === 'downloading'
-        ? 'downloading tunnel helper (one time, ~60 MB)…'
+        ? 'Downloading the tunnel helper (one time, ~60 MB)…'
         : sharePhase === 'tunnel'
-          ? 'opening secure tunnel…'
-          : 'starting share…'
+          ? 'Opening a secure tunnel…'
+          : 'Starting the share…'
 
   const copy = (): void => {
     if (!url) return
@@ -80,91 +87,74 @@ function LinkModalInner({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="w-96 rounded-lg border border-edge-bright bg-surface-1 p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 font-medium text-zinc-100">
-          {title}
-          {workspace && <span className="text-zinc-500"> — {workspace.name}</span>}
-        </div>
-        <div className="mb-3 font-mono text-[11px] leading-relaxed text-zinc-600">
-          {kind === 'share'
-            ? 'Anyone with this link can watch the terminal live (read-only) in a browser until you stop sharing. No install needed on their end.'
-            : 'Steer this session from the Claude app or claude.ai/code. The session keeps running on this machine.'}
-        </div>
-
-        {error ? (
-          <div className="mb-4 select-text rounded border border-red-900/60 bg-red-950/30 px-3 py-2 font-mono text-[12px] leading-relaxed text-red-400">
-            {error}
-          </div>
-        ) : url ? (
-          <div className="mb-4 flex flex-col items-center gap-3">
-            {qr && (
-              <div className="rounded-md bg-white p-2">
-                <img src={qr} alt="QR code" className="block h-52 w-52" />
-              </div>
-            )}
-            <div className="flex w-full items-center gap-2">
-              <input
-                readOnly
-                value={url}
-                onFocus={(e) => e.currentTarget.select()}
-                className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 font-mono text-[11px] text-zinc-300"
-              />
-              <button
-                onClick={copy}
-                className="shrink-0 rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
-              >
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-            {kind === 'phone' && (
-              <div className="font-mono text-[11px] text-zinc-600">
-                scan with your phone camera — opens in the Claude app
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="mb-4 flex items-center gap-2 py-6 font-mono text-[12px] text-zinc-500">
-            <span className="busy-ring" />
-            {working}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2">
-          {error && (
-            <button
-              onClick={() => {
-                setError(null)
-                setAttempt((a) => a + 1)
-              }}
-              className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white"
-            >
-              Try again
-            </button>
-          )}
-          {kind === 'share' && url && (
-            <button
-              onClick={stopShare}
-              className="rounded-md border border-red-900/60 px-3 py-1.5 text-red-400 hover:bg-red-950/40"
-            >
-              Stop sharing
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
-          >
-            Close
-          </button>
-        </div>
+    <>
+      <div className="text-[15px] font-semibold tracking-tight text-zinc-50">
+        {title}
+        {workspace && <span className="font-normal text-zinc-500"> · {workspace.name}</span>}
       </div>
-    </div>
+      <p className="mt-1 mb-5 text-[12.5px] leading-relaxed text-zinc-500">
+        {kind === 'share'
+          ? 'Anyone with this link can watch the terminal live (read-only) in a browser until you stop sharing. Nothing to install on their end.'
+          : 'Steer this session from the Claude app or claude.ai/code. It keeps running on this machine.'}
+      </p>
+
+      {error ? (
+        <div className="mb-5 select-text rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2.5 font-mono text-[12px] leading-relaxed text-red-300">
+          {error}
+        </div>
+      ) : url ? (
+        <div className="fade-late mb-5 flex flex-col items-center gap-3.5">
+          {qr && (
+            <div className="rounded-xl bg-white p-2">
+              <img src={qr} alt="QR code" className="block h-52 w-52" />
+            </div>
+          )}
+          <div className="flex w-full items-center gap-2">
+            <input
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="input font-mono text-[11px]"
+            />
+            <button onClick={copy} className="btn btn-primary h-8 shrink-0">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          {kind === 'phone' && (
+            <div className="text-[12px] text-zinc-500">
+              Scan with your phone camera — it opens in the Claude app
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mb-5 flex items-center gap-2.5 py-6 text-[12.5px] text-zinc-400">
+          <span className="busy-ring" />
+          {working}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        {error && (
+          <button
+            onClick={() => {
+              setError(null)
+              setAttempt((a) => a + 1)
+            }}
+            className="btn btn-primary"
+          >
+            Try again
+          </button>
+        )}
+        {kind === 'share' && url && (
+          <button onClick={stopShare} className="btn btn-danger">
+            Stop sharing
+          </button>
+        )}
+        <button onClick={onClose} className="btn btn-ghost">
+          Close
+        </button>
+      </div>
+    </>
   )
 }
 

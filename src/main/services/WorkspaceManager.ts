@@ -4,7 +4,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import * as db from '../db'
-import type { Workspace } from '../../shared/types'
+import type { Agent, Workspace } from '../../shared/types'
 
 const WORKTREE_ROOT = join(homedir(), '.orcha', 'worktrees')
 
@@ -41,7 +41,8 @@ export class WorkspaceManager {
     projectId: string,
     name: string,
     model: string | null = null,
-    effort: Workspace['effort'] = null
+    effort: Workspace['effort'] = null,
+    agent: Agent = 'claude'
   ): Promise<Workspace> {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
@@ -81,7 +82,8 @@ export class WorkspaceManager {
         lastActivityAt: null,
         model,
         effort,
-        kind: 'worktree'
+        kind: 'worktree',
+        agent
       }
       db.workspaces.insert(workspace)
       return workspace
@@ -89,7 +91,7 @@ export class WorkspaceManager {
   }
 
   // The default tab for a project: a session rooted at the repo folder itself.
-  createMain(projectId: string): Workspace {
+  createMain(projectId: string, agent: Agent = 'claude'): Workspace {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
     const workspace: Workspace = {
@@ -104,7 +106,8 @@ export class WorkspaceManager {
       lastActivityAt: null,
       model: null,
       effort: null,
-      kind: 'main'
+      kind: 'main',
+      agent
     }
     db.workspaces.insert(workspace)
     return workspace

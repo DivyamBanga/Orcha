@@ -1,5 +1,5 @@
 import { execFileAsync } from './exec'
-import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
@@ -7,7 +7,18 @@ import { IPC } from '../shared/ipc'
 import * as db from './db'
 import { sessionUsage } from './claudeSessions'
 import { computeUsageSummary } from './usageStats'
-import type { Project, WorkspaceAuth } from '../shared/types'
+import {
+  guestBalance,
+  guestStatus,
+  guestUsage,
+  INVITE_LINK,
+  isGuest,
+  leaveGuestMode,
+  redeemInvite
+} from './guest'
+import { relayAdmin, relayAdminStatus } from './relayAdmin'
+import { installTool, refreshPath, toolsStatus } from './tools'
+import type { Agent, CreditPool, Project, ToolName, WorkspaceAuth } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { PtyManager } from './services/PtyManager'
 import type { GitService } from './services/GitService'
@@ -62,27 +73,41 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- projects ---------------------------------------------------------------
 
-  ipcMain.handle(IPC.ProjectsAdd, async (_e, pickedPath?: string): Promise<Project | null> => {
-    let repoPath = pickedPath
-    if (!repoPath) {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title: 'Open a local git repository',
-        properties: ['openDirectory']
-      })
-      if (result.canceled || result.filePaths.length === 0) return null
-      repoPath = result.filePaths[0]
+  // Codex tabs are a guest-mode feature; anywhere else a request for one is
+  // quietly a Claude tab.
+  const agentFor = (agent?: Agent): Agent => (agent === 'codex' && isGuest() ? 'codex' : 'claude')
+
+  ipcMain.handle(
+    IPC.ProjectsAdd,
+    async (_e, pickedPath?: string, agent?: Agent): Promise<Project | null> => {
+      let repoPath = pickedPath
+      if (!repoPath) {
+        const result = await dialog.showOpenDialog(mainWindow, {
+          title: 'Open a local git repository',
+          properties: ['openDirectory']
+        })
+        if (result.canceled || result.filePaths.length === 0) return null
+        repoPath = result.filePaths[0]
+      }
+      return projectService.addLocal(repoPath, agentFor(agent))
     }
-    return projectService.addLocal(repoPath)
+  )
+
+  // A plain folder picked by someone who just wants to work in it: make it a
+  // git repo (sessions, worktrees and the git chip all need one), then open it.
+  ipcMain.handle(IPC.ProjectsInitGit, async (_e, folder: string, agent?: Agent) => {
+    await execFileAsync('git', ['init'], { cwd: folder })
+    return projectService.addLocal(folder, agentFor(agent))
   })
 
   ipcMain.handle(IPC.ProjectsList, () => db.projects.list())
 
-  ipcMain.handle(IPC.ProjectsCreateRepo, (_e, name: string, isPrivate: boolean) =>
-    projectService.createRepo(name, isPrivate)
+  ipcMain.handle(IPC.ProjectsCreateRepo, (_e, name: string, isPrivate: boolean, agent?: Agent) =>
+    projectService.createRepo(name, isPrivate, agentFor(agent))
   )
   ipcMain.handle(IPC.ProjectsListGithub, () => projectService.listGithub())
-  ipcMain.handle(IPC.ProjectsCloneGithub, (_e, nameWithOwner: string) =>
-    projectService.cloneGithub(nameWithOwner)
+  ipcMain.handle(IPC.ProjectsCloneGithub, (_e, nameWithOwner: string, agent?: Agent) =>
+    projectService.cloneGithub(nameWithOwner, agentFor(agent))
   )
   ipcMain.handle(
     IPC.ProjectsAddRemote,
@@ -94,12 +119,20 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(
     IPC.WorkspacesCreate,
-    (_e, projectId: string, name: string, model: string | null, effort: string | null) =>
+    (
+      _e,
+      projectId: string,
+      name: string,
+      model: string | null,
+      effort: string | null,
+      agent?: Agent
+    ) =>
       workspaceManager.create(
         projectId,
         name,
         model,
-        effort as Parameters<typeof workspaceManager.create>[3]
+        effort as Parameters<typeof workspaceManager.create>[3],
+        agentFor(agent)
       )
   )
   ipcMain.handle(IPC.WorkspacesList, () => db.workspaces.listActive())
@@ -242,13 +275,68 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     clipboardService.pathFor(workspaceId, localPath)
   )
 
+  // Switch what a tab runs (Claude/Codex) and on which model, then restart it
+  // in place; the conversation resumes.
+  ipcMain.handle(
+    IPC.SessionSetAgent,
+    async (_e, workspaceId: string, agent: Agent, model: string | null) => {
+      db.workspaces.setAgentModel(workspaceId, agentFor(agent), model)
+      const size = ptyManager.size(workspaceId) ?? { cols: 120, rows: 30 }
+      if (ptyManager.has(workspaceId)) await ptyManager.restart(workspaceId, size.cols, size.rows)
+      return db.workspaces.get(workspaceId)
+    }
+  )
+
+  // --- guest mode ------------------------------------------------------------
+
+  ipcMain.handle(IPC.GuestStatus, () => guestStatus())
+  ipcMain.handle(IPC.GuestRedeem, async (_e, link: string) => {
+    const status = await redeemInvite(link)
+    // A guest machine runs no phone server, and may have just installed tools.
+    mobileService.stop()
+    await refreshPath()
+    return status
+  })
+  ipcMain.handle(IPC.GuestLeave, () => leaveGuestMode())
+  ipcMain.handle(IPC.GuestBalance, (_e, force?: boolean) => guestBalance(force === true))
+  ipcMain.handle(IPC.GuestUsage, () => guestUsage())
+  ipcMain.handle(
+    IPC.GuestClipboardInvite,
+    () => clipboard.readText().match(INVITE_LINK)?.[0] ?? null
+  )
+
+  ipcMain.handle(IPC.ToolsStatus, () => toolsStatus())
+  ipcMain.handle(IPC.ToolsInstall, (e, name: ToolName) =>
+    installTool(name, (message) => e.sender.send(IPC.EvToolsProgress, { tool: name, message }))
+  )
+
+  // --- host: managing guests on your own relay ---------------------------------
+
+  ipcMain.handle(IPC.RelayAdminStatus, () => relayAdminStatus())
+  ipcMain.handle(IPC.RelayAdminGuests, () => relayAdmin.guests())
+  ipcMain.handle(
+    IPC.RelayAdminCreate,
+    (_e, name: string, hostName: string, caps: Record<CreditPool, number>) =>
+      relayAdmin.create(name, hostName, caps)
+  )
+  ipcMain.handle(IPC.RelayAdminInvite, (_e, guestId: string) => relayAdmin.invite(guestId))
+  ipcMain.handle(IPC.RelayAdminTopUp, (_e, guestId: string, pool: CreditPool, amount: number) =>
+    relayAdmin.topUp(guestId, pool, amount)
+  )
+  ipcMain.handle(IPC.RelayAdminAccess, (_e, guestId: string, access: 'revoke' | 'restore') =>
+    relayAdmin.setAccess(guestId, access)
+  )
+
   // --- codex plugin ------------------------------------------------------
 
   ipcMain.handle(IPC.CodexStatus, () => codexService.status())
   ipcMain.handle(IPC.CodexSetup, () => codexService.setup())
 
   // Pairing info for the phone companion (Settings → Phone shows it as a QR).
-  ipcMain.handle(IPC.MobileInfo, () => mobileService.info())
+  ipcMain.handle(IPC.MobileInfo, async () => {
+    if (!isGuest()) await mobileService.ensureStarted()
+    return mobileService.info()
+  })
 
   // Small persisted UI state (open sessions, last active) in app_state.
   ipcMain.handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)

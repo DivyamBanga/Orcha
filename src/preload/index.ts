@@ -10,7 +10,15 @@ import type {
   SessionUsage,
   UsageSummary,
   ClipEntry,
-  PasteTarget
+  PasteTarget,
+  Agent,
+  AdminGuest,
+  CreditPool,
+  GuestBalance,
+  GuestStatus,
+  GuestUsage,
+  ToolName,
+  ToolsStatus
 } from '../shared/types'
 
 const api = {
@@ -23,15 +31,18 @@ const api = {
       ipcRenderer.invoke(IPC.UiSaveState, key, value)
   },
   projects: {
-    add: (repoPath?: string): Promise<Project | null> =>
-      ipcRenderer.invoke(IPC.ProjectsAdd, repoPath),
+    add: (repoPath?: string, agent?: Agent): Promise<Project | null> =>
+      ipcRenderer.invoke(IPC.ProjectsAdd, repoPath, agent),
+    // Makes a plain folder a git repo, then opens it as a project.
+    initGit: (folder: string, agent?: Agent): Promise<Project> =>
+      ipcRenderer.invoke(IPC.ProjectsInitGit, folder, agent),
     list: (): Promise<Project[]> => ipcRenderer.invoke(IPC.ProjectsList),
-    createRepo: (name: string, isPrivate: boolean): Promise<Project> =>
-      ipcRenderer.invoke(IPC.ProjectsCreateRepo, name, isPrivate),
+    createRepo: (name: string, isPrivate: boolean, agent?: Agent): Promise<Project> =>
+      ipcRenderer.invoke(IPC.ProjectsCreateRepo, name, isPrivate, agent),
     listGithub: (): Promise<{ nameWithOwner: string; name: string }[]> =>
       ipcRenderer.invoke(IPC.ProjectsListGithub),
-    cloneGithub: (nameWithOwner: string): Promise<Project> =>
-      ipcRenderer.invoke(IPC.ProjectsCloneGithub, nameWithOwner),
+    cloneGithub: (nameWithOwner: string, agent?: Agent): Promise<Project> =>
+      ipcRenderer.invoke(IPC.ProjectsCloneGithub, nameWithOwner, agent),
     addRemote: (
       host: string,
       user: string,
@@ -48,8 +59,10 @@ const api = {
       projectId: string,
       name: string,
       model: string | null = null,
-      effort: string | null = null
-    ): Promise<Workspace> => ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name, model, effort),
+      effort: string | null = null,
+      agent: Agent = 'claude'
+    ): Promise<Workspace> =>
+      ipcRenderer.invoke(IPC.WorkspacesCreate, projectId, name, model, effort, agent),
     list: (): Promise<Workspace[]> => ipcRenderer.invoke(IPC.WorkspacesList),
     archive: (workspaceId: string): Promise<void> =>
       ipcRenderer.invoke(IPC.WorkspacesArchive, workspaceId),
@@ -65,7 +78,41 @@ const api = {
     remoteControl: (workspaceId: string): Promise<{ url: string }> =>
       ipcRenderer.invoke(IPC.SessionRemoteControl, workspaceId),
     usage: (workspaceId: string): Promise<SessionUsage | null> =>
-      ipcRenderer.invoke(IPC.SessionUsage, workspaceId)
+      ipcRenderer.invoke(IPC.SessionUsage, workspaceId),
+    // Switches the agent/model a tab runs and restarts it (conversation resumes).
+    setAgent: (workspaceId: string, agent: Agent, model: string | null): Promise<Workspace> =>
+      ipcRenderer.invoke(IPC.SessionSetAgent, workspaceId, agent, model)
+  },
+  guest: {
+    status: (): Promise<GuestStatus> => ipcRenderer.invoke(IPC.GuestStatus),
+    redeem: (link: string): Promise<GuestStatus> => ipcRenderer.invoke(IPC.GuestRedeem, link),
+    leave: (): Promise<void> => ipcRenderer.invoke(IPC.GuestLeave),
+    balance: (force?: boolean): Promise<GuestBalance | null> =>
+      ipcRenderer.invoke(IPC.GuestBalance, force),
+    usage: (): Promise<GuestUsage | null> => ipcRenderer.invoke(IPC.GuestUsage),
+    // An invite link sitting on the clipboard, if there is one.
+    clipboardInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestClipboardInvite)
+  },
+  tools: {
+    status: (): Promise<ToolsStatus> => ipcRenderer.invoke(IPC.ToolsStatus),
+    install: (name: ToolName): Promise<void> => ipcRenderer.invoke(IPC.ToolsInstall, name)
+  },
+  relayAdmin: {
+    status: (): Promise<{ configured: boolean; url: string | null }> =>
+      ipcRenderer.invoke(IPC.RelayAdminStatus),
+    guests: (): Promise<AdminGuest[]> => ipcRenderer.invoke(IPC.RelayAdminGuests),
+    create: (
+      name: string,
+      hostName: string,
+      caps: Record<CreditPool, number>
+    ): Promise<{ guest: AdminGuest; inviteUrl: string }> =>
+      ipcRenderer.invoke(IPC.RelayAdminCreate, name, hostName, caps),
+    invite: (guestId: string): Promise<{ inviteUrl: string }> =>
+      ipcRenderer.invoke(IPC.RelayAdminInvite, guestId),
+    topUp: (guestId: string, pool: CreditPool, amount: number): Promise<AdminGuest> =>
+      ipcRenderer.invoke(IPC.RelayAdminTopUp, guestId, pool, amount),
+    access: (guestId: string, access: 'revoke' | 'restore'): Promise<AdminGuest> =>
+      ipcRenderer.invoke(IPC.RelayAdminAccess, guestId, access)
   },
   usage: {
     summary: (force?: boolean): Promise<UsageSummary> => ipcRenderer.invoke(IPC.UsageSummary, force)

@@ -37,7 +37,12 @@ export function initDb(): void {
     );
   `)
   // Additive migrations for pre-existing databases.
-  for (const col of ['model TEXT', 'effort TEXT', "kind TEXT NOT NULL DEFAULT 'worktree'"]) {
+  for (const col of [
+    'model TEXT',
+    'effort TEXT',
+    "kind TEXT NOT NULL DEFAULT 'worktree'",
+    "agent TEXT NOT NULL DEFAULT 'claude'"
+  ]) {
     try {
       db.exec(`ALTER TABLE workspaces ADD COLUMN ${col}`)
     } catch {
@@ -98,6 +103,7 @@ interface WorkspaceRow {
   model: string | null
   effort: string | null
   kind: string
+  agent: string
 }
 
 function toProject(r: ProjectRow): Project {
@@ -126,7 +132,8 @@ function toWorkspace(r: WorkspaceRow): Workspace {
     lastActivityAt: r.last_activity_at,
     model: r.model,
     effort: r.effort as Workspace['effort'],
-    kind: r.kind as Workspace['kind']
+    kind: r.kind as Workspace['kind'],
+    agent: r.agent === 'codex' ? 'codex' : 'claude'
   }
 }
 
@@ -164,8 +171,8 @@ export const workspaces = {
   insert(w: Workspace): void {
     db.prepare(
       `INSERT INTO workspaces
-       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort, kind)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, project_id, name, branch, worktree_path, session_id, status, created_at, last_activity_at, model, effort, kind, agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       w.id,
       w.projectId,
@@ -178,7 +185,8 @@ export const workspaces = {
       w.lastActivityAt,
       w.model,
       w.effort,
-      w.kind
+      w.kind,
+      w.agent
     )
   },
   listActive(): Workspace[] {
@@ -200,6 +208,10 @@ export const workspaces = {
       Date.now(),
       id
     )
+  },
+  // Switches which agent a tab runs and with which model; applies on restart.
+  setAgentModel(id: string, agent: Workspace['agent'], model: string | null): void {
+    db.prepare('UPDATE workspaces SET agent = ?, model = ? WHERE id = ?').run(agent, model, id)
   },
   setStatus(id: string, status: Workspace['status']): void {
     db.prepare('UPDATE workspaces SET status = ? WHERE id = ?').run(status, id)

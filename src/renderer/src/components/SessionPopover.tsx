@@ -1,35 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../store'
-import type { Workspace, WorkspaceAuth } from '../../../shared/types'
+import { useStore, useIsGuest } from '../store'
+import { poolFor, poolState, sessionCost, usd } from '../money'
+import type { Agent, Workspace, WorkspaceAuth } from '../../../shared/types'
 
 function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
 
-// Anchored under the header's "Session" trigger. Houses per-session token
-// usage (session-scoped, estimated — see claudeSessions.sessionUsage) and
-// the auth-mode toggle (subscription login vs. an API key), which applies
-// on the next restart of this workspace's pty.
-function SessionPopover({
-  workspace,
-  onClose
-}: {
-  workspace: Workspace
-  onClose: () => void
-}): React.JSX.Element {
-  const usage = useStore((s) => s.usage[workspace.id])
-  const ref = useRef<HTMLDivElement>(null)
-  const [auth, setAuth] = useState<WorkspaceAuth>({ mode: 'subscription' })
-  const [apiKeyInput, setApiKeyInput] = useState('')
-  const [saving, setSaving] = useState(false)
+const CLAUDE_MODELS: [string, string][] = [
+  ['sonnet', 'Sonnet'],
+  ['opus', 'Opus'],
+  ['haiku', 'Haiku']
+]
+const CODEX_MODELS: [string, string][] = [
+  ['gpt-6-sol', 'Sol'],
+  ['gpt-6-astra', 'Astra']
+]
 
-  useEffect(() => {
-    window.orcha.workspaces.authGet(workspace.id).then((a) => {
-      setAuth(a)
-      setApiKeyInput(a.apiKey ?? '')
-    })
-  }, [workspace.id])
-
+function usePopoverDismiss(ref: React.RefObject<HTMLDivElement | null>, onClose: () => void): void {
   useEffect(() => {
     const onDown = (e: MouseEvent): void => {
       if (!ref.current?.contains(e.target as Node)) onClose()
@@ -43,7 +31,149 @@ function SessionPopover({
       window.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [ref, onClose])
+}
+
+// Anchored under the header's "Session" trigger.
+function SessionPopover({
+  workspace,
+  onClose
+}: {
+  workspace: Workspace
+  onClose: () => void
+}): React.JSX.Element {
+  const isGuest = useIsGuest()
+  const ref = useRef<HTMLDivElement>(null)
+  usePopoverDismiss(ref, onClose)
+  return (
+    <div
+      ref={ref}
+      style={{ transformOrigin: 'top right' }}
+      className="popover absolute right-4 top-12 z-40 w-[300px] p-3.5"
+    >
+      {isGuest ? (
+        <GuestSession workspace={workspace} onClose={onClose} />
+      ) : (
+        <HostSession workspace={workspace} onClose={onClose} />
+      )}
+    </div>
+  )
+}
+
+// A guest picks what the tab runs — Claude Code or Codex, and which model —
+// and sees what it has cost. Models whose budget is used up can't be picked.
+function GuestSession({
+  workspace,
+  onClose
+}: {
+  workspace: Workspace
+  onClose: () => void
+}): React.JSX.Element {
+  const balance = useStore((s) => s.guestBalance)
+  const load = useStore((s) => s.load)
+  const cost = sessionCost(balance, workspace.id)
+  const [agent, setAgent] = useState<Agent>(workspace.agent)
+  const [model, setModel] = useState<string>(
+    workspace.model ?? (workspace.agent === 'codex' ? 'gpt-6-sol' : 'sonnet')
+  )
+  const [saving, setSaving] = useState(false)
+  const models = agent === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const empty = (a: Agent, m: string): boolean => {
+    const p = poolState(balance, poolFor(a, m))
+    return p !== null && p.spent >= p.cap
+  }
+  const current = workspace.model ?? (workspace.agent === 'codex' ? 'gpt-6-sol' : 'sonnet')
+  const changed = agent !== workspace.agent || model !== current
+
+  const pickAgent = (next: Agent): void => {
+    setAgent(next)
+    setModel(next === 'codex' ? 'gpt-6-sol' : 'sonnet')
+  }
+
+  const apply = async (): Promise<void> => {
+    setSaving(true)
+    try {
+      await window.orcha.session.setAgent(workspace.id, agent, model)
+      await load()
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex items-baseline justify-between">
+        <span className="eyebrow">This tab</span>
+        <span className="tnum text-[12px] text-zinc-400">
+          {cost === null ? 'nothing spent yet' : `${usd(cost)} so far`}
+        </span>
+      </div>
+
+      <div className="field-label">Agent</div>
+      <div className="segmented mb-3">
+        {(
+          [
+            ['claude', 'Claude Code'],
+            ['codex', 'Codex']
+          ] as [Agent, string][]
+        ).map(([a, label]) => (
+          <button key={a} data-active={agent === a} onClick={() => pickAgent(a)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="field-label">Model</div>
+      <div className="segmented mb-4">
+        {models.map(([m, label]) => (
+          <button
+            key={m}
+            data-active={model === m}
+            disabled={empty(agent, m)}
+            onClick={() => setModel(m)}
+            title={empty(agent, m) ? 'This budget is used up' : undefined}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={apply}
+        disabled={saving || !changed || empty(agent, model)}
+        className="btn btn-primary w-full"
+      >
+        {saving ? 'Restarting…' : changed ? 'Switch and restart' : 'No changes'}
+      </button>
+      <p className="mt-2.5 text-[11.5px] leading-relaxed text-zinc-500">
+        The tab restarts on the new model. Claude picks up its conversation where it left off;
+        switching agent starts that agent&apos;s own history in this folder.
+      </p>
+    </>
+  )
+}
+
+// The host's own session: local token usage, plus the auth-mode override
+// (subscription login vs. an API key), which applies on the next restart.
+function HostSession({
+  workspace,
+  onClose
+}: {
+  workspace: Workspace
+  onClose: () => void
+}): React.JSX.Element {
+  const usage = useStore((s) => s.usage[workspace.id])
+  const [auth, setAuth] = useState<WorkspaceAuth>({ mode: 'subscription' })
+  const [apiKeyInput, setApiKeyInput] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    window.orcha.workspaces.authGet(workspace.id).then((a) => {
+      setAuth(a)
+      setApiKeyInput(a.apiKey ?? '')
+    })
+  }, [workspace.id])
 
   const handleApply = async (): Promise<void> => {
     const ok = confirm(
@@ -65,15 +195,10 @@ function SessionPopover({
   }
 
   return (
-    <div
-      ref={ref}
-      className="absolute right-4 top-11 z-40 w-72 rounded-lg border border-edge-bright bg-surface-1 p-3 shadow-lg"
-    >
-      <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
-        Usage this session
-      </div>
+    <>
+      <div className="eyebrow mb-2">Usage this session</div>
       {usage ? (
-        <div className="mb-3 flex items-center gap-3 font-mono text-[12px] text-zinc-300">
+        <div className="tnum mb-4 flex items-center gap-3 font-mono text-[12px] text-zinc-300">
           <span>{formatTokens(usage.inputTokens)} in</span>
           <span>{formatTokens(usage.outputTokens)} out</span>
           {usage.estimatedCostUsd !== null && (
@@ -81,20 +206,16 @@ function SessionPopover({
           )}
         </div>
       ) : (
-        <div className="mb-3 font-mono text-[12px] text-zinc-600">No activity yet</div>
+        <div className="mb-4 font-mono text-[12px] text-zinc-600">No activity yet</div>
       )}
 
-      <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
-        Auth mode
-      </div>
-      <div className="mb-2 flex rounded-md border border-edge">
+      <div className="eyebrow mb-2">Auth mode</div>
+      <div className="segmented mb-2.5">
         {(['subscription', 'apiKey'] as const).map((m) => (
           <button
             key={m}
+            data-active={auth.mode === m}
             onClick={() => setAuth((a) => ({ ...a, mode: m }))}
-            className={`flex-1 px-2 py-1 text-[12px] ${
-              auth.mode === m ? 'bg-surface-2 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-            }`}
           >
             {m === 'subscription' ? 'Subscription' : 'API key'}
           </button>
@@ -106,17 +227,17 @@ function SessionPopover({
           value={apiKeyInput}
           onChange={(e) => setApiKeyInput(e.target.value)}
           placeholder="sk-ant-..."
-          className="mb-2 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+          className="input mb-2.5"
         />
       )}
       <button
         onClick={handleApply}
         disabled={saving || (auth.mode === 'apiKey' && !apiKeyInput.trim())}
-        className="w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 text-[12px] font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
+        className="btn btn-primary w-full"
       >
         {saving ? 'Restarting…' : 'Restart to apply'}
       </button>
-    </div>
+    </>
   )
 }
 

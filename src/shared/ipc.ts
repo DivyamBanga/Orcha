@@ -45,6 +45,24 @@ export const IPC = {
   ClipboardHistory: 'clipboard:history',
   ClipboardUse: 'clipboard:use',
   SessionPathFor: 'session:pathFor',
+  SessionSetAgent: 'session:setAgent',
+  ProjectsInitGit: 'projects:initGit',
+
+  // guest mode (running on a host's credits) and the host's admin side
+  GuestStatus: 'guest:status',
+  GuestRedeem: 'guest:redeem',
+  GuestLeave: 'guest:leave',
+  GuestBalance: 'guest:balance',
+  GuestUsage: 'guest:usage',
+  GuestClipboardInvite: 'guest:clipboardInvite',
+  ToolsStatus: 'tools:status',
+  ToolsInstall: 'tools:install',
+  RelayAdminStatus: 'relayAdmin:status',
+  RelayAdminGuests: 'relayAdmin:guests',
+  RelayAdminCreate: 'relayAdmin:create',
+  RelayAdminInvite: 'relayAdmin:invite',
+  RelayAdminTopUp: 'relayAdmin:topUp',
+  RelayAdminAccess: 'relayAdmin:access',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',
@@ -55,5 +73,6 @@ export const IPC = {
   EvPtyExit: 'ev:pty:exit',
   EvGitStatus: 'ev:git:status',
   EvWorkspacesChanged: 'ev:workspaces:changed',
-  EvShareStatus: 'ev:share:status'
+  EvShareStatus: 'ev:share:status',
+  EvToolsProgress: 'ev:tools:progress'
 } as const

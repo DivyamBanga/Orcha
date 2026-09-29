@@ -57,7 +57,7 @@ function PasteHistory({
         tabIndex={-1}
         onKeyDown={onKeyDown}
         onMouseDown={(e) => e.stopPropagation()}
-        className="max-h-[70%] w-[540px] overflow-y-auto rounded-lg border border-edge-bright bg-surface-1 p-1.5 outline-none"
+        className="overlay-panel max-h-[70%] w-[540px] overflow-y-auto p-1.5 outline-none"
       >
         <div className="flex items-baseline justify-between px-2 py-1.5">
           <span className="font-medium text-zinc-100">Paste history</span>

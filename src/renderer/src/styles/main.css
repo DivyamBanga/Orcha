@@ -1,25 +1,45 @@
 @import 'tailwindcss';
 
+/* Geist (SIL OFL, see assets/fonts/GEIST-LICENSE.txt), bundled so the app
+   looks the same offline. Variable fonts: one file covers every weight.
+   Terminals keep Cascadia Code (set in TerminalView) — TUIs are drawn for it. */
+@font-face {
+  font-family: 'Geist';
+  src: url('../assets/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../assets/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: block;
+}
+
 @theme {
-  --font-sans:
-    'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Cascadia Code', 'IBM Plex Mono', Consolas, ui-monospace, monospace;
+  --font-sans: 'Geist', 'Segoe UI Variable Text', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace;
 
   /* Four surfaces over a cool floor. Blue-biased on every step (b > r), since
      a blue cast reads as screen and a warm one reads as paper. */
-  --color-surface-0: #0a0a0c;
-  --color-surface-1: #0f0f12;
-  --color-surface-2: #16161a;
-  --color-surface-3: #1d1d22;
+  --color-surface-0: #09090b;
+  --color-surface-1: #0e0e11;
+  --color-surface-2: #151518;
+  --color-surface-3: #1c1c20;
 
   /* Hairlines rather than rules — same separation, a fraction of the weight. */
-  --color-edge: rgba(255, 255, 255, 0.06);
-  --color-edge-bright: rgba(255, 255, 255, 0.1);
+  --color-edge: rgba(255, 255, 255, 0.065);
+  --color-edge-bright: rgba(255, 255, 255, 0.11);
+  --color-edge-strong: rgba(255, 255, 255, 0.18);
 
   /* The only colour in the app, and every use of it means session state.
      Chrome is neutral throughout so these two actually stand out. */
   --color-work: #34d399;
   --color-wait: #f59e0b;
+
+  /* One easing family everywhere: things arrive fast and settle softly. */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 html,
@@ -33,6 +53,22 @@ body {
   font-size: 13px;
   user-select: none;
   background: var(--color-surface-0);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01', 'cv11';
+}
+
+/* Tabular figures wherever money or counts sit in a column or tick over. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keyboard focus is visible; mouse focus isn't. */
+:focus-visible {
+  outline: 1.5px solid var(--color-edge-strong);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Selection is off app-wide (this is chrome, not a document), but never
@@ -60,6 +96,329 @@ textarea {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---- components --------------------------------------------------------------
+
+   The handful of controls everything is built from, so the whole app shares one
+   set of proportions and one feel. Hover and press are event-driven
+   transitions on colour, opacity and transform only — nothing here loops, so
+   the app's single ambient animation is still the working-session ring. */
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: #d4d4d8;
+    border: 1px solid transparent;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      opacity 140ms ease,
+      transform 120ms var(--ease-snap);
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .btn-primary {
+    background: #ececef;
+    color: var(--color-surface-0);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #fff;
+  }
+  .btn-secondary {
+    background: var(--color-surface-2);
+    border-color: var(--color-edge-bright);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--color-surface-3);
+    border-color: var(--color-edge-strong);
+    color: #fafafa;
+  }
+  .btn-ghost {
+    color: #a1a1aa;
+  }
+  .btn-ghost:hover:not(:disabled),
+  .btn-ghost[data-active='true'] {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fafafa;
+  }
+  .btn-danger {
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.22);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.08);
+  }
+  .btn-sm {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .btn-icon {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  .input {
+    width: 100%;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 7px;
+    border: 1px solid var(--color-edge-bright);
+    background: var(--color-surface-0);
+    color: #e4e4e7;
+    font-size: 13px;
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+  .input::placeholder {
+    color: #52525b;
+  }
+  .input:hover {
+    border-color: var(--color-edge-strong);
+  }
+  .input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+  }
+
+  /* A row of mutually exclusive choices; the active one lifts off the track. */
+  .segmented {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    border: 1px solid var(--color-edge);
+    background: var(--color-surface-0);
+  }
+  .segmented > button {
+    flex: 1;
+    height: 26px;
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #71717a;
+    white-space: nowrap;
+    transition:
+      background-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease;
+  }
+  .segmented > button:hover:not(:disabled) {
+    color: #d4d4d8;
+  }
+  .segmented > button[data-active='true'] {
+    background: var(--color-surface-3);
+    color: #fafafa;
+    box-shadow:
+      inset 0 0 0 1px var(--color-edge-bright),
+      0 1px 2px rgba(0, 0, 0, 0.45);
+  }
+  .segmented > button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .card {
+    border-radius: 10px;
+    border: 1px solid var(--color-edge);
+    background: var(--color-surface-1);
+  }
+
+  /* Small caps-style section label. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #71717a;
+  }
+
+  .field-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #a1a1aa;
+  }
+
+  /* ---- overlays ---- */
+
+  .overlay-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.58);
+    animation: orcha-fade-in 160ms ease-out both;
+  }
+  .overlay-backdrop[data-closing='true'] {
+    animation: orcha-fade-out 140ms ease-in both;
+  }
+  .overlay-panel {
+    border-radius: 12px;
+    border: 1px solid var(--color-edge-bright);
+    background: var(--color-surface-1);
+    box-shadow:
+      0 28px 70px -18px rgba(0, 0, 0, 0.75),
+      0 0 0 1px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    animation: orcha-panel-in 240ms var(--ease-out-expo) both;
+  }
+  .overlay-backdrop[data-closing='true'] > .overlay-panel {
+    animation: orcha-panel-out 140ms ease-in both;
+  }
+
+  .popover {
+    border-radius: 10px;
+    border: 1px solid var(--color-edge-bright);
+    background: var(--color-surface-1);
+    box-shadow:
+      0 16px 40px -12px rgba(0, 0, 0, 0.7),
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    animation: orcha-pop-in 170ms var(--ease-out-expo) both;
+  }
+
+  .menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: #d4d4d8;
+    text-align: left;
+    transition: background-color 90ms ease;
+  }
+  .menu-item:hover {
+    background: rgba(255, 255, 255, 0.065);
+    color: #fafafa;
+  }
+  .menu-item[data-danger='true'] {
+    color: #f87171;
+  }
+  .menu-item[data-danger='true']:hover {
+    background: rgba(248, 113, 113, 0.09);
+  }
+
+  /* ---- data ---- */
+
+  /* A budget or quota bar. The fill eases to its new length, so a spend
+     update reads as the bar moving rather than jumping. */
+  .meter {
+    position: relative;
+    height: 6px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.065);
+    overflow: hidden;
+  }
+  .meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    transition:
+      width 800ms var(--ease-out-expo),
+      background-color 300ms ease;
+  }
+}
+
+/* Sidebar selection: one highlight that glides to the active row rather than
+   each row lighting up on its own. Transform/height only, on its own layer. */
+.nav-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: 7px;
+  background: var(--color-surface-3);
+  box-shadow: inset 0 0 0 1px var(--color-edge);
+  pointer-events: none;
+  transition:
+    transform 280ms var(--ease-out-expo),
+    height 280ms var(--ease-out-expo),
+    opacity 160ms ease;
+  will-change: transform;
+}
+
+/* Switching tabs: a surface-coloured veil over the pane fades out, so the
+   incoming view dissolves in. The veil animates, never the pane itself — the
+   terminal canvases underneath must not be pulled into an animated layer. */
+.switch-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: var(--color-surface-0);
+  pointer-events: none;
+  animation: orcha-fade-out 200ms ease-out forwards;
+}
+
+.toast {
+  animation: orcha-toast-in 300ms var(--ease-out-expo) both;
+}
+
+@keyframes orcha-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes orcha-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes orcha-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.975);
+  }
+}
+@keyframes orcha-panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@keyframes orcha-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+@keyframes orcha-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }
 
 /* Chat markdown */
@@ -393,8 +752,21 @@ body.boot-cascade .boot-d7 {
   .state-ring,
   .busy-ring,
   body.boot-cascade .boot-item,
-  .fade-late {
-    animation: none;
+  .fade-late,
+  .overlay-backdrop,
+  .overlay-panel,
+  .popover,
+  .switch-veil,
+  .toast {
+    animation: none !important;
+  }
+  .switch-veil {
+    display: none;
+  }
+  .nav-indicator,
+  .meter-fill,
+  .btn {
+    transition: none;
   }
   .boot {
     display: none;

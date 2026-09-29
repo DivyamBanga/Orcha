@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { useStore } from '../store'
+import { useStore, useIsGuest } from '../store'
+import { levelColors, poolLevel, usd } from '../money'
+import Modal from './Modal'
+import GuestsPanel from './GuestsPanel'
 import { Check as CheckIcon, Circle } from './Icon'
 import type { CodexStatus, MobileInfo } from '../../../shared/types'
 
@@ -15,11 +18,90 @@ function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element
   )
 }
 
-function SettingsModal(): React.JSX.Element | null {
+function SettingsModal(): React.JSX.Element {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
+  const isGuest = useIsGuest()
   const onClose = (): void => setShow(false)
 
+  return (
+    <Modal open={show} onClose={onClose} width={480}>
+      <div className="mb-5 text-[15px] font-semibold tracking-tight text-zinc-50">Settings</div>
+      {isGuest ? <GuestSettings onClose={onClose} /> : <HostSettings />}
+      <div className="flex justify-end">
+        <button onClick={onClose} className="btn btn-ghost">
+          Close
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+// A guest's settings are about the credits they're using.
+function GuestSettings({ onClose }: { onClose: () => void }): React.JSX.Element {
+  const balance = useStore((s) => s.guestBalance)
+  const guest = useStore((s) => s.guest)
+  const openCredits = useStore((s) => s.setShowCredits)
+  const [leaving, setLeaving] = useState(false)
+
+  const leave = async (): Promise<void> => {
+    if (
+      !confirm(
+        `Stop using ${guest?.hostName ?? 'your host'}'s credits on this computer? You'd need a new invite link to come back.`
+      )
+    ) {
+      return
+    }
+    setLeaving(true)
+    await window.orcha.guest.leave()
+    window.location.reload()
+  }
+
+  return (
+    <section className="mb-5">
+      <div className="eyebrow mb-2.5">Credits</div>
+      <div className="card p-3.5">
+        <div className="mb-3 text-[12.5px] text-zinc-400">
+          Shared with you by <span className="text-zinc-200">{guest?.hostName}</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          {(balance?.pools ?? []).map((p) => {
+            const level = poolLevel(p)
+            return (
+              <div key={p.pool} className="tnum flex items-baseline justify-between text-[12.5px]">
+                <span className="text-zinc-400">{p.label}</span>
+                <span className={level === 'ok' ? 'text-zinc-200' : levelColors(level).text}>
+                  {usd(Math.max(p.cap - p.spent, 0))} left
+                  <span className="text-zinc-600"> of {usd(p.cap)}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="mt-3.5 flex gap-1.5 border-t border-edge pt-3">
+          <button
+            onClick={() => {
+              onClose()
+              openCredits(true)
+            }}
+            className="btn btn-secondary btn-sm"
+          >
+            Usage details
+          </button>
+          <button
+            onClick={leave}
+            disabled={leaving}
+            className="btn btn-ghost btn-sm ml-auto text-zinc-500"
+          >
+            Unpair this computer
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function HostSettings(): React.JSX.Element {
   const [status, setStatus] = useState<CodexStatus | null>(null)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -32,8 +114,8 @@ function SettingsModal(): React.JSX.Element | null {
   }
 
   useEffect(() => {
-    if (show) refresh()
-  }, [show])
+    refresh()
+  }, [])
 
   // The QR only ever renders behind the `mobile.urls.length > 0` gate below,
   // so a stale data URL from a previous open can never show.
@@ -49,8 +131,6 @@ function SettingsModal(): React.JSX.Element | null {
     }
   }, [mobile])
 
-  if (!show) return null
-
   const handleSetup = async (): Promise<void> => {
     setWorking(true)
     setError(null)
@@ -65,24 +145,16 @@ function SettingsModal(): React.JSX.Element | null {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={onClose}
-    >
-      <div
-        className="w-[26rem] rounded-lg border border-edge-bright bg-surface-1 p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 font-medium text-zinc-100">Settings</div>
+    <>
+      <GuestsPanel />
 
-        <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
-          Phone
-        </div>
-        <div className="mb-3 rounded-lg border border-edge bg-surface-2/40 p-3">
+      <section className="mb-5">
+        <div className="eyebrow mb-2.5">Phone</div>
+        <div className="card p-3.5">
           {mobile && mobile.urls.length > 0 ? (
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3.5">
               {pairQr && (
-                <div className="shrink-0 rounded-md bg-white p-1.5">
+                <div className="shrink-0 rounded-lg bg-white p-1.5">
                   <img src={pairQr} alt="Pairing QR code" className="block h-32 w-32" />
                 </div>
               )}
@@ -91,27 +163,28 @@ function SettingsModal(): React.JSX.Element | null {
                   ok={mobile.pushReady}
                   label={mobile.pushReady ? 'Phone paired' : 'No phone paired yet'}
                 />
-                <div className="mt-2 font-mono text-[11px] leading-relaxed text-zinc-500">
+                <div className="mt-2 text-[12px] leading-relaxed text-zinc-500">
                   Scan from the Orcha app on your phone. Both devices need Tailscale signed in to
                   the same account.
                 </div>
-                <div className="mt-2 truncate font-mono text-[10px] text-zinc-600">
+                <div className="mt-2 truncate font-mono text-[10.5px] text-zinc-600">
                   {mobile.urls[0]}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="font-mono text-[11px] leading-relaxed text-zinc-500">
-              Companion server isn&apos;t running (no reachable address). Check that this machine
-              has a network connection, then reopen Settings.
+            <div className="text-[12px] leading-relaxed text-zinc-500">
+              {mobile === null
+                ? 'Starting the companion server…'
+                : "Companion server isn't running (no reachable address). Check that this machine has a network connection, then reopen Settings."}
             </div>
           )}
         </div>
+      </section>
 
-        <div className="mb-2 font-mono text-[11px] uppercase tracking-wide text-zinc-600">
-          Codex
-        </div>
-        <div className="mb-3 rounded-lg border border-edge bg-surface-2/40 p-3">
+      <section className="mb-5">
+        <div className="eyebrow mb-2.5">Codex plugin</div>
+        <div className="card p-3.5">
           <div className="flex flex-col gap-2">
             <Check ok={status?.pluginInstalled ?? false} label="Claude Code plugin installed" />
             <Check ok={status?.cliInstalled ?? false} label="Codex CLI installed" />
@@ -119,7 +192,7 @@ function SettingsModal(): React.JSX.Element | null {
           </div>
 
           {status && !status.cliInstalled && (
-            <div className="mt-3 rounded-md bg-surface-0/60 p-2 font-mono text-[11px] leading-relaxed text-zinc-500">
+            <div className="mt-3 rounded-md bg-surface-0 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-500">
               Install and sign in to the Codex CLI first, from any terminal:
               <br />
               npm install -g @openai/codex
@@ -133,7 +206,7 @@ function SettingsModal(): React.JSX.Element | null {
           <button
             onClick={handleSetup}
             disabled={working || (status?.pluginInstalled ?? false)}
-            className="mt-3 w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
+            className="btn btn-secondary mt-3 w-full"
           >
             {working
               ? 'Setting up…'
@@ -141,24 +214,15 @@ function SettingsModal(): React.JSX.Element | null {
                 ? 'Plugin installed'
                 : 'Set up Codex plugin'}
           </button>
+          <div className="mt-2.5 text-[11.5px] leading-relaxed text-zinc-600">
+            Adds OpenAI&apos;s official Claude Code plugin so any session can call out to Codex via{' '}
+            <code className="font-mono">/codex:review</code>,{' '}
+            <code className="font-mono">/codex:rescue</code>, etc. Applies to every Claude Code
+            session on this machine, not just Orcha&apos;s.
+          </div>
         </div>
-
-        <div className="mb-4 font-mono text-[11px] leading-relaxed text-zinc-600">
-          Adds OpenAI&apos;s official Claude Code plugin so any session can call out to Codex via{' '}
-          <code>/codex:review</code>, <code>/codex:rescue</code>, etc. Applies to every Claude Code
-          session on this machine, not just Orcha&apos;s.
-        </div>
-
-        <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+      </section>
+    </>
   )
 }
 

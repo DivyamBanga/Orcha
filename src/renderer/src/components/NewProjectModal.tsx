@@ -1,24 +1,51 @@
 import { useEffect, useState } from 'react'
-import { useStore } from '../store'
+import { useStore, useIsGuest } from '../store'
+import Modal from './Modal'
+import type { Agent } from '../../../shared/types'
 
 type Mode = 'new' | 'github' | 'local' | 'remote'
 
-function NewProjectModal(): React.JSX.Element | null {
+const cleanError = (err: unknown): string =>
+  (err instanceof Error ? err.message : String(err)).replace(
+    /^Error invoking remote method '[^']+': (Error: )?/,
+    ''
+  )
+
+function NewProjectModal(): React.JSX.Element {
   const show = useStore((s) => s.showNewProject)
   const setShow = useStore((s) => s.setShowNewProject)
   const load = useStore((s) => s.load)
   const setActive = useStore((s) => s.setActive)
+  const setup = useStore((s) => s.setup)
+  const isGuest = useIsGuest()
+  // A guest may not have GitHub connected; the GitHub flows only show when it is.
+  const github = setup?.gh ?? false
 
-  const [mode, setMode] = useState<Mode>('new')
+  const modes: [Mode, string][] = [
+    ...(github || !isGuest
+      ? ([
+          ['new', 'New repo'],
+          ['github', 'GitHub']
+        ] as [Mode, string][])
+      : []),
+    ['local', isGuest ? 'Open a folder' : 'Local'],
+    ...(isGuest ? [] : ([['remote', 'Remote']] as [Mode, string][]))
+  ]
+
+  const [mode, setMode] = useState<Mode>(isGuest ? 'local' : 'new')
+  const [agent, setAgent] = useState<Agent>('claude')
   const [name, setName] = useState('')
   const [isPrivate, setIsPrivate] = useState(true)
   const [repos, setRepos] = useState<{ nameWithOwner: string; name: string }[] | null>(null)
   const [filter, setFilter] = useState('')
   const [working, setWorking] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [host, setHost] = useState('')
   const [user, setUser] = useState('')
   const [port, setPort] = useState('')
   const [remotePath, setRemotePath] = useState('')
+  // A folder the guest picked that isn't a git repo yet, awaiting their OK.
+  const [plainFolder, setPlainFolder] = useState<string | null>(null)
 
   // Load the GitHub repo list once when that tab is opened.
   useEffect(() => {
@@ -26,11 +53,15 @@ function NewProjectModal(): React.JSX.Element | null {
       window.orcha.projects
         .listGithub()
         .then(setRepos)
-        .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+        .catch((err) => setError(cleanError(err)))
     }
   }, [show, mode, repos])
 
-  if (!show) return null
+  const close = (): void => {
+    setShow(false)
+    setError(null)
+    setPlainFolder(null)
+  }
 
   const finish = async (projectRepoPath?: string): Promise<void> => {
     await load()
@@ -42,248 +73,263 @@ function NewProjectModal(): React.JSX.Element | null {
       (w) => project && w.projectId === project.id && w.kind === 'main'
     )
     if (main) setActive(main.id)
-    setShow(false)
+    close()
     setName('')
     setWorking(null)
   }
 
-  const handleCreate = async (): Promise<void> => {
+  const run = async (
+    label: string,
+    fn: () => Promise<{ repoPath: string } | null>
+  ): Promise<void> => {
+    setWorking(label)
+    setError(null)
+    try {
+      const project = await fn()
+      if (project) await finish(project.repoPath)
+      else setWorking(null)
+    } catch (err) {
+      setWorking(null)
+      const message = cleanError(err)
+      const plain = message.match(/^Not a git repository: (.+)$/)
+      if (plain) setPlainFolder(plain[1])
+      else setError(message)
+    }
+  }
+
+  const handleCreate = (): Promise<void> | void => {
     const repoName = name.trim()
     if (!repoName) return
-    setWorking('Creating GitHub repo…')
-    try {
-      const project = await window.orcha.projects.createRepo(repoName, isPrivate)
-      await finish(project.repoPath)
-    } catch (err) {
-      setWorking(null)
-      alert(err instanceof Error ? err.message : String(err))
-    }
+    return run('Creating GitHub repo…', () =>
+      window.orcha.projects.createRepo(repoName, isPrivate, agent)
+    )
   }
 
-  const handleClone = async (nameWithOwner: string): Promise<void> => {
-    setWorking(`Cloning ${nameWithOwner}…`)
-    try {
-      const project = await window.orcha.projects.cloneGithub(nameWithOwner)
-      await finish(project.repoPath)
-    } catch (err) {
-      setWorking(null)
-      alert(err instanceof Error ? err.message : String(err))
-    }
+  const handleClone = (nameWithOwner: string): Promise<void> =>
+    run(`Cloning ${nameWithOwner}…`, () => window.orcha.projects.cloneGithub(nameWithOwner, agent))
+
+  const handleLocal = (): Promise<void> =>
+    run('Opening…', () => window.orcha.projects.add(undefined, agent))
+
+  const handleInitGit = (): Promise<void> | void => {
+    if (!plainFolder) return
+    const folder = plainFolder
+    setPlainFolder(null)
+    return run('Setting up git…', () => window.orcha.projects.initGit(folder, agent))
   }
 
-  const handleLocal = async (): Promise<void> => {
-    try {
-      const project = await window.orcha.projects.add()
-      if (project) await finish(project.repoPath)
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  const handleRemote = async (): Promise<void> => {
+  const handleRemote = (): Promise<void> | void => {
     const trimmedHost = host.trim()
     const trimmedUser = user.trim()
     const trimmedPath = remotePath.trim()
     if (!trimmedHost || !trimmedUser || !trimmedPath) return
     const parsedPort = port.trim() ? Number(port.trim()) : null
-    setWorking(`Connecting to ${trimmedHost}…`)
-    try {
-      const project = await window.orcha.projects.addRemote(
-        trimmedHost,
-        trimmedUser,
-        parsedPort,
-        trimmedPath
-      )
-      await finish(project.repoPath)
-    } catch (err) {
-      setWorking(null)
-      alert(err instanceof Error ? err.message : String(err))
-    }
+    return run(`Connecting to ${trimmedHost}…`, () =>
+      window.orcha.projects.addRemote(trimmedHost, trimmedUser, parsedPort, trimmedPath)
+    )
   }
 
   const filtered = (repos ?? []).filter((r) =>
     r.nameWithOwner.toLowerCase().includes(filter.toLowerCase())
   )
+  const agentName = agent === 'codex' ? 'Codex' : 'Claude'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onClick={() => !working && setShow(false)}
-    >
-      <div
-        className="w-[26rem] rounded-lg border border-edge-bright bg-surface-1 p-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 font-medium text-zinc-100">New project</div>
+    <Modal open={show} onClose={close} dismissable={!working} width={440}>
+      <div className="mb-4 text-[15px] font-semibold tracking-tight text-zinc-50">New project</div>
 
-        <div className="mb-4 flex rounded-md border border-edge">
-          {(
-            [
-              ['new', 'New repo'],
-              ['github', 'GitHub'],
-              ['local', 'Local'],
-              ['remote', 'Remote']
-            ] as [Mode, string][]
-          ).map(([m, label]) => (
+      {isGuest && (
+        <>
+          <div className="field-label">Runs with</div>
+          <div className="segmented mb-4">
+            {(
+              [
+                ['claude', 'Claude Code'],
+                ['codex', 'Codex']
+              ] as [Agent, string][]
+            ).map(([a, label]) => (
+              <button key={a} data-active={agent === a} onClick={() => setAgent(a)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {modes.length > 1 && (
+        <div className="segmented mb-5">
+          {modes.map(([m, label]) => (
             <button
               key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 px-2 py-1.5 ${
-                mode === m ? 'bg-surface-2 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              data-active={mode === m}
+              onClick={() => {
+                setMode(m)
+                setError(null)
+              }}
             >
               {label}
             </button>
           ))}
         </div>
+      )}
 
-        {working ? (
-          <div className="flex items-center gap-2 py-6 font-mono text-[12px] text-zinc-400">
-            <span className="busy-ring" />
-            {working}
-          </div>
-        ) : mode === 'new' ? (
-          <>
-            <label className="mb-1 block text-zinc-500">Repository name</label>
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              placeholder="my-new-app"
-              className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
-            />
-            <label className="mb-4 flex items-center gap-2 text-zinc-400">
-              <input
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-              />
-              Private repository
-            </label>
-            <div className="mb-4 font-mono text-[11px] leading-relaxed text-zinc-600">
-              Creates github.com repo → clones to Desktop\Projects\{name.trim() || '<name>'} →
-              starts the Claude session.
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShow(false)}
-                className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={!name.trim()}
-                className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
-              >
-                Create
-              </button>
-            </div>
-          </>
-        ) : mode === 'github' ? (
-          <>
-            <input
-              autoFocus
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="filter your repos…"
-              className="mb-2 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
-            />
-            <div className="max-h-64 overflow-y-auto rounded border border-edge">
-              {repos === null ? (
-                <div className="flex items-center gap-2 p-3 font-mono text-[12px] text-zinc-500">
-                  <span className="busy-ring" /> loading your repos…
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="p-3 text-zinc-600">No matching repos</div>
-              ) : (
-                filtered.map((r) => (
-                  <button
-                    key={r.nameWithOwner}
-                    onClick={() => handleClone(r.nameWithOwner)}
-                    className="block w-full px-3 py-1.5 text-left font-mono text-[12px] text-zinc-300 hover:bg-surface-2"
-                  >
-                    {r.nameWithOwner}
-                  </button>
-                ))
-              )}
-            </div>
-          </>
-        ) : mode === 'local' ? (
-          <div className="py-2">
-            <div className="mb-4 leading-relaxed text-zinc-500">
-              Open a git repository that already exists on this computer.
-            </div>
-            <button
-              onClick={handleLocal}
-              className="w-full rounded-md border border-zinc-100 bg-zinc-100 px-3 py-2 font-medium text-surface-0 hover:border-white hover:bg-white"
-            >
-              Choose folder…
+      {working ? (
+        <div className="flex items-center gap-2.5 py-6 text-[12.5px] text-zinc-400">
+          <span className="busy-ring" />
+          {working}
+        </div>
+      ) : plainFolder ? (
+        <div>
+          <p className="mb-4 leading-relaxed text-zinc-400">
+            <span className="font-mono text-[12px] text-zinc-300">{plainFolder}</span> isn&apos;t a
+            git repository yet. Orcha uses git to track what {agentName} changes. Set it up here?
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setPlainFolder(null)} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button onClick={handleInitGit} className="btn btn-primary">
+              Set up git and open
             </button>
           </div>
-        ) : (
-          <>
-            <label className="mb-1 block text-zinc-500">Host</label>
+        </div>
+      ) : mode === 'new' ? (
+        <>
+          <label className="field-label" htmlFor="repo-name">
+            Repository name
+          </label>
+          <input
+            id="repo-name"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            placeholder="my-new-app"
+            className="input mb-3"
+          />
+          <label className="mb-4 flex items-center gap-2 text-zinc-400">
             <input
-              autoFocus
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="myserver.example.com"
-              className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="accent-zinc-200"
             />
-            <div className="mb-3 flex gap-2">
-              <div className="flex-1">
-                <label className="mb-1 block text-zinc-500">Username</label>
-                <input
-                  value={user}
-                  onChange={(e) => setUser(e.target.value)}
-                  placeholder="ubuntu"
-                  className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
-                />
+            Private repository
+          </label>
+          <div className="mb-5 text-[12px] leading-relaxed text-zinc-500">
+            Creates the repo on GitHub, clones it to Desktop\Projects\
+            {name.trim() || '<name>'}, and starts {agentName} in it.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={close} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button onClick={handleCreate} disabled={!name.trim()} className="btn btn-primary">
+              Create
+            </button>
+          </div>
+        </>
+      ) : mode === 'github' ? (
+        <>
+          <input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter your repos…"
+            className="input mb-2"
+          />
+          <div className="card max-h-64 overflow-y-auto p-1">
+            {repos === null ? (
+              <div className="flex items-center gap-2 p-3 text-[12px] text-zinc-500">
+                <span className="busy-ring" /> Loading your repos…
               </div>
-              <div className="w-20">
-                <label className="mb-1 block text-zinc-500">Port</label>
-                <input
-                  value={port}
-                  onChange={(e) => setPort(e.target.value)}
-                  placeholder="22"
-                  className="w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
-                />
-              </div>
+            ) : filtered.length === 0 ? (
+              <div className="p-3 text-zinc-600">No matching repos</div>
+            ) : (
+              filtered.map((r) => (
+                <button
+                  key={r.nameWithOwner}
+                  onClick={() => handleClone(r.nameWithOwner)}
+                  className="menu-item font-mono text-[12px]"
+                >
+                  {r.nameWithOwner}
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      ) : mode === 'local' ? (
+        <div>
+          <p className="mb-5 leading-relaxed text-zinc-500">
+            Pick any folder on this computer. {agentName} starts working in it right away.
+          </p>
+          <button onClick={handleLocal} className="btn btn-primary h-9 w-full">
+            Choose folder…
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className="field-label" htmlFor="ssh-host">
+            Host
+          </label>
+          <input
+            id="ssh-host"
+            autoFocus
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="myserver.example.com"
+            className="input mb-3"
+          />
+          <div className="mb-3 flex gap-2">
+            <div className="flex-1">
+              <label className="field-label">Username</label>
+              <input
+                value={user}
+                onChange={(e) => setUser(e.target.value)}
+                placeholder="ubuntu"
+                className="input"
+              />
             </div>
-            <label className="mb-1 block text-zinc-500">Remote path</label>
-            <input
-              value={remotePath}
-              onChange={(e) => setRemotePath(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleRemote()}
-              placeholder="/home/ubuntu/my-app"
-              className="mb-3 w-full rounded-md border border-zinc-700 bg-surface-2 px-2 py-1.5 text-zinc-200 placeholder:text-zinc-600"
-            />
-            <div className="mb-4 font-mono text-[11px] leading-relaxed text-zinc-600">
-              Connects over SSH and runs Claude in that folder on the server (it must already exist,
-              e.g. an existing git checkout). Uses your normal SSH keys/config — same as running{' '}
-              <code>ssh</code> yourself.
+            <div className="w-20">
+              <label className="field-label">Port</label>
+              <input
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                placeholder="22"
+                className="input"
+              />
             </div>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShow(false)}
-                className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-surface-2"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRemote}
-                disabled={!host.trim() || !user.trim() || !remotePath.trim()}
-                className="rounded-md border border-zinc-100 bg-zinc-100 px-3 py-1.5 font-medium text-surface-0 hover:border-white hover:bg-white disabled:opacity-50"
-              >
-                Connect
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+          </div>
+          <label className="field-label">Remote path</label>
+          <input
+            value={remotePath}
+            onChange={(e) => setRemotePath(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleRemote()}
+            placeholder="/home/ubuntu/my-app"
+            className="input mb-3"
+          />
+          <div className="mb-5 text-[12px] leading-relaxed text-zinc-500">
+            Connects over SSH and runs Claude in that folder on the server (it must already exist,
+            e.g. an existing git checkout). Uses your normal SSH keys/config — same as running{' '}
+            <code className="font-mono">ssh</code> yourself.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={close} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button
+              onClick={handleRemote}
+              disabled={!host.trim() || !user.trim() || !remotePath.trim()}
+              className="btn btn-primary"
+            >
+              Connect
+            </button>
+          </div>
+        </>
+      )}
+
+      {error && <div className="mt-3 text-[12px] leading-relaxed text-red-400">{error}</div>}
+    </Modal>
   )
 }
 

@@ -2,6 +2,7 @@ import { Notification } from 'electron'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { pendingQuestion } from '../claudeSessions'
+import { codexPendingQuestion } from '../codex'
 import type { PtyManager } from './PtyManager'
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -203,11 +204,23 @@ export class ActivityMonitor {
           const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
           const markerInBurst = markerAge !== null && now - markerAge >= started - 5000
           if (markerInBurst && this.ptyManager.hadInput(workspace.id)) {
-            const { kind, question } = classifyScreen(this.ptyManager.screenText(workspace.id))
+            const codex = workspace.agent === 'codex'
+            const screen = classifyScreen(this.ptyManager.screenText(workspace.id))
+            let { kind } = screen
+            // Codex says it needs you in its window title ("Action Required"),
+            // and a turn that ends on a question waits on you just the same.
+            const codexAsk =
+              codex && kind !== 'exited' ? codexPendingQuestion(workspace.worktreePath) : null
+            const codexFlag =
+              codex &&
+              kind !== 'exited' &&
+              /action\s*required/i.test(this.ptyManager.title(workspace.id))
+            if (codexAsk || codexFlag) kind = 'blocked'
             if (kind === 'blocked') {
               // The transcript has the ask verbatim; the screen-scraped text
               // is the fallback for sessions without a local transcript (ssh).
-              const ask = pendingQuestion(workspace.worktreePath) ?? question
+              const ask =
+                (codex ? codexAsk : pendingQuestion(workspace.worktreePath)) ?? screen.question
               this.pendingNotify.set(workspace.id, {
                 at: now,
                 kind,
@@ -217,7 +230,7 @@ export class ActivityMonitor {
               this.pendingNotify.set(workspace.id, {
                 at: now,
                 kind,
-                body: 'The Claude process exited'
+                body: `The ${codex ? 'Codex' : 'Claude'} process exited`
               })
             } else if (burst >= MIN_WORK_BURST_MS) {
               this.pendingNotify.set(workspace.id, {

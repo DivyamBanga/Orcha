@@ -108,6 +108,11 @@ export class MobileService {
     console.log('[mobile] no free port near', BASE_PORT, '— phone companion disabled')
   }
 
+  // Starts the server on first use when it wasn't started at launch.
+  async ensureStarted(): Promise<void> {
+    if (!this.server) await this.start()
+  }
+
   stop(): void {
     for (const ws of this.events) ws.close()
     for (const set of this.termViewers.values()) for (const ws of set) ws.close()

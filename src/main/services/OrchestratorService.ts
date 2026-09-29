@@ -11,10 +11,13 @@ import { homedir } from 'os'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { lastActivityAgeSeconds, readRecentActivity } from '../claudeSessions'
+import { claudeRelayEnv, isGuest } from '../guest'
+import { codexActivityAgeSeconds, codexRecentActivity } from '../codex'
 import type { WorkspaceManager } from './WorkspaceManager'
 import type { PtyManager } from './PtyManager'
 import type { GitService } from './GitService'
 import type { ProjectService } from './ProjectService'
+import type { Workspace } from '../../shared/types'
 
 type SendFn = (channel: string, payload: unknown) => void
 
@@ -24,11 +27,22 @@ const SESSION_KEY = 'orchestrator_session_id'
 // A session is "working" if its transcript changed in the last 30s.
 const ACTIVE_WINDOW_S = 30
 
+// Codex tabs keep their own session logs; everything else reads Claude's.
+const activityAge = (w: Workspace): number | null =>
+  w.agent === 'codex'
+    ? codexActivityAgeSeconds(w.worktreePath)
+    : lastActivityAgeSeconds(w.worktreePath)
+const recentActivity = (w: Workspace, limit: number): string[] =>
+  w.agent === 'codex'
+    ? codexRecentActivity(w.worktreePath, limit)
+    : readRecentActivity(w.worktreePath, limit)
+
 const BRIEFING = `
 You are Orcha's Mission Control: the coordinator for the user's fleet of Claude Code
 terminal sessions. Each project tab is a live Claude Code TUI running in that project's
 repo folder (full-auto permissions); parallel sessions on the same repo run in separate
-git worktrees.
+git worktrees. Some tabs may run OpenAI Codex instead (\`agent: "codex"\` in list_sessions,
+models gpt-6-sol / gpt-6-astra); you drive them exactly the same way.
 
 Your MCP tools (server "orcha"):
 - list_sessions: every open session with project, folder, git state, and whether it
@@ -84,10 +98,11 @@ export class OrchestratorService {
             const projects = new Map(db.projects.list().map((p) => [p.id, p.name]))
             const rows = await Promise.all(
               db.workspaces.listActive().map(async (w) => {
-                const age = lastActivityAgeSeconds(w.worktreePath)
+                const age = activityAge(w)
                 return {
                   session_id: w.id,
                   name: w.name,
+                  agent: w.agent,
                   project: projects.get(w.projectId) ?? 'unknown',
                   kind: w.kind,
                   folder: w.worktreePath,
@@ -109,11 +124,12 @@ export class OrchestratorService {
           async (args) => {
             const workspace = db.workspaces.get(args.session_id)
             if (!workspace) return this.text({ error: `Unknown session: ${args.session_id}` })
-            const age = lastActivityAgeSeconds(workspace.worktreePath)
+            const age = activityAge(workspace)
             return this.text({
               name: workspace.name,
+              agent: workspace.agent,
               looks_active: age !== null && age < ACTIVE_WINDOW_S,
-              recent: readRecentActivity(workspace.worktreePath, args.limit ?? 10)
+              recent: recentActivity(workspace, args.limit ?? 10)
             })
           }
         ),
@@ -163,7 +179,8 @@ export class OrchestratorService {
             project_name: z.string(),
             session_name: z.string(),
             initial_prompt: z.string().optional(),
-            model: z.enum(['opus', 'sonnet', 'haiku']).optional()
+            model: z.enum(['opus', 'sonnet', 'haiku', 'gpt-6-sol', 'gpt-6-astra']).optional(),
+            agent: z.enum(['claude', 'codex']).optional()
           },
           async (args) => {
             const project = db.projects
@@ -175,10 +192,18 @@ export class OrchestratorService {
                 error: `Unknown project "${args.project_name}". Valid: ${names.join(', ')}`
               })
             }
+            const agent = args.agent ?? 'claude'
+            if (agent === 'codex' && !isGuest()) {
+              return this.text({
+                error: 'Codex sessions are only available on invited (guest) setups.'
+              })
+            }
             const workspace = await this.workspaceManager.create(
               project.id,
               args.session_name,
-              args.model ?? null
+              args.model ?? null,
+              null,
+              agent
             )
             this.send(IPC.EvWorkspacesChanged, {})
             if (args.initial_prompt) {
@@ -204,6 +229,10 @@ export class OrchestratorService {
     this.send(IPC.EvSessionStatus, { workspaceId: KEY, status: 'busy' })
 
     try {
+      // A guest's Mission Control bills their host's relay, on the cheapest
+      // model: coordinating sessions doesn't need more, and it shouldn't eat
+      // into the budget meant for the real work.
+      const guest = isGuest()
       const q = query({
         prompt: text,
         options: {
@@ -213,8 +242,16 @@ export class OrchestratorService {
           settingSources: ['user'],
           // Mission Control dispatches and coordinates; it doesn't need Opus.
           // Sonnet keeps it snappy and saves the usage window for real work.
-          model: 'sonnet',
-          effort: 'medium',
+          model: guest ? 'haiku' : 'sonnet',
+          ...(guest
+            ? {
+                env: claudeRelayEnv(
+                  { ...process.env } as Record<string, string>,
+                  'Mission Control',
+                  'mission-control'
+                )
+              }
+            : { effort: 'medium' as const }),
           mcpServers: { orcha: this.buildServer() },
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,

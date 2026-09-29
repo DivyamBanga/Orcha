@@ -11,6 +11,9 @@ export interface Project {
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+// Which coding agent a session tab runs. Codex tabs exist only in guest mode.
+export type Agent = 'claude' | 'codex'
+
 export interface Workspace {
   id: string
   projectId: string
@@ -21,9 +24,10 @@ export interface Workspace {
   status: 'active' | 'archived'
   createdAt: number
   lastActivityAt: number | null
-  model: string | null // null = account default; else 'opus' | 'sonnet' | 'haiku'
+  model: string | null // null = default; Claude: 'opus' | 'sonnet' | 'haiku'; Codex: 'gpt-6-sol' | 'gpt-6-astra'
   effort: EffortLevel | null // null = default
   kind: 'main' | 'worktree'
+  agent: Agent
 }
 
 export type SessionStatus = 'idle' | 'busy' | 'error'
@@ -191,3 +195,73 @@ export interface ClipEntry {
 // first for remote sessions), never a stream of bytes through the terminal.
 export type PasteTarget =
   { kind: 'text'; text: string } | { kind: 'path'; path: string } | { kind: 'empty' }
+
+// ---- guest mode: running on someone else's credits through their relay ----
+
+// A budget on the relay. Each is one-time and topped up by the host.
+export type CreditPool = 'claude' | 'sol' | 'astra'
+
+export interface PoolBalance {
+  pool: CreditPool
+  label: string
+  cap: number // USD granted so far, top-ups included
+  spent: number // USD spent, lifetime
+}
+
+// What the relay knows about this guest right now. `error` is set (and the
+// numbers are the last known ones) when the relay couldn't be reached.
+export interface GuestBalance {
+  name: string
+  hostName: string
+  status: 'active' | 'revoked'
+  pools: PoolBalance[]
+  // Spend per session tab (workspace id), recent tabs only.
+  sessions: { session: string; pool: CreditPool; cost: number; updatedAt: number }[]
+  fetchedAt: number
+  error: string | null
+}
+
+export interface GuestUsage {
+  hourly: { hour: number; pool: CreditPool; model: string; cost: number; requests: number }[]
+  projects: { project: string; pool: CreditPool; cost: number }[]
+  models: {
+    pool: CreditPool
+    model: string
+    cost: number
+    requests: number
+    input: number
+    cached: number
+    output: number
+  }[]
+}
+
+export interface GuestStatus {
+  paired: boolean
+  name: string | null
+  hostName: string | null
+}
+
+// The coding tools a guest machine needs.
+export type ToolName = 'claude' | 'codex' | 'git'
+
+export interface ToolState {
+  installed: boolean
+  version: string | null
+  // Installed and new enough for Orcha (Codex needs a recent version).
+  ready: boolean
+}
+
+export type ToolsStatus = Record<ToolName, ToolState>
+
+// ---- the host side: managing guests on your own relay ----
+
+export interface AdminGuest {
+  id: string
+  name: string
+  hostName: string
+  status: 'active' | 'revoked'
+  pools: PoolBalance[]
+  createdAt: number
+  lastActiveAt: number | null
+  paired: boolean
+}
