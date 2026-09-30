@@ -7,7 +7,7 @@
 // `npm run reinstall` when you want those changes in the installed app.
 
 import { execFileSync, execSync } from 'child_process'
-import { readdirSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
 // execSync, not execFileSync: npm on Windows is a .cmd shim, which Node 24
@@ -15,8 +15,11 @@ import { join } from 'path'
 // deprecated (DEP0190). A plain command line through the shell is neither.
 execSync('npm run build:win', { stdio: 'inherit' })
 
-const setup = readdirSync('dist').find((f) => /setup\.exe$/i.test(f))
-if (!setup) throw new Error('Build finished but no *-setup.exe landed in dist/')
+// Installers from earlier versions stay in dist/, so pick this version's by
+// name rather than the first *-setup.exe (which sorts to the oldest).
+const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'))
+const setup = `${name}-${version}-setup.exe`
+if (!existsSync(join('dist', setup))) throw new Error(`Build finished but dist/${setup} is missing`)
 
 console.log(`\nInstalling ${setup} …`)
 execFileSync(join('dist', setup), ['/S'], { stdio: 'inherit' })
