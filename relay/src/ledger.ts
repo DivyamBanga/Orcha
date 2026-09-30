@@ -410,6 +410,18 @@ export class Ledger extends DurableObject<LedgerEnv> {
     return this.guestRow('id', guestId)
   }
 
+  // Deletes a guest and everything recorded for them (their token stops
+  // working immediately). For test guests and people you've stopped sharing
+  // with for good; "revoke" is the reversible version.
+  removeGuest(guestId: string): boolean {
+    const exists = this.guestRow('id', guestId) !== null
+    for (const table of ['events', 'usage_hour', 'usage_project', 'sessions', 'topups', 'invites', 'pools']) {
+      this.sql.exec(`DELETE FROM ${table} WHERE guest_id = ?`, guestId)
+    }
+    this.sql.exec('DELETE FROM guests WHERE id = ?', guestId)
+    return exists
+  }
+
   setStatus(guestId: string, status: 'active' | 'revoked'): GuestState | null {
     this.sql.exec('UPDATE guests SET status = ? WHERE id = ?', status, guestId)
     return this.guestRow('id', guestId)

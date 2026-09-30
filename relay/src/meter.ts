@@ -1,10 +1,10 @@
-// Pulls the usage block out of an upstream response while the bytes stream
-// through untouched. The free Workers plan allows 10ms of CPU per request, so
-// nothing here JSON-parses the whole stream: Anthropic reports input usage in
-// the very first event (message_start) and final usage in the last few
-// (message_delta); the Responses API reports everything in its terminal event
-// (response.completed). So we parse one small line from the head and only the
-// terminal event from a rolling tail.
+// Pulls the usage block out of an upstream response. The free Workers plan
+// allows 10ms of CPU per request, and a streamed reply arrives as hundreds of
+// small network chunks, so a meter does nothing per chunk except keep the raw
+// bytes — measured live, decoding and scanning each chunk as it arrived cost
+// 18-26ms on a short Codex reply. Everything happens once, at the end: decode
+// what was kept, then parse only the events that carry usage (Anthropic's
+// message_start and last message_delta; the Responses terminal event).
 
 // One priced line of a reply. Almost always there is exactly one; Anthropic
 // splits a reply into several when it reports `usage.iterations` (server-side
@@ -32,15 +32,40 @@ export interface MeteredUsage extends UsageLine {
   estimated: boolean
 }
 
-const ANTHROPIC_TAIL_CHARS = 96 * 1024
-// The Responses terminal event echoes the whole response (instructions, tools,
-// output), so keep enough tail to hold it entirely and parse it properly.
-const RESPONSES_TAIL_CHARS = 1024 * 1024
+// Opening bytes read as they arrive, at most. Anthropic's message_start (the
+// exact input usage) is always in the first chunk or two.
+const HEAD_BYTES = 64 * 1024
 // SSE framing + JSON envelope per delta event, and characters per token, for
-// estimating the output of a reply that was interrupted before its final
-// usage event. Only ever applied to the cut-off part of one reply.
+// sizing the visible output of a reply that was cut off before its final
+// usage event.
 const EVENT_OVERHEAD_CHARS = 110
 const CHARS_PER_TOKEN = 3.6
+
+// Typical output speed per model family, in tokens per second, for a reply cut
+// off before its final usage event: output (including hidden thinking or
+// reasoning) is generated the whole time a reply streams, so time streamed x
+// speed sizes it — measured from when the reply started, so the time spent
+// reading the prompt doesn't count.
+const OUTPUT_TOKENS_PER_SECOND: [RegExp, number][] = [
+  [/haiku/, 150],
+  [/sonnet/, 80],
+  [/opus/, 60],
+  [/fable|mythos/, 45],
+  [/sol/, 100],
+  [/astra/, 60]
+]
+
+function outputFromTime(model: string | null, streamedMs: number): number {
+  const rate = OUTPUT_TOKENS_PER_SECOND.find(([re]) => re.test(model ?? ''))?.[1] ?? 80
+  return Math.ceil((Math.max(streamedMs, 0) / 1000) * rate)
+}
+
+// Visible output tokens in an SSE text from `from` on.
+function outputFromText(text: string, from: number): number {
+  const after = text.slice(Math.max(from, 0))
+  const payload = Math.max(0, after.length - countOccurrences(after, 'data:') * EVENT_OVERHEAD_CHARS)
+  return Math.ceil(payload / CHARS_PER_TOKEN)
+}
 
 function dataLineContaining(text: string, marker: string, fromEnd: boolean): unknown {
   const at = fromEnd ? text.lastIndexOf(marker) : text.indexOf(marker)
@@ -70,39 +95,16 @@ function countOccurrences(text: string, needle: string): number {
   return count
 }
 
-// The last ~`limit` chars of a stream, kept as a list of chunks and only
-// joined once at the end. Re-slicing one big string per chunk would copy the
-// whole tail on every network read — quadratic, and the 10ms CPU budget can't
-// afford that on a long reply.
-function rollingTail(limit: number): { push(text: string): void; value(): string } {
-  const parts: string[] = []
-  let length = 0
-  return {
-    push(text) {
-      parts.push(text)
-      length += text.length
-      while (parts.length > 1 && length - parts[0].length >= limit) {
-        length -= parts.shift()!.length
-      }
-    },
-    value: () => parts.join('')
+function decode(chunks: Uint8Array[]): string {
+  let size = 0
+  for (const c of chunks) size += c.byteLength
+  const joined = new Uint8Array(size)
+  let at = 0
+  for (const c of chunks) {
+    joined.set(c, at)
+    at += c.byteLength
   }
-}
-
-// Counts a marker over a chunked stream, including occurrences split across
-// chunk boundaries. The carried seam is one char shorter than the marker, so
-// an occurrence can never sit wholly inside it and be counted twice.
-function streamCounter(needle: string): { count: number; feed(text: string): void } {
-  let seam = ''
-  const counter = {
-    count: 0,
-    feed(text: string): void {
-      const scan = seam + text
-      counter.count += countOccurrences(scan, needle)
-      seam = scan.slice(-(needle.length - 1))
-    }
-  }
-  return counter
+  return new TextDecoder().decode(joined)
 }
 
 function emptyLine(model: string | null): UsageLine {
@@ -209,69 +211,66 @@ function anthropicUsage(
   return withTotals([line], model, extra)
 }
 
+// How the relay drives a meter. The complete reply is collected natively (no
+// JavaScript per network chunk) and handed to finish() once; only a meter that
+// needs its opening bytes early gets them chunk by chunk through head(), which
+// stops as soon as it returns true.
 export interface Meter {
-  push(chunk: Uint8Array): void
-  // `aborted`: the stream ended early (client went away / upstream dropped).
-  finish(aborted: boolean): MeteredUsage | null
+  readsHead: boolean
+  head(chunk: Uint8Array): boolean
+  // `body` is the whole reply, or null when it was cut off (client pressed
+  // Esc, network drop); `streamedMs` is how long it had been streaming.
+  finish(body: Uint8Array | null, streamedMs: number): MeteredUsage | null
 }
 
 export function anthropicMeter(contentType: string): Meter {
-  const decoder = new TextDecoder()
   const streaming = contentType.includes('text/event-stream')
-  let head = ''
-  let start: { model: string | null; usage: AnthropicUsageBlock | undefined } | null = null
-  const tail = rollingTail(ANTHROPIC_TAIL_CHARS)
-  let charsAfterStart = 0
-  const eventsAfterStart = streamCounter('data:')
-  let body = ''
+  const opening: Uint8Array[] = []
+  let openingBytes = 0
 
   return {
-    push(chunk) {
-      const text = decoder.decode(chunk, { stream: true })
-      if (!streaming) {
-        if (body.length < 8 * 1024 * 1024) body += text
-        return
-      }
-      if (!start) {
-        head += text
-        const event = dataLineContaining(head, '"message_start"', false) as {
-          message?: { model?: string; usage?: AnthropicUsageBlock }
-        } | null
-        if (event?.message) {
-          start = { model: event.message.model ?? null, usage: event.message.usage }
-          tail.push(head.slice(head.indexOf('"message_start"')))
-          head = ''
-        } else if (head.length > 64 * 1024) {
-          // No message_start within 64KB: not a Messages stream we understand.
-          head = head.slice(-8 * 1024)
-        }
-        return
-      }
-      charsAfterStart += text.length
-      eventsAfterStart.feed(text)
-      tail.push(text)
+    readsHead: streaming,
+
+    // Held so an interrupted reply can still be billed its exact input.
+    head(chunk) {
+      opening.push(chunk)
+      openingBytes += chunk.byteLength
+      if (openingBytes >= HEAD_BYTES) return true
+      const text = decode(opening)
+      const at = text.indexOf('"message_start"')
+      return at !== -1 && text.indexOf('\n', at) !== -1
     },
 
-    finish() {
+    finish(body, streamedMs) {
+      const text = body ? new TextDecoder().decode(body) : decode(opening)
       if (!streaming) {
         try {
-          const parsed = JSON.parse(body) as { model?: string; usage?: AnthropicUsageBlock }
+          const parsed = JSON.parse(text) as { model?: string; usage?: AnthropicUsageBlock }
           if (!parsed.usage) return null
           return anthropicUsage(parsed.model ?? null, parsed.usage, undefined)
         } catch {
           return null
         }
       }
-      if (!start) return null
-      const delta = dataLineContaining(tail.value(), '"message_delta"', true) as {
-        usage?: AnthropicUsageBlock
-      } | null
-      const usage = anthropicUsage(start.model, start.usage, delta?.usage)
+      const startAt = text.indexOf('"message_start"')
+      const start =
+        startAt === -1
+          ? null
+          : (dataLineAt(text, startAt) as {
+              message?: { model?: string; usage?: AnthropicUsageBlock }
+            } | null)
+      if (!start?.message) return null
+      const model = start.message.model ?? null
+      const delta = body
+        ? (dataLineContaining(text, '"message_delta"', true) as {
+            usage?: AnthropicUsageBlock
+          } | null)
+        : null
+      const usage = anthropicUsage(model, start.message.usage, delta?.usage)
       if (!delta?.usage) {
         // Cut off before the final usage event: input (the bulk of the cost)
-        // is exact from message_start; estimate the output that streamed.
-        const payload = Math.max(0, charsAfterStart - eventsAfterStart.count * EVENT_OVERHEAD_CHARS)
-        const estimate = Math.ceil(payload / CHARS_PER_TOKEN)
+        // is exact from message_start; size the output that was generated.
+        const estimate = body ? outputFromText(text, startAt) : outputFromTime(model, streamedMs)
         usage.lines[0].outputTokens = Math.max(usage.lines[0].outputTokens, estimate)
         usage.outputTokens = usage.lines[0].outputTokens
         usage.estimated = true
@@ -331,40 +330,37 @@ function numberAfter(text: string, key: string): number {
 }
 
 export function responsesMeter(contentType: string, hint: ResponsesHint): Meter {
-  const decoder = new TextDecoder()
   const streaming = contentType.includes('text/event-stream')
-  const tail = rollingTail(RESPONSES_TAIL_CHARS)
-  let chars = 0
-  const events = streamCounter('data:')
-  // The data line's "type" only — the SSE `event:` line repeats the name.
-  const searchEvents = streamCounter('"type":"response.web_search_call.completed"')
-  let body = ''
+
+  // Interrupted before the terminal event: the Responses API reports no usage
+  // until the end, so estimate. Input is sized from this request's own body
+  // and reported as uncached; the ledger re-splits it using the cache-hit
+  // ratio of the guest's previous exact reply on this model.
+  const estimated = (outputTokens: number, webSearches: number): MeteredUsage => {
+    const line = emptyLine(hint.model)
+    line.inputTokens = Math.ceil(hint.requestBytes / 4)
+    line.outputTokens = outputTokens
+    return withTotals([line], hint.model, { webSearches, estimated: true })
+  }
 
   return {
-    push(chunk) {
-      const text = decoder.decode(chunk, { stream: true })
-      if (!streaming) {
-        if (body.length < 8 * 1024 * 1024) body += text
-        return
-      }
-      chars += text.length
-      events.feed(text)
-      searchEvents.feed(text)
-      tail.push(text)
-    },
+    readsHead: false,
+    head: () => true,
 
-    finish(aborted) {
+    finish(body, streamedMs) {
+      if (!body) return estimated(outputFromTime(hint.model, streamedMs), 0)
+      const text = new TextDecoder().decode(body)
       if (!streaming) {
         try {
-          return responsesUsage(JSON.parse(body) as ResponsesObject, hint.model)
+          return responsesUsage(JSON.parse(text) as ResponsesObject, hint.model)
         } catch {
           return null
         }
       }
-      const text = tail.value()
+      // The data line's "type" only — the SSE `event:` line repeats the name.
+      const searchEvents = countOccurrences(text, '"type":"response.web_search_call.completed"')
       // Nothing nested inside a response object has a "response.*" type, so
-      // the last one in the stream is the terminal event's own. One backward
-      // scan that stops there, instead of three that each read the whole tail.
+      // the last one in the stream is the terminal event's own.
       const lastEventAt = text.lastIndexOf('"type":"response.')
       const lastType = text.slice(lastEventAt + 17, lastEventAt + 30)
       const terminal =
@@ -372,23 +368,21 @@ export function responsesMeter(contentType: string, hint: ResponsesHint): Meter 
         (lastType.startsWith('completed"') ||
           lastType.startsWith('incomplete"') ||
           lastType.startsWith('failed"'))
-      const finalAt = terminal ? lastEventAt : -1
-      if (finalAt !== -1) {
-        // The terminal event is the last thing in the stream and the tail is
-        // sized to hold all of it, so parse it whole rather than trusting
-        // where `usage` happens to sit in the JSON.
-        const event = dataLineAt(text, finalAt) as { response?: ResponsesObject } | null
+      if (terminal) {
+        // Parse the terminal event whole rather than trusting where `usage`
+        // happens to sit in the JSON.
+        const event = dataLineAt(text, lastEventAt) as { response?: ResponsesObject } | null
         if (event?.response) {
           const usage = responsesUsage(event.response, hint.model)
           if (usage) {
-            if (usage.webSearches === 0) usage.webSearches = searchEvents.count
+            if (usage.webSearches === 0) usage.webSearches = searchEvents
             return usage
           }
         }
-        // Too big to have been held whole (over 1MB): read the usage numbers
-        // from the end of it, where the response object keeps them.
+        // A terminal event that won't parse: read the usage numbers from the
+        // end of it, where the response object keeps them.
         const usageAt = text.lastIndexOf('"usage":{')
-        if (usageAt > finalAt) {
+        if (usageAt > lastEventAt) {
           const usageText = text.slice(usageAt, usageAt + 800)
           const input = numberAfter(usageText, 'input_tokens')
           const cached = Math.min(numberAfter(usageText, 'cached_tokens'), input)
@@ -400,21 +394,16 @@ export function responsesMeter(contentType: string, hint: ResponsesHint): Meter 
           line.outputTokens = numberAfter(usageText, 'output_tokens')
           return withTotals([line], hint.model, {
             reasoningTokens: numberAfter(usageText, 'reasoning_tokens'),
-            webSearches: searchEvents.count
+            webSearches: searchEvents
           })
         }
       }
-      if (chars === 0 && !aborted) return null
-      // Interrupted before the terminal event: the Responses API reports no
-      // usage until the end, so estimate. Input is sized from this request's
-      // own body and reported as uncached; the ledger re-splits it using the
-      // cache-hit ratio of the guest's previous exact reply on this model.
-      const line = emptyLine(hint.model)
-      line.inputTokens = Math.ceil(hint.requestBytes / 4)
-      line.outputTokens = Math.ceil(
-        Math.max(0, chars - events.count * EVENT_OVERHEAD_CHARS) / CHARS_PER_TOKEN
+      if (body.byteLength === 0) return null
+      // The stream ended without its terminal event.
+      return estimated(
+        Math.max(outputFromText(text, 0), outputFromTime(hint.model, streamedMs)),
+        searchEvents
       )
-      return withTotals([line], hint.model, { webSearches: searchEvents.count, estimated: true })
     }
   }
 }

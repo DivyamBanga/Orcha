@@ -155,14 +155,18 @@ function forwardHeaders(request: Request): Headers {
   return headers
 }
 
-// Streams the upstream body to the client unchanged while the meter watches
-// it, then records the spend. The pump runs under waitUntil so the recording
-// still happens when the client hangs up mid-reply (Esc in the TUI) — in that
-// case the upstream read is cancelled, which stops generation and billing.
+// Streams the upstream body to the client while the meter gets a copy, then
+// records the spend — all without JavaScript touching the stream per network
+// chunk: on the free plan's 10ms CPU budget that alone measured 18-26ms on a
+// short Codex reply, where native tee/pipe/collect measured 1-2ms. When the
+// client hangs up mid-reply (Esc in the TUI) the native pipe fails, which
+// cancels the upstream request — stopping generation and billing — and the
+// meter still records what the reply cost up to then.
 function meteredResponse(
   upstream: Response,
   meter: Meter,
   ctx: ExecutionContext,
+  cancelUpstream: () => void,
   onUsage: (usage: NonNullable<ReturnType<Meter['finish']>>) => Promise<unknown>
 ): Response {
   const headers = new Headers(upstream.headers)
@@ -170,30 +174,38 @@ function meteredResponse(
   headers.delete('content-encoding')
   if (!upstream.body) return new Response(null, { status: upstream.status, headers })
 
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
-  const reader = upstream.body.getReader()
-  const writer = writable.getWriter()
-
+  const started = Date.now()
+  const [toClient, toMeter] = upstream.body.tee()
+  const { readable, writable } = new IdentityTransformStream()
+  ctx.waitUntil(toClient.pipeTo(writable).catch(() => cancelUpstream()))
   ctx.waitUntil(
     (async () => {
-      let aborted = false
-      try {
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          meter.push(value)
-          await writer.write(value)
+      let whole = toMeter
+      if (meter.readsHead) {
+        // Only the opening chunks go through JavaScript, and only until the
+        // meter has what it needs from them.
+        const [opening, rest] = toMeter.tee()
+        whole = rest
+        const reader = opening.getReader()
+        try {
+          for (;;) {
+            const { done, value } = await reader.read()
+            if (done || meter.head(value)) break
+          }
+        } catch {
+          // cut off during the opening; finish() works with what arrived
         }
-        await writer.close()
-      } catch {
-        aborted = true
         reader.cancel().catch(() => {})
-        writer.abort().catch(() => {})
       }
-      if (upstream.ok) {
-        const usage = meter.finish(aborted)
-        if (usage) await onUsage(usage)
+      let body: Uint8Array | null
+      try {
+        body = new Uint8Array(await new Response(whole).arrayBuffer())
+      } catch {
+        body = null // cut off: the client hung up or the connection dropped
       }
+      if (!upstream.ok) return
+      const usage = meter.finish(body, Date.now() - started)
+      if (usage) await onUsage(usage)
     })()
   )
   return new Response(readable, { status: upstream.status, headers })
@@ -225,17 +237,21 @@ async function proxyAnthropic(
   const headers = forwardHeaders(request)
   headers.set('x-api-key', env.ANTHROPIC_API_KEY)
   const base = env.ANTHROPIC_UPSTREAM ?? 'https://api.anthropic.com'
+  // Aborted when the client hangs up — before the reply starts (request.signal)
+  // or mid-stream (meteredResponse) — which cancels generation and its bill.
+  const cancel = new AbortController()
   const upstream = await fetch(`${base}${path}${search}`, {
     method: 'POST',
     headers,
-    body: request.body
+    body: request.body,
+    signal: AbortSignal.any([request.signal, cancel.signal])
   })
   // Token counting is free; pass it straight through.
   if (path !== '/v1/messages') return upstream
 
   const who = attribution(request)
   const meter = anthropicMeter(upstream.headers.get('content-type') ?? '')
-  return meteredResponse(upstream, meter, ctx, (usage) =>
+  return meteredResponse(upstream, meter, ctx, () => cancel.abort(), (usage) =>
     ledger(env).record({ guestId: guest.id, pool: 'claude', usage, ...who })
   )
 }
@@ -274,10 +290,12 @@ async function proxyResponses(
   const endpoint = env.AZURE_ENDPOINT.replace(/\/+$/, '')
   // Azure deployments are named exactly after the model ids, so the body goes
   // upstream byte-for-byte as Codex sent it.
+  const cancel = new AbortController()
   const upstream = await fetch(`${endpoint}/openai/v1/responses`, {
     method: 'POST',
     headers,
-    body
+    body,
+    signal: AbortSignal.any([request.signal, cancel.signal])
   })
 
   const who = attribution(request)
@@ -285,7 +303,7 @@ async function proxyResponses(
     model,
     requestBytes: body.byteLength
   })
-  return meteredResponse(upstream, meter, ctx, (usage) =>
+  return meteredResponse(upstream, meter, ctx, () => cancel.abort(), (usage) =>
     ledger(env).record({ guestId: guest.id, pool, usage, ...who })
   )
 }
@@ -363,9 +381,16 @@ async function admin(request: Request, env: Env, path: string, url: URL): Promis
     return json({ guest, invite: code, inviteUrl: `${url.origin}/join/${code}` })
   }
 
-  const match = path.match(/^\/admin\/guests\/([0-9a-f-]{36})\/(invite|topup|revoke|restore|usage)$/)
+  const match = path.match(
+    /^\/admin\/guests\/([0-9a-f-]{36})\/(invite|topup|revoke|restore|usage|remove)$/
+  )
   if (!match) return json({ error: 'Not found' }, 404)
   const [, guestId, action] = match
+  if (action === 'remove' && request.method === 'POST') {
+    const removed = await stub.removeGuest(guestId)
+    authCache.clear()
+    return removed ? json({ removed: true }) : json({ error: 'Unknown guest' }, 404)
+  }
   if (action === 'invite' && request.method === 'POST') {
     const code = inviteCode()
     const ok = await stub.createInvite(guestId, await sha256(code), INVITE_TTL_MS)

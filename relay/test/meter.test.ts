@@ -1,14 +1,36 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { anthropicMeter, peekModel, responsesMeter, type Meter } from '../src/meter.ts'
+import {
+  anthropicMeter,
+  peekModel,
+  responsesMeter,
+  type Meter,
+  type MeteredUsage
+} from '../src/meter.ts'
 
 const enc = new TextEncoder()
 
-// Feeds `text` in fixed-size byte chunks, so markers and multi-byte characters
-// land across chunk boundaries the way real network reads split them.
-function feed(meter: Meter, text: string, size: number): void {
+// Drives a meter the way the relay does: the opening arrives chunk by chunk
+// (in fixed-size pieces, so markers and multi-byte characters land across
+// chunk boundaries the way real network reads split them) until head() has
+// what it needs; then the whole reply is handed over at once.
+function openWith(meter: Meter, text: string, size: number): void {
+  if (!meter.readsHead) return
   const bytes = enc.encode(text)
-  for (let i = 0; i < bytes.length; i += size) meter.push(bytes.slice(i, i + size))
+  for (let i = 0; i < bytes.length; i += size) {
+    if (meter.head(bytes.slice(i, i + size))) return
+  }
+}
+
+function finishWhole(meter: Meter, text: string, size: number): MeteredUsage | null {
+  openWith(meter, text, size)
+  return meter.finish(enc.encode(text), 0)
+}
+
+// A reply cut off after `streamedMs`: the relay never gets the whole body.
+function finishCut(meter: Meter, text: string, size: number, streamedMs: number): MeteredUsage | null {
+  openWith(meter, text, size)
+  return meter.finish(null, streamedMs)
 }
 
 const sse = (events: [string, unknown][]): string =>
@@ -58,8 +80,7 @@ const anthropicStream = (withFinal: boolean): string =>
 test('anthropic: exact usage from message_start + message_delta across tiny chunks', () => {
   for (const size of [1, 7, 64, 100_000]) {
     const meter = anthropicMeter('text/event-stream; charset=utf-8')
-    feed(meter, anthropicStream(true), size)
-    const u = meter.finish(false)!
+    const u = finishWhole(meter, anthropicStream(true), size)!
     assert.equal(u.model, 'claude-sonnet-5')
     assert.equal(u.inputTokens, 12)
     assert.equal(u.cachedTokens, 30000)
@@ -74,8 +95,8 @@ test('anthropic: exact usage from message_start + message_delta across tiny chun
 
 test('anthropic: interrupted reply keeps exact input and estimates output', () => {
   const meter = anthropicMeter('text/event-stream')
-  feed(meter, anthropicStream(false), 13)
-  const u = meter.finish(true)!
+  // 2s of Sonnet streaming ≈ 160 output tokens.
+  const u = finishCut(meter, anthropicStream(false), 13, 2000)!
   assert.equal(u.inputTokens, 12)
   assert.equal(u.cachedTokens, 30000)
   assert.equal(u.estimated, true)
@@ -85,7 +106,7 @@ test('anthropic: interrupted reply keeps exact input and estimates output', () =
 
 test('anthropic: non-streaming JSON body', () => {
   const meter = anthropicMeter('application/json')
-  feed(
+  const u = finishWhole(
     meter,
     JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
@@ -93,8 +114,7 @@ test('anthropic: non-streaming JSON body', () => {
       usage: { input_tokens: 50, output_tokens: 9, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
     }),
     5
-  )
-  const u = meter.finish(false)!
+  )!
   assert.equal(u.model, 'claude-haiku-4-5-20251001')
   assert.equal(u.inputTokens, 50)
   assert.equal(u.outputTokens, 9)
@@ -102,7 +122,7 @@ test('anthropic: non-streaming JSON body', () => {
 
 test('anthropic: stream that never started is not billed', () => {
   const meter = anthropicMeter('text/event-stream')
-  assert.equal(meter.finish(true), null)
+  assert.equal(meter.finish(null, 1000), null)
 })
 
 const responsesStream = (withFinal: boolean): string =>
@@ -149,8 +169,7 @@ const responsesStream = (withFinal: boolean): string =>
 test('responses: exact usage from response.completed, big echoed output', () => {
   for (const size of [3, 997, 1_000_000]) {
     const meter = responsesMeter('text/event-stream', { model: 'gpt-6-sol', requestBytes: 400_000 })
-    feed(meter, responsesStream(true), size)
-    const u = meter.finish(false)!
+    const u = finishWhole(meter, responsesStream(true), size)!
     assert.equal(u.inputTokens, 10_000)
     assert.equal(u.cachedTokens, 90_000)
     assert.equal(u.outputTokens, 1200)
@@ -163,8 +182,7 @@ test('responses: exact usage from response.completed, big echoed output', () => 
 
 test('responses: interrupted reply is estimated from request size', () => {
   const meter = responsesMeter('text/event-stream', { model: 'gpt-6-astra', requestBytes: 40_000 })
-  feed(meter, responsesStream(false), 11)
-  const u = meter.finish(true)!
+  const u = finishCut(meter, responsesStream(false), 11, 1500)!
   assert.equal(u.estimated, true)
   assert.equal(u.inputTokens, 10_000)
   assert.equal(u.cachedTokens, 0)
@@ -201,15 +219,16 @@ test('cpu: metering a long reply stays well under the 10ms free-plan budget', ()
       return performance.now() - t0
     }))
   }
+  // What a meter costs per reply: its opening chunks (Anthropic only) plus one
+  // finish() over the whole body the runtime collected natively.
   const anthropicMs = time(() => {
     const a = anthropicMeter('text/event-stream')
-    for (let i = 0; i < aBytes.length; i += 1024) a.push(aBytes.subarray(i, i + 1024))
-    assert.equal(a.finish(false)!.outputTokens, 350)
+    for (let i = 0; i < aBytes.length; i += 1024) if (a.head(aBytes.subarray(i, i + 1024))) break
+    assert.equal(a.finish(aBytes, 0)!.outputTokens, 350)
   })
   const responsesMs = time(() => {
     const r = responsesMeter('text/event-stream', { model: 'gpt-6-sol', requestBytes: 1 })
-    for (let i = 0; i < rBytes.length; i += 1024) r.push(rBytes.subarray(i, i + 1024))
-    assert.equal(r.finish(false)!.outputTokens, 1200)
+    assert.equal(r.finish(rBytes, 0)!.outputTokens, 1200)
   })
   const mb = (b: Uint8Array): string => (b.length / 1e6).toFixed(2)
   console.log(
@@ -239,8 +258,7 @@ test('responses: cache writes and Azure tool_usage web search count', () => {
     ]
   ])
   const meter = responsesMeter('text/event-stream', { model: 'gpt-6-sol', requestBytes: 1 })
-  feed(meter, stream, 17)
-  const u = meter.finish(false)!
+  const u = finishWhole(meter, stream, 17)!
   assert.equal(u.inputTokens, 500)
   assert.equal(u.cachedTokens, 3000)
   assert.equal(u.cacheWrite5mTokens, 1500)
@@ -284,8 +302,7 @@ test('anthropic: iterations become separate lines; cache total moves in message_
     ]
   ])
   const meter = anthropicMeter('text/event-stream')
-  feed(meter, stream, 9)
-  const u = meter.finish(false)!
+  const u = finishWhole(meter, stream, 9)!
   assert.equal(u.speed, 'fast')
   assert.equal(u.lines.length, 2)
   assert.equal(u.lines[0].model, 'claude-haiku-4-5')
@@ -295,8 +312,11 @@ test('anthropic: iterations become separate lines; cache total moves in message_
 
   // Without iterations, a moved cache total lands on the TTL already in use.
   const plain = anthropicMeter('text/event-stream')
-  feed(plain, stream.replace(/,"iterations":\[.*?\]\]?/, '').replace(/"iterations":\[[^\]]*\],?/, ''), 50)
-  const p = plain.finish(false)!
+  const p = finishWhole(
+    plain,
+    stream.replace(/,"iterations":\[.*?\]\]?/, '').replace(/"iterations":\[[^\]]*\],?/, ''),
+    50
+  )!
   assert.equal(p.lines.length, 1)
   assert.equal(p.cacheWrite1hTokens, 150)
   assert.equal(p.cacheWrite5mTokens, 0)

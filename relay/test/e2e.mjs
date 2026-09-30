@@ -117,16 +117,16 @@ try {
       `ANTHROPIC_UPSTREAM=http://127.0.0.1:${UPSTREAM_PORT}`
     ].join('\n')
   )
-  const state = join(relayDir, '.wrangler', 'e2e-state')
-  rmSync(state, { recursive: true, force: true })
+  // A fresh ledger per run (a crashed earlier run can leave the old one locked).
+  const state = join(relayDir, '.wrangler', `e2e-state-${Date.now()}`)
   wrangler = spawn(
     'npx',
     ['wrangler', 'dev', '--port', String(RELAY_PORT), '--ip', '127.0.0.1', '--persist-to', state],
     { cwd: relayDir, shell: true, windowsHide: true }
   )
   let log = ''
-  wrangler.stdout.on('data', (d) => (log += d))
-  wrangler.stderr.on('data', (d) => (log += d))
+  wrangler.stdout.on("data", (d) => { log += d; if (String(d).includes("DBG")) process.stdout.write(String(d)) })
+  wrangler.stderr.on('data', (d) => { log += d; if (String(d).includes('DBG')) process.stdout.write(String(d)) })
   for (let i = 0; ; i++) {
     const up = await call('/health').then((r) => r.ok).catch(() => false)
     if (up) break
@@ -262,11 +262,17 @@ try {
   await reader.read()
   await sleep(600)
   controller.abort()
-  await sleep(1500)
-  const abortedCost = (await spent('claude')) - beforeAbort
-  // Input is exact (0.020); a partial, estimated output on top.
-  assert.ok(abortedCost > 0.02 && abortedCost < 0.025, `aborted reply cost ${abortedCost}`)
-  console.log(`interrupted reply billed $${abortedCost.toFixed(4)} (exact input + estimated partial output)`)
+  // Local `wrangler dev` doesn't pass a client hang-up through to the Worker
+  // (Cloudflare's edge does), so here the reply streams to its end and must
+  // still be billed. The production path — generation cancelled, exact input
+  // plus the output so far — is checked by test/live-abort.mjs.
+  let abortedCost = 0
+  for (let i = 0; i < 30 && abortedCost === 0; i++) {
+    await sleep(500)
+    abortedCost = (await spent('claude')) - beforeAbort
+  }
+  assert.ok(abortedCost > 0.02 && abortedCost <= 0.025 + 1e-9, `aborted reply cost ${abortedCost}`)
+  console.log(`hung-up reply still billed: $${abortedCost.toFixed(4)}`)
 
   // --- insights ------------------------------------------------------------------
   const bal = await balance()
@@ -283,6 +289,12 @@ try {
   const notAdmin = await call('/admin/guests', { headers: { authorization: `Bearer ${redeemed.token}` } })
   assert.equal(notAdmin.status, 401)
   console.log('balance/usage/admin views consistent; bad tokens refused')
+
+  await sleep(4500) // past the auth cache
+  assert.equal((await admin(`/admin/guests/${created.guest.id}/remove`, {})).removed, true)
+  assert.equal((await call('/v1/me/balance', { headers: guestHeaders })).status, 401)
+  assert.equal((await admin('/admin/guests')).length, 0)
+  console.log('removing a guest deletes them and kills their token')
   console.log('\nE2E PASSED')
 } finally {
   upstream.close()
