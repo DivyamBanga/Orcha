@@ -8,6 +8,7 @@ function Modal({
   onClose,
   width = 420,
   dismissable = true,
+  bare = false,
   children
 }: {
   open: boolean
@@ -15,6 +16,8 @@ function Modal({
   width?: number
   // False while something is in flight that closing would orphan.
   dismissable?: boolean
+  // No padding or scrolling of its own; the content lays itself out.
+  bare?: boolean
   children: React.ReactNode
 }): React.JSX.Element | null {
   const { mounted, closing } = usePresence(open)
@@ -36,7 +39,7 @@ function Modal({
       onMouseDown={() => dismissable && onClose()}
     >
       <div
-        className="overlay-panel max-h-[86vh] overflow-y-auto p-5"
+        className={`overlay-panel ${bare ? 'max-w-[calc(100vw-48px)] overflow-hidden' : 'max-h-[86vh] overflow-y-auto p-5'}`}
         style={{ width }}
         onMouseDown={(e) => e.stopPropagation()}
       >

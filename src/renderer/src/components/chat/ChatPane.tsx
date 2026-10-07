@@ -170,6 +170,10 @@ function ChatHeader({ chatId }: { chatId: string }): React.JSX.Element {
           items={[
             { label: 'Rename', onClick: () => setRenaming(true) },
             {
+              label: 'Export as Markdown',
+              onClick: () => window.orcha.chat.exportOne(chatId, title).catch(() => {})
+            },
+            {
               label: 'Delete chat',
               danger: true,
               separatorAbove: true,

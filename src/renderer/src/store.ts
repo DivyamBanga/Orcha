@@ -15,7 +15,8 @@ import type {
   ToolsStatus,
   Agent,
   Identity,
-  Catalog
+  Catalog,
+  ChatSettings
 } from '../../shared/types'
 
 // A small in-app message (budget warnings and the like). Not an OS toast:
@@ -38,6 +39,12 @@ function persistOpenSessions(ids: string[]): void {
 
 function persistActive(id: string | null): void {
   window.orcha.ui.saveState('activeId', id ?? '').catch(() => {})
+}
+
+const TEXT_SIZES = { small: '13px', default: '14px', large: '15.5px' }
+
+function applyTextSize(size: ChatSettings['textSize']): void {
+  document.documentElement.style.setProperty('--chat-text', TEXT_SIZES[size] ?? TEXT_SIZES.default)
 }
 
 interface OrchaStore {
@@ -90,6 +97,8 @@ interface OrchaStore {
   // Who this Orcha bills, and the models on offer (null until loaded).
   identity: Identity | null
   catalog: Catalog | null
+  // Settings → Profile, Appearance and Defaults (null until loaded).
+  settings: ChatSettings | null
 
   checkSetup: () => Promise<void>
   load: () => Promise<void>
@@ -121,6 +130,8 @@ interface OrchaStore {
   setShowCredits: (show: boolean) => void
   checkTools: () => Promise<ToolsStatus>
   loadIdentity: () => Promise<void>
+  loadSettings: () => Promise<void>
+  saveSettings: (changes: Partial<ChatSettings>) => void
   pushNotice: (notice: Notice) => void
   dismissNotice: (id: string) => void
 }
@@ -158,6 +169,7 @@ export const useStore = create<OrchaStore>((set) => ({
   notices: [],
   identity: null,
   catalog: null,
+  settings: null,
 
   checkSetup: async () => {
     const setup = await window.orcha.setup.status()
@@ -338,6 +350,27 @@ export const useStore = create<OrchaStore>((set) => ({
       window.orcha.catalog()
     ])
     set({ identity, catalog })
+  },
+  // Applied as they load: the chat text size, and where the composer's model
+  // and toggles start.
+  loadSettings: async () => {
+    const settings = await window.orcha.settings.get()
+    set({ settings })
+    applyTextSize(settings.textSize)
+    useChatStore.setState((s) => ({
+      thinking: settings.thinking,
+      webSearch: settings.webSearch,
+      picked: settings.model ? { ...s.picked, [NEW_CHAT]: settings.model } : s.picked
+    }))
+  },
+  saveSettings: (changes) => {
+    set((s) => ({ settings: s.settings ? { ...s.settings, ...changes } : s.settings }))
+    if (changes.textSize) applyTextSize(changes.textSize)
+    if (changes.model) {
+      const model = changes.model
+      useChatStore.setState((s) => ({ picked: { ...s.picked, [NEW_CHAT]: model } }))
+    }
+    window.orcha.settings.set(changes).catch(() => {})
   },
   checkTools: async () => {
     const tools = await window.orcha.tools.status()

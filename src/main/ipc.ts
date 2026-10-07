@@ -1,5 +1,5 @@
 import { execFileAsync } from './exec'
-import { app, ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
+import { app, ipcMain, dialog, shell, clipboard, BrowserWindow, nativeTheme } from 'electron'
 import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { join, sep } from 'path'
 import { homedir } from 'os'
@@ -23,9 +23,12 @@ import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import { installTool, refreshPath, toolsStatus } from './tools'
 import { isMac, logFilePath } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
+import { exportAllChats, exportChat, fileName } from './chat/exporter'
+import { chatSettings, saveChatSettings } from './chat/settings'
 import type {
   Agent,
   ChatRetryInput,
+  ChatSettings,
   ChatSendInput,
   CreditPool,
   Identity,
@@ -330,6 +333,41 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   )
   ipcMain.handle(IPC.ChatDelete, (_e, chatId: string) => chatService.remove(chatId))
   ipcMain.handle(IPC.ChatSearch, (_e, query: string) => chatService.search(query))
+  ipcMain.handle(IPC.ChatDeleteAll, () => chatService.removeAll())
+  // Export as Markdown: one chat to a file, or every chat into a folder.
+  // Null when the dialog is cancelled.
+  ipcMain.handle(IPC.ChatExport, async (_e, chatId: string, title: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: join(app.getPath('documents'), `${fileName(title)}.md`),
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (canceled || !filePath) return null
+    exportChat(chatId, filePath)
+    return filePath
+  })
+  ipcMain.handle(IPC.ChatExportAll, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a folder for your chats',
+      defaultPath: app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (canceled || !filePaths[0]) return null
+    return { folder: filePaths[0], count: exportAllChats(filePaths[0]) }
+  })
+
+  // --- settings --------------------------------------------------------------
+
+  ipcMain.handle(IPC.SettingsGet, () => chatSettings())
+  ipcMain.handle(IPC.SettingsSet, (_e, changes: Partial<ChatSettings>) =>
+    saveChatSettings(changes)
+  )
+  // Light, dark, or the system's. The window follows through
+  // prefers-color-scheme, and its frame through nativeTheme's 'updated'.
+  ipcMain.handle(IPC.AppSetTheme, (_e, theme: string) => {
+    const value = theme === 'light' || theme === 'dark' ? theme : 'system'
+    db.appState.set('ui:theme', value)
+    nativeTheme.themeSource = value
+  })
 
   // --- updates and support ---------------------------------------------------
 

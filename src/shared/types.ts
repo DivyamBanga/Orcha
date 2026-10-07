@@ -306,6 +306,18 @@ export interface ChatSendInput {
   webSearch?: boolean
 }
 
+// Settings → Profile, Appearance and Defaults. The profile goes into the
+// system prompt of chats started after it changes.
+export interface ChatSettings {
+  name: string
+  about: string // what Orcha should know about you
+  style: string // how it should respond
+  model: string | null // what new chats start on (null: the catalog default)
+  thinking: boolean
+  webSearch: boolean
+  textSize: 'small' | 'default' | 'large'
+}
+
 // Answer a user message again (the new reply becomes a sibling of the old).
 export interface ChatRetryInput {
   chatId: string

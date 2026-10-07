@@ -26,6 +26,7 @@ import type {
   ChatFile,
   ChatRetryInput,
   ChatSendInput,
+  ChatSettings,
   ChatSummary
 } from '../shared/types'
 
@@ -132,6 +133,12 @@ const api = {
     // Stores a file for the next message; what it is comes back.
     attach: (name: string, mime: string, data: Uint8Array): Promise<ChatFile> =>
       ipcRenderer.invoke(IPC.ChatAttach, name, mime, data),
+    // Markdown files; null when the save dialog is cancelled.
+    exportOne: (chatId: string, title: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.ChatExport, chatId, title),
+    exportAll: (): Promise<{ folder: string; count: number } | null> =>
+      ipcRenderer.invoke(IPC.ChatExportAll),
+    removeAll: (): Promise<void> => ipcRenderer.invoke(IPC.ChatDeleteAll),
     stop: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatStop, chatId),
     setLeaf: (chatId: string, leafId: number): Promise<void> =>
       ipcRenderer.invoke(IPC.ChatSetLeaf, chatId, leafId),
@@ -145,6 +152,14 @@ const api = {
   },
   // The models on offer (from the relay; see EvCatalog for updates).
   catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
+  // Settings → Profile, Appearance and Defaults.
+  settings: {
+    get: (): Promise<ChatSettings> => ipcRenderer.invoke(IPC.SettingsGet),
+    set: (changes: Partial<ChatSettings>): Promise<ChatSettings> =>
+      ipcRenderer.invoke(IPC.SettingsSet, changes),
+    setTheme: (theme: 'system' | 'light' | 'dark'): Promise<void> =>
+      ipcRenderer.invoke(IPC.AppSetTheme, theme)
+  },
   tools: {
     status: (): Promise<ToolsStatus> => ipcRenderer.invoke(IPC.ToolsStatus),
     install: (name: ToolName): Promise<void> => ipcRenderer.invoke(IPC.ToolsInstall, name)

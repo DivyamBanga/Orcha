@@ -14,7 +14,6 @@ import {
   type TurnInput,
   type TurnResult
 } from './adapter'
-import { readAttachment } from './attachments'
 
 // Claude through the relay (a guest's chats). The relay holds the real key
 // and meters every reply against the guest's Claude budget.
@@ -26,7 +25,8 @@ const FALLBACK_MODEL = 'claude-opus-4-8'
 
 export function anthropicAdapter(
   relay: { relay: string; token: string },
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  load: FileLoader
 ): ChatAdapter {
   const client = new Anthropic({
     baseURL: `${relay.relay}/anthropic`,
@@ -38,7 +38,7 @@ export function anthropicAdapter(
 
   return {
     async run(turn, emit, signal) {
-      const params = requestFor(turn, readAttachment)
+      const params = requestFor(turn, load)
       const stream = client.beta.messages.stream(params, {
         signal,
         headers: mediaHeader(turn.history)

@@ -194,7 +194,7 @@ export const UserMessage = memo(function UserMessage({
     <div data-message={message.id} className="msg-in group my-5 flex flex-col items-end">
       {message.files.length > 0 && <SentFiles files={message.files} />}
       {message.text && (
-        <div className="max-w-[85%] select-text whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+        <div className="max-w-[85%] select-text whitespace-pre-wrap break-words chat-text rounded-2xl bg-surface-2 px-4 py-2.5 leading-relaxed text-zinc-100">
           {message.text}
         </div>
       )}
@@ -296,7 +296,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         </div>
       ))}
       {text ? (
-        <Markdown text={text} className="text-[14px] text-zinc-200" />
+        <Markdown text={text} className="chat-text text-zinc-200" />
       ) : (
         streaming &&
         !thinkingText && (

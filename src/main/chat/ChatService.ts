@@ -4,9 +4,16 @@ import { catalog } from '../catalog'
 import * as db from '../db'
 import { chats, messages, searchMessages } from './store'
 import { buildSystemPrompt } from './prompt'
+import { chatSettings } from './settings'
 import { anthropicAdapter } from './anthropic'
 import { responsesAdapter } from './responses'
-import { hasAttachment, MAX_FILE_BYTES, saveAttachment } from './attachments'
+import {
+  hasAttachment,
+  MAX_FILE_BYTES,
+  readAttachment,
+  saveAttachment,
+  sweepAttachments
+} from './attachments'
 import {
   estimateCost,
   TurnAborted,
@@ -38,7 +45,10 @@ const MAX_FILES = 20
 export class ChatService {
   private running = new Map<string, AbortController>()
 
-  constructor(private push: SendFn) {}
+  constructor(private push: SendFn) {
+    // Files left behind by deleted chats, once startup has settled.
+    setTimeout(() => sweepAttachments(messages.fileHashes()), 30_000).unref()
+  }
 
   list(): ChatSummary[] {
     return chats.list()
@@ -65,6 +75,14 @@ export class ChatService {
   remove(chatId: string): void {
     this.stop(chatId)
     chats.remove(chatId)
+    this.changed()
+  }
+
+  // Settings → Data → Delete all chats: every chat and every attached file.
+  removeAll(): void {
+    for (const controller of this.running.values()) controller.abort()
+    chats.removeAll()
+    sweepAttachments(new Set(), true)
     this.changed()
   }
 
@@ -198,7 +216,7 @@ export class ChatService {
     const chat = chats.get(chatId)!
     let system = chat.systemPrompt
     if (!system) {
-      system = buildSystemPrompt({ now: new Date() })
+      system = buildSystemPrompt({ now: new Date(), profile: chatSettings() })
       chats.update(chatId, { systemPrompt: system })
     }
     const history = messages
@@ -337,8 +355,8 @@ export class ChatService {
     const project = chat?.projectId ? db.projects.get(chat.projectId)?.name : null
     const headers = attributionHeaders(project ?? 'Chat', `chat:${chatId}`)
     return model.provider === 'anthropic'
-      ? anthropicAdapter(relay, headers)
-      : responsesAdapter(relay, headers)
+      ? anthropicAdapter(relay, headers, readAttachment)
+      : responsesAdapter(relay, headers, readAttachment)
   }
 
   private emit(event: ChatStreamEvent): void {

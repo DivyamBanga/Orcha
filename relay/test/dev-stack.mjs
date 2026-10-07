@@ -13,6 +13,7 @@
 //   ORCHA_MD    a reply using every kind of markdown chat renders (table, code, maths)
 //   ORCHA_THINK streams some thinking (a reasoning summary for GPT) before the reply
 //   ORCHA_FILES replies with what the message carried ("Received: image image/webp, …")
+//   ORCHA_SYSTEM replies with the system prompt it was sent
 //
 // Requests the fake upstream receives are appended to .wrangler/dev-upstream.log.
 import { spawn } from 'node:child_process'
@@ -87,10 +88,19 @@ function attachedParts(parsed) {
   return parts.join(', ') || 'nothing'
 }
 
+// The system prompt as sent, for ORCHA_SYSTEM (either API's shape).
+function systemPrompt(parsed) {
+  if (Array.isArray(parsed.system)) return parsed.system.map((b) => b.text).join('\n')
+  if (typeof parsed.system === 'string') return parsed.system
+  const dev = (Array.isArray(parsed.input) ? parsed.input : []).find((m) => m.role === 'developer')
+  return typeof dev?.content === 'string' ? dev.content : 'no system prompt'
+}
+
 function replyFor(parsed) {
   const text = lastUserText(parsed)
   const thinking = text.includes('ORCHA_THINK') ? THINKING : null
   if (text.includes('ORCHA_FILES')) return { reply: `Received: ${attachedParts(parsed)}.`, delay: 30, thinking }
+  if (text.includes('ORCHA_SYSTEM')) return { reply: systemPrompt(parsed), delay: 5, thinking }
   if (text.includes('ORCHA_SLOW')) return { reply: SLOW_REPLY, delay: 600, thinking }
   if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60, thinking }
   if (text.includes('ORCHA_MD')) return { reply: MD_REPLY, delay: 15, thinking }

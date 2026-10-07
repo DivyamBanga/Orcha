@@ -136,6 +136,10 @@ export const chats = {
     database().prepare('DELETE FROM chats WHERE id = ?').run(id)
   },
 
+  removeAll(): void {
+    database().prepare('DELETE FROM chats').run()
+  },
+
   detail(id: string): ChatDetail | null {
     const chat = chats.get(id)
     if (!chat) return null
@@ -163,6 +167,14 @@ export const messages = {
   // The conversation from the first message down to `leafId`.
   path(chatId: string, leafId: number): ChatMessage[] {
     return pathTo(messages.all(chatId), leafId)
+  },
+
+  // Every stored file some message still refers to.
+  fileHashes(): Set<string> {
+    const rows = database().prepare('SELECT files FROM messages WHERE files IS NOT NULL').all() as {
+      files: string
+    }[]
+    return new Set(rows.flatMap((r) => parse<ChatFile[]>(r.files, []).map((f) => f.hash)))
   },
 
   insert(opts: {

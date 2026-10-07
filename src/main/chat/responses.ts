@@ -8,7 +8,6 @@ import {
   type TurnInput,
   type TurnResult
 } from './adapter'
-import { readAttachment } from './attachments'
 
 // GPT models on Azure through the relay (guests' chats, and the host's own),
 // over the Responses API. Nothing is stored server-side (store: false): every
@@ -16,7 +15,8 @@ import { readAttachment } from './attachments'
 
 export function responsesAdapter(
   relay: { relay: string; token: string },
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  load: FileLoader
 ): ChatAdapter {
   const post = (
     body: string,
@@ -50,11 +50,7 @@ export function responsesAdapter(
         model: null
       })
       try {
-        const response = await post(
-          requestBody(turn, readAttachment),
-          signal,
-          mediaHeader(turn.history)
-        )
+        const response = await post(requestBody(turn, load), signal, mediaHeader(turn.history))
         if (!response.ok || !response.body) {
           throw new Error(
             ((await response.text()) || `The relay answered ${response.status}.`).replace(

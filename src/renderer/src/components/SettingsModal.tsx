@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { useStore, useIsGuest } from '../store'
+import { chatModels, defaultModel, NEW_CHAT, useChatStore } from '../chatStore'
 import { levelColors, poolLevel, usd } from '../money'
 import Modal from './Modal'
 import GuestsPanel from './GuestsPanel'
-import { Check as CheckIcon, Circle } from './Icon'
+import { Check as CheckIcon, Circle, Close } from './Icon'
 import type { CodexStatus, MobileInfo } from '../../../shared/types'
 
 function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
@@ -18,22 +19,318 @@ function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element
   )
 }
 
+type Section =
+  'Profile' | 'Appearance' | 'Defaults' | 'Data' | 'Credits' | 'Guests' | 'Integrations'
+
 function SettingsModal(): React.JSX.Element {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
   const isGuest = useIsGuest()
+  const [section, setSection] = useState<Section>('Profile')
   const onClose = (): void => setShow(false)
+  const sections: Section[] = isGuest
+    ? ['Profile', 'Appearance', 'Defaults', 'Data', 'Credits']
+    : ['Profile', 'Appearance', 'Defaults', 'Data', 'Guests', 'Integrations']
 
   return (
-    <Modal open={show} onClose={onClose} width={480}>
-      <div className="mb-5 text-[15px] font-semibold tracking-tight text-zinc-50">Settings</div>
-      {isGuest ? <GuestSettings onClose={onClose} /> : <HostSettings />}
-      <div className="flex justify-end">
-        <button onClick={onClose} className="btn btn-ghost">
-          Close
-        </button>
+    <Modal open={show} onClose={onClose} width={780} bare>
+      <div className="flex h-[min(620px,82vh)]">
+        <nav className="flex w-48 shrink-0 flex-col gap-px border-r border-edge bg-surface-0/40 p-3">
+          <div className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight text-zinc-50">
+            Settings
+          </div>
+          {sections.map((s) => (
+            <button
+              key={s}
+              onClick={() => setSection(s)}
+              data-active={section === s}
+              className="settings-nav"
+            >
+              {s}
+            </button>
+          ))}
+        </nav>
+        <div className="relative min-w-0 flex-1 overflow-y-auto px-7 py-6">
+          <button
+            onClick={onClose}
+            className="btn btn-ghost btn-icon absolute right-3 top-3 text-zinc-500"
+            title="Close"
+          >
+            <Close size={14} />
+          </button>
+          {section === 'Profile' && <ProfileSection />}
+          {section === 'Appearance' && <AppearanceSection />}
+          {section === 'Defaults' && <DefaultsSection />}
+          {section === 'Data' && <DataSection />}
+          {section === 'Credits' && <GuestSettings onClose={onClose} />}
+          {section === 'Guests' && <GuestsPanel />}
+          {section === 'Integrations' && <HostSettings />}
+        </div>
       </div>
     </Modal>
+  )
+}
+
+function Heading({ title, hint }: { title: string; hint?: string }): React.JSX.Element {
+  return (
+    <div className="mb-5">
+      <div className="text-[15px] font-semibold tracking-tight text-zinc-50">{title}</div>
+      {hint && <div className="mt-1 text-[12.5px] text-zinc-500">{hint}</div>}
+    </div>
+  )
+}
+
+function Row({
+  label,
+  hint,
+  children
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-6 border-b border-edge py-3.5 last:border-b-0">
+      <div className="min-w-0">
+        <div className="text-[13px] text-zinc-200">{label}</div>
+        {hint && <div className="mt-0.5 text-[12px] text-zinc-500">{hint}</div>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  )
+}
+
+function Switch({
+  on,
+  onChange
+}: {
+  on: boolean
+  onChange: (on: boolean) => void
+}): React.JSX.Element {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      data-on={on}
+      onClick={() => onChange(!on)}
+      className="switch"
+    />
+  )
+}
+
+// A text setting saved as you type (a beat after you stop) and when you leave
+// the field, so closing Settings never loses it.
+function TextSetting({
+  field,
+  label,
+  hint,
+  rows
+}: {
+  field: 'name' | 'about' | 'style'
+  label: string
+  hint?: string
+  rows?: number
+}): React.JSX.Element {
+  const saved = useStore((s) => s.settings?.[field] ?? '')
+  const save = useStore((s) => s.saveSettings)
+  const [value, setValue] = useState(saved)
+  const latest = useRef(value)
+  useEffect(() => {
+    latest.current = value
+    if (value === saved) return
+    const timer = setTimeout(() => save({ [field]: value }), 500)
+    return () => clearTimeout(timer)
+  }, [value, saved, field, save])
+  // Leaving the section (or Settings) mid-typing still saves.
+  useEffect(
+    () => () => {
+      if (latest.current !== useStore.getState().settings?.[field]) {
+        useStore.getState().saveSettings({ [field]: latest.current })
+      }
+    },
+    [field]
+  )
+  return (
+    <label className="mb-5 block">
+      <span className="field-label">{label}</span>
+      {rows ? (
+        <textarea
+          value={value}
+          rows={rows}
+          onChange={(e) => setValue(e.target.value)}
+          className="input h-auto resize-none py-2 leading-relaxed"
+        />
+      ) : (
+        <input value={value} onChange={(e) => setValue(e.target.value)} className="input" />
+      )}
+      {hint && <span className="mt-1.5 block text-[12px] text-zinc-500">{hint}</span>}
+    </label>
+  )
+}
+
+function ProfileSection(): React.JSX.Element | null {
+  const loaded = useStore((s) => s.settings !== null)
+  if (!loaded) return null
+  return (
+    <>
+      <Heading title="Profile" hint="Chats you start from now on know this." />
+      <TextSetting field="name" label="What should Orcha call you?" />
+      <TextSetting
+        field="about"
+        label="What should it know about you?"
+        hint="Your work, what you're learning, anything that helps it help you."
+        rows={4}
+      />
+      <TextSetting
+        field="style"
+        label="How should it respond?"
+        hint="For example: short answers, plain words, explain code like I'm new to it."
+        rows={4}
+      />
+    </>
+  )
+}
+
+function AppearanceSection(): React.JSX.Element {
+  const textSize = useStore((s) => s.settings?.textSize ?? 'default')
+  const save = useStore((s) => s.saveSettings)
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>('system')
+  useEffect(() => {
+    window.orcha.ui
+      .getState('theme')
+      .then((t) => setTheme(t === 'light' || t === 'dark' ? t : 'system'))
+      .catch(() => {})
+  }, [])
+  const pickTheme = (t: 'system' | 'light' | 'dark'): void => {
+    setTheme(t)
+    window.orcha.settings.setTheme(t).catch(() => {})
+  }
+  return (
+    <>
+      <Heading title="Appearance" />
+      <Row label="Theme" hint="System follows your computer's light or dark setting.">
+        <div className="segmented w-64">
+          {(['system', 'light', 'dark'] as const).map((t) => (
+            <button key={t} data-active={theme === t} onClick={() => pickTheme(t)}>
+              {t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Chat text" hint="The size of messages in chats.">
+        <div className="segmented w-64">
+          {(['small', 'default', 'large'] as const).map((size) => (
+            <button
+              key={size}
+              data-active={textSize === size}
+              onClick={() => save({ textSize: size })}
+            >
+              {size[0].toUpperCase() + size.slice(1)}
+            </button>
+          ))}
+        </div>
+      </Row>
+    </>
+  )
+}
+
+function DefaultsSection(): React.JSX.Element | null {
+  const settings = useStore((s) => s.settings)
+  const catalog = useStore((s) => s.catalog)
+  const identity = useStore((s) => s.identity)
+  const save = useStore((s) => s.saveSettings)
+  if (!settings) return null
+  const models = chatModels(catalog, identity).filter((m) => !m.blocked)
+  const current = settings.model ?? defaultModel(catalog, identity) ?? ''
+  return (
+    <>
+      <Heading
+        title="Defaults"
+        hint="Where a new chat starts. You can change any of it in the chat."
+      />
+      <Row label="Model" hint="What new chats use.">
+        <select
+          value={current}
+          onChange={(e) => save({ model: e.target.value })}
+          className="input w-56"
+        >
+          {(['anthropic', 'azure'] as const).map((provider) => {
+            const group = models.filter((m) => m.provider === provider)
+            if (group.length === 0) return null
+            return (
+              <optgroup key={provider} label={provider === 'anthropic' ? 'Claude' : 'GPT'}>
+                {group.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </optgroup>
+            )
+          })}
+        </select>
+      </Row>
+      <Row label="Think" hint="Take time to reason before answering. Slower, and uses more credit.">
+        <Switch
+          on={settings.thinking}
+          onChange={(on) => {
+            save({ thinking: on })
+            useChatStore.setState({ thinking: on })
+          }}
+        />
+      </Row>
+      <Row label="Search the web" hint="Look things up when it helps.">
+        <Switch
+          on={settings.webSearch}
+          onChange={(on) => {
+            save({ webSearch: on })
+            useChatStore.setState({ webSearch: on })
+          }}
+        />
+      </Row>
+    </>
+  )
+}
+
+function DataSection(): React.JSX.Element {
+  const [exported, setExported] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const exportAll = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const result = await window.orcha.chat.exportAll()
+      if (result) {
+        setExported(
+          `Saved ${result.count} chat${result.count === 1 ? '' : 's'} to ${result.folder}`
+        )
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+  const deleteAll = async (): Promise<void> => {
+    if (!confirm('Delete every chat and everything attached to them? This can’t be undone.')) return
+    await window.orcha.chat.removeAll()
+    useChatStore.setState({ details: {}, live: {}, running: {}, chats: [] })
+    const s = useStore.getState()
+    if (s.activeId?.startsWith('chat:')) s.setActive(NEW_CHAT)
+  }
+  return (
+    <>
+      <Heading title="Data" hint="Your chats live on this computer." />
+      <Row
+        label="Export chats"
+        hint={exported ?? 'Every chat as a Markdown file, in a folder you choose.'}
+      >
+        <button onClick={exportAll} disabled={busy} className="btn btn-secondary">
+          Export…
+        </button>
+      </Row>
+      <Row label="Delete all chats" hint="Removes every chat and the files attached to them.">
+        <button onClick={deleteAll} className="btn btn-danger">
+          Delete all
+        </button>
+      </Row>
+    </>
   )
 }
 
@@ -66,7 +363,7 @@ function GuestSettings({ onClose }: { onClose: () => void }): React.JSX.Element 
 
   return (
     <section className="mb-5">
-      <div className="eyebrow mb-2.5">Credits</div>
+      <Heading title="Credits" />
       <div className="card p-3.5">
         <div className="mb-3 text-[12.5px] text-zinc-400">
           Shared with you by <span className="text-zinc-200">{guest?.hostName}</span>
@@ -159,8 +456,7 @@ function HostSettings(): React.JSX.Element {
 
   return (
     <>
-      <GuestsPanel />
-
+      <Heading title="Integrations" />
       <section className="mb-5">
         <div className="eyebrow mb-2.5">Phone</div>
         <div className="card p-3.5">

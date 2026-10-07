@@ -37,7 +37,8 @@ function App(): React.JSX.Element {
       s.loadGuest(),
       window.orcha.ui.getState('onboarded'),
       s.loadIdentity().catch(() => {}),
-      loadChats().catch(() => {})
+      loadChats().catch(() => {}),
+      s.loadSettings().catch(() => {})
     ]).then(async ([, , done]) => {
       setOnboarded(done === '1')
       // Awaited so the restored tab is set before the curtain parts — the

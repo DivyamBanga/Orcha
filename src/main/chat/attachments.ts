@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync
+} from 'node:fs'
 import { join } from 'node:path'
 import { app, protocol } from 'electron'
 import { officeText, type OfficeKind } from './officeText'
@@ -103,12 +112,14 @@ export function saveAttachment(name: string, mime: string, bytes: Uint8Array): C
   }
 
   mkdirSync(dir(), { recursive: true })
-  const path = join(dir(), blobName(file))
-  if (!existsSync(path)) writeFileSync(path, bytes)
-  if (office) {
-    const textPath = join(dir(), `${hash}.txt`)
-    if (!existsSync(textPath)) writeFileSync(textPath, text!)
+  // Written once; attaching the same file again only marks it fresh, so the
+  // sweep below never takes a file that's about to be sent.
+  const keep = (path: string, data: Uint8Array | string): void => {
+    if (existsSync(path)) utimesSync(path, new Date(), new Date())
+    else writeFileSync(path, data)
   }
+  keep(join(dir(), blobName(file)), bytes)
+  if (office) keep(join(dir(), `${hash}.txt`), text!)
   return file
 }
 
@@ -120,6 +131,29 @@ export function hasAttachment(file: ChatFile): boolean {
 export function readAttachment(file: ChatFile): { base64: string } | { text: string } {
   if (file.kind === 'text') return { text: readFileSync(join(dir(), `${file.hash}.txt`), 'utf8') }
   return { base64: readFileSync(join(dir(), blobName(file))).toString('base64') }
+}
+
+// Deletes stored files no message refers to any more (their chats were
+// deleted, or they were attached and never sent) once they're a day old, so
+// nothing being attached right now is touched. `everything` clears it all.
+export function sweepAttachments(keep: Set<string>, everything = false): void {
+  let names: string[]
+  try {
+    names = readdirSync(dir())
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - 86_400_000
+  for (const name of names) {
+    const path = join(dir(), name)
+    try {
+      if (everything || (!keep.has(name.slice(0, 64)) && statSync(path).mtimeMs < cutoff)) {
+        rmSync(path, { force: true })
+      }
+    } catch {
+      // in use or already gone
+    }
+  }
 }
 
 // Attached images, for the window to show as orcha-file://f/<hash>.<ext>.
