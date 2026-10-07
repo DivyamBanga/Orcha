@@ -304,7 +304,62 @@ try {
   assert.equal(notAdmin.status, 401)
   console.log('balance/usage/admin views consistent; bad tokens refused')
 
+  // The model catalog, as every paired device reads it.
+  const models = await call('/v1/me/models', { headers: guestHeaders }).then((r) => r.json())
+  assert.ok(models.models.some((m) => m.id === 'gpt-6-sol' && m.codex && m.pool === 'sol'))
+  assert.ok(models.models.some((m) => m.id === 'claude-sonnet-5' && m.default))
+  assert.ok(models.pools.every((p) => !p.blocked))
+  console.log('model catalog served')
+
+  // A chat request with a 6 MB image goes through when "model" comes first; a
+  // big body with "model" anywhere else is refused rather than parsed whole.
+  const image = 'data:image/png;base64,' + 'A'.repeat(6_000_000)
+  const bigFirst = await call('/openai/v1/responses', {
+    method: 'POST',
+    headers: { ...guestHeaders, 'x-orcha-media': '1,6000000' },
+    body: JSON.stringify({ model: 'gpt-6-sol', stream: true, input: [{ role: 'user', content: [{ type: 'input_image', image_url: image }] }] })
+  })
+  assert.equal(bigFirst.status, 200)
+  await bigFirst.text()
+  const bigLast = await call('/openai/v1/responses', {
+    method: 'POST',
+    headers: guestHeaders,
+    body: JSON.stringify({ stream: true, input: [{ role: 'user', content: image.slice(0, 400_000) }], model: 'gpt-6-sol' })
+  })
+  assert.equal(bigLast.status, 400)
+  assert.match(await bigLast.text(), /first/)
+  console.log('6 MB model-first body proxied; big model-last body refused')
+
+  // The host's own token: never Claude, Azure uncapped but tracked, not a guest.
+  const host = await admin('/admin/host', { hostName: 'Div' })
+  assert.ok(host.token?.startsWith('og_'), JSON.stringify(host))
+  const hostHeaders = { ...guestHeaders, authorization: `Bearer ${host.token}` }
+  const hostModels = await call('/v1/me/models', { headers: hostHeaders }).then((r) => r.json())
+  assert.equal(hostModels.pools.find((p) => p.id === 'claude').blocked, true)
+  const hostClaude = await call('/anthropic/v1/messages', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ model: 'claude-sonnet-5', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] })
+  })
+  assert.equal(hostClaude.status, 400)
+  const hostSol = await call('/openai/v1/responses', {
+    method: 'POST',
+    headers: hostHeaders,
+    body: JSON.stringify({ model: 'gpt-6-sol', input: 'hi', stream: true })
+  })
+  assert.equal(hostSol.status, 200)
+  await hostSol.text()
+  await sleep(500)
+  const hostBalance = await call(`/v1/me/balance?since=${Date.now() - 60_000}`, { headers: hostHeaders }).then((r) => r.json())
+  assert.equal(hostBalance.guest.role, 'host')
+  assert.ok(hostBalance.guest.pools.find((p) => p.pool === 'sol').spent > 0, 'host Sol spend tracked')
+  assert.ok(!(await admin('/admin/guests')).some((g) => g.role === 'host'), 'host hidden from guests')
+  const rotated = await admin('/admin/host', { hostName: 'Div' })
   await sleep(4500) // past the auth cache
+  assert.equal((await call('/v1/me/balance', { headers: hostHeaders })).status, 401)
+  assert.equal((await call('/v1/me/balance', { headers: { authorization: `Bearer ${rotated.token}` } })).status, 200)
+  console.log('host: Claude refused, Azure tracked uncapped, hidden from guests, token rotates')
+
   assert.equal((await admin(`/admin/guests/${created.guest.id}/remove`, {})).removed, true)
   assert.equal((await call('/v1/me/balance', { headers: guestHeaders })).status, 401)
   assert.equal((await admin('/admin/guests')).length, 0)

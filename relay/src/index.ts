@@ -1,6 +1,6 @@
 import { Ledger, type GuestState } from './ledger'
 import { anthropicMeter, peekModel, responsesMeter, type Meter } from './meter'
-import { POOLS, poolForResponsesModel, type Pool } from './pricing'
+import { catalog, POOLS, poolForResponsesModel, responsesModelIds, type Pool } from './pricing'
 import { joinPage, visitorFrom } from './join'
 
 export { Ledger }
@@ -38,7 +38,8 @@ const DROP_HEADERS = new Set([
   'x-forwarded-proto',
   'x-real-ip',
   'x-orcha-project',
-  'x-orcha-session'
+  'x-orcha-session',
+  'x-orcha-media'
 ])
 
 function ledger(env: Env): DurableObjectStub<Ledger> {
@@ -103,6 +104,13 @@ async function authorizeGuest(env: Env, token: string | null): Promise<GuestStat
 
 // Why a guest may not spend from `pool` right now, or null if they may.
 function blockReason(guest: GuestState, pool: Pool): string | null {
+  // The host is never capped, only tracked, and never spends Anthropic API
+  // credits: their own Claude runs on their subscription, not through here.
+  if (guest.role === 'host') {
+    return POOLS[pool]?.provider === 'anthropic'
+      ? 'Orcha relay: Claude is not billed through the relay for the host.'
+      : null
+  }
   if (guest.status === 'revoked') {
     return `Orcha: access to ${guest.hostName}'s credits was turned off.`
   }
@@ -144,6 +152,14 @@ function attribution(request: Request): Attribution {
     project: clean(request.headers.get('x-orcha-project')),
     session: clean(request.headers.get('x-orcha-session'))
   }
+}
+
+// X-Orcha-Media: "<count>,<base64 bytes>" of the images/files in a chat
+// request, so an interrupted reply's input estimate doesn't count them as text.
+function mediaHint(request: Request): { count: number; bytes: number } | undefined {
+  const [count, bytes] = (request.headers.get('x-orcha-media') ?? '').split(',').map(Number)
+  if (!Number.isFinite(count) || !Number.isFinite(bytes) || count < 0 || bytes < 0) return undefined
+  return { count, bytes }
 }
 
 function forwardHeaders(request: Request): Headers {
@@ -278,7 +294,9 @@ async function proxyResponses(
     return openaiError(
       400,
       'model_not_available',
-      `Orcha relay: model "${model ?? '?'}" is not available. Use gpt-6-sol or gpt-6-astra.`
+      model
+        ? `Orcha relay: model "${model}" is not available. Use ${responsesModelIds().join(' or ')}.`
+        : 'Orcha relay: put "model" first in the request body.'
     )
   }
   const reason = blockReason(guest, pool)
@@ -302,7 +320,8 @@ async function proxyResponses(
   const who = attribution(request)
   const meter = responsesMeter(upstream.headers.get('content-type') ?? '', {
     model,
-    requestBytes: body.byteLength
+    requestBytes: body.byteLength,
+    media: mediaHint(request)
   })
   return meteredResponse(upstream, meter, ctx, () => cancel.abort(), (usage) =>
     ledger(env).record({ guestId: guest.id, pool, usage, ...who })
@@ -337,6 +356,17 @@ async function guestAccount(request: Request, env: Env, path: string, url: URL):
   }
   if (path === '/v1/me/usage') {
     return json(await ledger(env).usage(guest.id, since))
+  }
+  // What this device can use. Static, so no ledger read.
+  if (path === '/v1/me/models') {
+    return json({
+      pools: Object.entries(POOLS).map(([id, p]) => ({
+        id,
+        ...p,
+        blocked: guest.role === 'host' && p.provider === 'anthropic'
+      })),
+      models: catalog()
+    })
   }
   return json({ error: 'Not found' }, 404)
 }
@@ -374,6 +404,15 @@ async function admin(request: Request, env: Env, path: string, url: URL): Promis
 
   if (path === '/admin/guests' && request.method === 'GET') {
     return json(await stub.listGuests())
+  }
+  // A token for the host's own Orcha (chat and Codex on their Azure credits).
+  // Asking again replaces it.
+  if (path === '/admin/host' && request.method === 'POST') {
+    const hostName = String(body.hostName ?? '').trim().slice(0, 60) || 'Host'
+    const token = `og_${randomToken(32)}`
+    const host = await stub.setHostToken(hostName, await sha256(token))
+    authCache.clear()
+    return json({ token, host })
   }
   if (path === '/admin/guests' && request.method === 'POST') {
     const name = String(body.name ?? '').trim().slice(0, 60)

@@ -197,6 +197,27 @@ test('peekModel reads the first field without a full parse, falls back otherwise
   assert.equal(peekModel(enc.encode('not json').buffer as ArrayBuffer), null)
 })
 
+test('peekModel: big bodies are only read model-first, never parsed whole', () => {
+  const image = 'A'.repeat(5_000_000)
+  const first = enc.encode(JSON.stringify({ model: 'gpt-6-sol', input: [{ image_url: image }] }))
+  const t0 = performance.now()
+  assert.equal(peekModel(first.buffer as ArrayBuffer), 'gpt-6-sol')
+  assert.ok(performance.now() - t0 < 2, 'model-first 5 MB body read from its head')
+  const last = enc.encode(JSON.stringify({ input: [{ image_url: image.slice(0, 300_000) }], model: 'gpt-6-sol' }))
+  assert.equal(peekModel(last.buffer as ArrayBuffer), null)
+})
+
+test('responses: an interrupted chat reply does not count attached images as text', () => {
+  // 1 MB of base64 image in a 1.04 MB body: ~10K text tokens + one image.
+  const meter = responsesMeter('text/event-stream', {
+    model: 'gpt-6-sol',
+    requestBytes: 1_040_000,
+    media: { count: 1, bytes: 1_000_000 }
+  })
+  const u = finishCut(meter, responsesStream(false), 11, 1500)!
+  assert.equal(u.inputTokens, 10_000 + 1600)
+})
+
 // The Workers free plan allows 10ms of CPU per request. Meter a long reply
 // (~1.2 MB of SSE, a few thousand events, in realistic 1 KB network reads) and
 // require it to stay far under that, leaving room for routing and auth.

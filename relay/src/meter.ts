@@ -299,7 +299,14 @@ interface ResponsesObject {
 export interface ResponsesHint {
   model: string
   requestBytes: number
+  // Base64 images/files inside the request (Orcha chat says so in a header):
+  // they'd read as ~4 chars a token, far more than they really cost.
+  media?: { count: number; bytes: number }
 }
+
+// What an attached image or file is assumed to cost in input tokens when a
+// reply is cut off before the provider reported the real number.
+const TOKENS_PER_MEDIA = 1600
 
 function responsesUsage(response: ResponsesObject, model: string): MeteredUsage | null {
   const usage = response.usage
@@ -338,7 +345,9 @@ export function responsesMeter(contentType: string, hint: ResponsesHint): Meter 
   // ratio of the guest's previous exact reply on this model.
   const estimated = (outputTokens: number, webSearches: number): MeteredUsage => {
     const line = emptyLine(hint.model)
-    line.inputTokens = Math.ceil(hint.requestBytes / 4)
+    const mediaBytes = Math.min(hint.media?.bytes ?? 0, hint.requestBytes)
+    line.inputTokens =
+      Math.ceil((hint.requestBytes - mediaBytes) / 4) + (hint.media?.count ?? 0) * TOKENS_PER_MEDIA
     line.outputTokens = outputTokens
     return withTotals([line], hint.model, { webSearches, estimated: true })
   }
@@ -411,11 +420,16 @@ export function responsesMeter(contentType: string, hint: ResponsesHint): Meter 
 // The top-level "model" of a Responses request, read from the first bytes of
 // the body without parsing it (request bodies carry the whole conversation and
 // can run to megabytes). Codex serializes `model` as the first field; the full
-// parse is only a fallback.
+// parse is only a fallback, for small bodies.
+const FULL_PARSE_MAX_BYTES = 256 * 1024
+
 export function peekModel(body: ArrayBuffer): string | null {
   const head = new TextDecoder().decode(body.slice(0, 2048))
   const match = head.match(/^\s*\{\s*"model"\s*:\s*"([^"]+)"/)
   if (match) return match[1]
+  // A full parse of a body carrying images costs more CPU than a request is
+  // allowed on the free plan; clients put "model" first (Orcha and Codex do).
+  if (body.byteLength > FULL_PARSE_MAX_BYTES) return null
   try {
     const parsed = JSON.parse(new TextDecoder().decode(body)) as { model?: unknown }
     return typeof parsed.model === 'string' ? parsed.model : null

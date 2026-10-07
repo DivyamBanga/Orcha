@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { costOf, poolForResponsesModel } from '../src/pricing.ts'
+import { catalog, costOf, POOLS, poolForResponsesModel } from '../src/pricing.ts'
 import type { MeteredUsage, UsageLine } from '../src/meter.ts'
 
 const line = (model: string, t: Partial<UsageLine> = {}): UsageLine => ({
@@ -97,4 +97,29 @@ test('responses models map to pools; anything else is refused', () => {
   assert.equal(poolForResponsesModel('gpt-6-sol'), 'sol')
   assert.equal(poolForResponsesModel('gpt-6-astra'), 'astra')
   assert.equal(poolForResponsesModel('gpt-5-codex'), null)
+})
+
+test('the catalog: every model priced, in a known pool, with one default per provider', () => {
+  const models = catalog()
+  assert.ok(models.length >= 6)
+  for (const m of models) {
+    assert.ok(m.pool in POOLS, `${m.id} pool`)
+    assert.equal(m.provider, POOLS[m.pool].provider, `${m.id} provider`)
+    assert.ok(m.rates.in > 0 && m.rates.out > 0, `${m.id} rates`)
+    if (m.provider === 'azure') assert.equal(poolForResponsesModel(m.id), m.pool)
+  }
+  for (const provider of ['anthropic', 'azure']) {
+    assert.equal(models.filter((m) => m.provider === provider && m.default).length, 1, provider)
+    assert.equal(models.filter((m) => m.provider === provider && m.title).length, 1, provider)
+  }
+  // The catalog shows the same rates billing uses.
+  const sonnet = models.find((m) => m.id === 'claude-sonnet-5')!
+  close(costOf('claude', usage([line('claude-sonnet-5', { inputTokens: 1e6 })])), sonnet.rates.in)
+  const astra = models.find((m) => m.id === 'gpt-6-astra')!
+  close(costOf('astra', usage([line('gpt-6-astra', { outputTokens: 1e6 })])), astra.rates.out)
+})
+
+test('an Azure line naming an unknown model bills at the priciest model in its pool', () => {
+  const u = usage([line('gpt-6-something', { outputTokens: 1e6 })])
+  close(costOf('sol', u), 10)
 })

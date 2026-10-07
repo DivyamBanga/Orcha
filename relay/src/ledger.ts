@@ -22,6 +22,9 @@ export interface GuestState {
   name: string
   hostName: string
   status: 'active' | 'revoked'
+  // 'host' is the person running the relay, using it from their own Orcha:
+  // never capped, only tracked (and never allowed Anthropic spend — see index.ts).
+  role: 'guest' | 'host'
   pools: PoolState[]
 }
 
@@ -112,8 +115,15 @@ export class Ledger extends DurableObject<LedgerEnv> {
       CREATE INDEX IF NOT EXISTS sessions_recent ON sessions (guest_id, updated_at);
       CREATE TABLE IF NOT EXISTS topups (guest_id TEXT, pool TEXT, amount REAL, ts INTEGER);
     `)
+    try {
+      this.sql.exec(`ALTER TABLE guests ADD COLUMN role TEXT NOT NULL DEFAULT 'guest'`)
+    } catch {
+      // already there
+    }
   }
 
+  // Every pool the relay knows, whether or not this guest has a row for it yet
+  // (a model added after they were invited starts at $0 until topped up).
   private guestRow(where: string, value: string): GuestState | null {
     const rows = this.sql
       .exec<{
@@ -121,29 +131,34 @@ export class Ledger extends DurableObject<LedgerEnv> {
         name: string
         host_name: string
         status: string
-      }>(`SELECT id, name, host_name, status FROM guests WHERE ${where} = ?`, value)
+        role: string
+      }>(`SELECT id, name, host_name, status, role FROM guests WHERE ${where} = ?`, value)
       .toArray()
     const row = rows[0]
     if (!row) return null
-    const pools = this.sql
-      .exec<{ pool: string; cap: number; spent: number }>(
-        'SELECT pool, cap, spent FROM pools WHERE guest_id = ?',
-        row.id
-      )
-      .toArray()
-      .filter((p) => p.pool in POOLS)
-      .map((p) => ({
-        pool: p.pool as Pool,
-        label: POOLS[p.pool as Pool].label,
-        cap: p.cap,
-        spent: p.spent
+    const stored = new Map(
+      this.sql
+        .exec<{ pool: string; cap: number; spent: number }>(
+          'SELECT pool, cap, spent FROM pools WHERE guest_id = ?',
+          row.id
+        )
+        .toArray()
+        .map((p) => [p.pool, p])
+    )
+    const pools = Object.entries(POOLS)
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([pool, info]) => ({
+        pool,
+        label: info.label,
+        cap: stored.get(pool)?.cap ?? 0,
+        spent: stored.get(pool)?.spent ?? 0
       }))
-    pools.sort((a, b) => POOLS[a.pool].order - POOLS[b.pool].order)
     return {
       id: row.id,
       name: row.name,
       hostName: row.host_name,
       status: row.status === 'revoked' ? 'revoked' : 'active',
+      role: row.role === 'host' ? 'host' : 'guest',
       pools
     }
   }
@@ -226,10 +241,11 @@ export class Ledger extends DurableObject<LedgerEnv> {
     const cacheWrite = u.cacheWrite5mTokens + u.cacheWrite1hTokens
 
     this.sql.exec(
-      'UPDATE pools SET spent = spent + ? WHERE guest_id = ? AND pool = ?',
-      cost,
+      `INSERT INTO pools (guest_id, pool, cap, spent) VALUES (?, ?, 0, ?)
+       ON CONFLICT (guest_id, pool) DO UPDATE SET spent = spent + excluded.spent`,
       event.guestId,
-      event.pool
+      event.pool,
+      cost
     )
     this.sql.exec(
       `INSERT INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -376,10 +392,38 @@ export class Ledger extends DurableObject<LedgerEnv> {
     return true
   }
 
+  // The host's own token: created on first use, and replaced on every later
+  // call (the old one stops working). The host never shows in listGuests.
+  setHostToken(hostName: string, tokenHash: string): GuestState {
+    const existing = this.sql
+      .exec<{ id: string }>(`SELECT id FROM guests WHERE role = 'host'`)
+      .toArray()[0]
+    if (existing) {
+      this.sql.exec(
+        'UPDATE guests SET token_hash = ?, host_name = ? WHERE id = ?',
+        tokenHash,
+        hostName,
+        existing.id
+      )
+      return this.guestRow('id', existing.id)!
+    }
+    const id = crypto.randomUUID()
+    this.sql.exec(
+      `INSERT INTO guests (id, name, host_name, token_hash, status, created_at, role)
+       VALUES (?, ?, ?, ?, 'active', ?, 'host')`,
+      id,
+      hostName,
+      hostName,
+      tokenHash,
+      Date.now()
+    )
+    return this.guestRow('id', id)!
+  }
+
   listGuests(): (GuestState & { createdAt: number; lastActiveAt: number | null; paired: boolean })[] {
     const rows = this.sql
       .exec<{ id: string; created_at: number; token_hash: string | null }>(
-        'SELECT id, created_at, token_hash FROM guests ORDER BY created_at'
+        `SELECT id, created_at, token_hash FROM guests WHERE role != 'host' ORDER BY created_at`
       )
       .toArray()
     return rows.map((r) => {
@@ -399,12 +443,14 @@ export class Ledger extends DurableObject<LedgerEnv> {
   }
 
   topUp(guestId: string, pool: Pool, amount: number): GuestState | null {
-    if (!(pool in POOLS) || !Number.isFinite(amount)) return null
+    if (!(pool in POOLS) || !Number.isFinite(amount) || !this.guestRow('id', guestId)) return null
     this.sql.exec(
-      'UPDATE pools SET cap = MAX(0, cap + ?) WHERE guest_id = ? AND pool = ?',
-      amount,
+      `INSERT INTO pools (guest_id, pool, cap, spent) VALUES (?, ?, MAX(0, ?), 0)
+       ON CONFLICT (guest_id, pool) DO UPDATE SET cap = MAX(0, cap + ?)`,
       guestId,
-      pool
+      pool,
+      amount,
+      amount
     )
     this.sql.exec('INSERT INTO topups VALUES (?, ?, ?, ?)', guestId, pool, amount, Date.now())
     return this.guestRow('id', guestId)

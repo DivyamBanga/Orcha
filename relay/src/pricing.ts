@@ -6,22 +6,148 @@ import type { MeteredUsage, UsageLine } from './meter'
 // still shows placeholders). When a provider changes a price, this file is the
 // only thing to update.
 
-export type Pool = 'claude' | 'sol' | 'astra'
+// A budget pool: one balance a guest spends from. Every Claude model shares
+// the "claude" pool; each Azure deployment has its own.
+export type Pool = string
+export type Provider = 'anthropic' | 'azure'
 
-export const POOLS: Record<Pool, { label: string; order: number }> = {
-  claude: { label: 'Claude', order: 0 },
-  sol: { label: 'GPT-6 Sol', order: 1 },
-  astra: { label: 'GPT-6 Astra', order: 2 }
+export const POOLS: Record<Pool, { label: string; order: number; provider: Provider }> = {
+  claude: { label: 'Claude', order: 0, provider: 'anthropic' },
+  sol: { label: 'GPT-6 Sol', order: 1, provider: 'azure' },
+  astra: { label: 'GPT-6 Astra', order: 2, provider: 'azure' }
 }
 
-// Codex requests name a model; the Azure deployments carry the same names.
-const RESPONSES_MODELS: Record<string, Pool> = {
-  'gpt-6-sol': 'sol',
-  'gpt-6-astra': 'astra'
+// ---- the model catalog -----------------------------------------------------------
+//
+// What Orcha offers, served to every paired device at /v1/me/models, so adding
+// a model is an edit here plus a deploy — no app release. An Azure model also
+// needs a deployment named exactly like its id (the request body goes upstream
+// unchanged) and its rates in AZURE_RATES below.
+
+// How a model thinks. 'toggle': adaptive thinking, can be turned off. 'always':
+// thinking can't be turned off, so the toggle lowers effort instead. 'budget':
+// older-style thinking with a token budget. 'reasoning': an Azure reasoning
+// model (effort plus a reasoning summary).
+export type ThinkingMode = 'toggle' | 'always' | 'budget' | 'reasoning'
+
+export interface CatalogModel {
+  id: string // what requests send as `model`
+  label: string
+  description: string // one line for the model picker
+  pool: Pool
+  provider: Provider
+  chat: boolean // offered in chat
+  codex: boolean // offered for Codex terminal tabs
+  thinking: ThinkingMode
+  webSearch: string | null // Anthropic tool type, 'web_search' on Azure, or null
+  vision: boolean
+  pdfPages: number | null // longest PDF it reads natively; null = no PDFs
+  default?: boolean // first pick for a new chat on this provider
+  title?: boolean // the cheap model that names chats
+  rates: { in: number; out: number; cacheRead: number } // USD per million, for estimates
 }
 
+type ModelInfo = Omit<CatalogModel, 'provider' | 'rates'>
+
+const CHAT_MODELS: ModelInfo[] = [
+  {
+    id: 'claude-sonnet-5',
+    label: 'Sonnet 5',
+    description: 'Smart and fast, for most things',
+    pool: 'claude',
+    chat: true,
+    codex: false,
+    thinking: 'toggle',
+    webSearch: 'web_search_20260209',
+    vision: true,
+    pdfPages: 600,
+    default: true
+  },
+  {
+    id: 'claude-opus-5-5',
+    label: 'Opus 5.5',
+    description: 'Deeper reasoning for hard problems',
+    pool: 'claude',
+    chat: true,
+    codex: false,
+    thinking: 'always',
+    webSearch: 'web_search_20260209',
+    vision: true,
+    pdfPages: 600
+  },
+  {
+    id: 'claude-fable-5-1',
+    label: 'Fable 5.1',
+    description: 'Most capable, and the most expensive',
+    pool: 'claude',
+    chat: true,
+    codex: false,
+    thinking: 'always',
+    webSearch: 'web_search_20250305',
+    vision: true,
+    pdfPages: 600
+  },
+  {
+    id: 'claude-haiku-4-5',
+    label: 'Haiku 4.5',
+    description: 'Fastest and cheapest, for quick questions',
+    pool: 'claude',
+    chat: true,
+    codex: false,
+    thinking: 'budget',
+    webSearch: 'web_search_20250305',
+    vision: true,
+    pdfPages: 100,
+    title: true
+  },
+  {
+    id: 'gpt-6-sol',
+    label: 'GPT-6 Sol',
+    description: 'Fast and capable',
+    pool: 'sol',
+    chat: true,
+    codex: true,
+    thinking: 'reasoning',
+    webSearch: 'web_search',
+    vision: true,
+    pdfPages: 100,
+    default: true,
+    title: true
+  },
+  {
+    id: 'gpt-6-astra',
+    label: 'GPT-6 Astra',
+    description: "OpenAI's most capable",
+    pool: 'astra',
+    chat: true,
+    codex: true,
+    thinking: 'reasoning',
+    webSearch: 'web_search',
+    vision: true,
+    pdfPages: 100
+  }
+]
+
+export function catalog(): CatalogModel[] {
+  return CHAT_MODELS.map((m) => {
+    const provider = POOLS[m.pool].provider
+    if (provider === 'azure') {
+      const r = AZURE_RATES[m.id].short
+      return { ...m, provider, rates: { in: r.in, out: r.out, cacheRead: r.cached } }
+    }
+    const r = anthropicRates(m.id)
+    return { ...m, provider, rates: { in: r.in, out: r.out, cacheRead: r.cr } }
+  })
+}
+
+// Codex and chat requests name a model; the Azure deployments carry the same
+// names, so the name alone picks the pool. Anything not listed is refused.
 export function poolForResponsesModel(model: string): Pool | null {
-  return RESPONSES_MODELS[model] ?? null
+  return AZURE_RATES[model]?.pool ?? null
+}
+
+export function responsesModelIds(): string[] {
+  return Object.keys(AZURE_RATES)
 }
 
 // ---- Anthropic ------------------------------------------------------------------
@@ -118,15 +244,27 @@ interface ResponsesRates {
   out: number
 }
 
-const AZURE: Record<Exclude<Pool, 'claude'>, { short: ResponsesRates; long: ResponsesRates }> = {
-  sol: {
+// Per deployment (= model id): its pool, and short/long-context rates.
+const AZURE_RATES: Record<string, { pool: Pool; short: ResponsesRates; long: ResponsesRates }> = {
+  'gpt-6-sol': {
+    pool: 'sol',
     short: { in: 2, cached: 0.2, write: 2.5, out: 10 },
     long: { in: 4, cached: 0.4, write: 5, out: 15 }
   },
-  astra: {
+  'gpt-6-astra': {
+    pool: 'astra',
     short: { in: 10, cached: 1, write: 12.5, out: 50 },
     long: { in: 20, cached: 2, write: 25, out: 75 }
   }
+}
+
+// A line's model if it's a known deployment, else the priciest deployment in
+// the pool — never cheaper for a guest than the real bill is for the host.
+function azureRates(pool: Pool, model: string | null): { short: ResponsesRates; long: ResponsesRates } {
+  const known = model ? AZURE_RATES[model] : undefined
+  if (known && known.pool === pool) return known
+  const inPool = Object.values(AZURE_RATES).filter((r) => r.pool === pool)
+  return inPool.sort((a, b) => b.short.out - a.short.out)[0] ?? AZURE_RATES['gpt-6-astra']
 }
 
 // A request whose total input exceeds this is billed at the long-context
@@ -138,9 +276,10 @@ const AZURE_WEB_SEARCH_USD = 0.014
 // priority tier is 2x standard, so a priority reply is charged at that.
 const PRIORITY_MULTIPLIER = 2
 
-function responsesLineCost(pool: Exclude<Pool, 'claude'>, line: UsageLine, tier: string | null): number {
+function responsesLineCost(pool: Pool, line: UsageLine, tier: string | null): number {
   const totalInput = line.inputTokens + line.cachedTokens + line.cacheWrite5mTokens
-  const rates = totalInput > LONG_CONTEXT_OVER_TOKENS ? AZURE[pool].long : AZURE[pool].short
+  const table = azureRates(pool, line.model)
+  const rates = totalInput > LONG_CONTEXT_OVER_TOKENS ? table.long : table.short
   const multiplier = tier === 'priority' ? PRIORITY_MULTIPLIER : 1
   return (
     (multiplier *
@@ -155,7 +294,7 @@ function responsesLineCost(pool: Exclude<Pool, 'claude'>, line: UsageLine, tier:
 // ---- total ----------------------------------------------------------------------
 
 export function costOf(pool: Pool, usage: MeteredUsage): number {
-  if (pool === 'claude') {
+  if (POOLS[pool]?.provider !== 'azure') {
     let cost = usage.webSearches * ANTHROPIC_WEB_SEARCH_USD
     for (const line of usage.lines) cost += anthropicLineCost(line, usage)
     return cost
