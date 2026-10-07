@@ -27,7 +27,10 @@ SDK_BIN="$UNPACKED/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude"
 [ -x "$SDK_BIN" ] && pass "Agent SDK binary unpacked" || fail "Agent SDK binary missing or not executable: $SDK_BIN"
 while IFS= read -r -d '' f; do
   if lipo -archs "$f" 2>/dev/null | grep -qw arm64; then pass "arm64: ${f#$APP/}"; else fail "not arm64: $f"; fi
-done < <(find "$UNPACKED" \( -name '*.node' -o -path '*claude-agent-sdk-darwin-arm64/claude' \) -type f -print0)
+done < <(find "$UNPACKED" \( -name '*.node' -o -path '*claude-agent-sdk-darwin-arm64/claude' \) -type f \
+  -not -path '*/prebuilds/win32-*' -not -path '*/prebuilds/darwin-x64/*' -not -path '*/prebuilds/linux-*' -print0)
+# (node-pty ships every platform's prebuild; on Apple Silicon it only ever
+# loads build/Release or prebuilds/darwin-arm64.)
 while IFS= read -r -d '' f; do
   [ -x "$f" ] && pass "executable: ${f#$APP/}" || fail "spawn-helper not executable: $f"
 done < <(find "$UNPACKED/node-pty" -name spawn-helper -type f -print0)

@@ -42,7 +42,8 @@ mac:
   identity: null
   hardenedRuntime: false
   gatekeeperAssess: false
-  minimumSystemVersion: '12.0'
+  # The Agent SDK's bundled Claude binary needs 13 (every Apple Silicon Mac can run it).
+  minimumSystemVersion: '13.0'
   protocols:
     - name: Orcha invite
       schemes:

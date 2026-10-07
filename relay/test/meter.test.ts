@@ -234,7 +234,15 @@ test('cpu: metering a long reply stays well under the 10ms free-plan budget', ()
   console.log(
     `  anthropic ${mb(aBytes)} MB: ${anthropicMs.toFixed(2)} ms; responses ${mb(rBytes)} MB: ${responsesMs.toFixed(2)} ms`
   )
-  assert.ok(anthropicMs < 4 && responsesMs < 4, 'metering one long reply must stay under 4ms')
+  // A shared CI runner is several times slower than a Workers isolate (5.7ms
+  // measured there for what takes ~2ms locally), so CI gets more headroom —
+  // still under the real 10ms budget, which catches a per-chunk regression
+  // (18-26ms when it happened).
+  const limit = process.env.CI ? 8 : 4
+  assert.ok(
+    anthropicMs < limit && responsesMs < limit,
+    `metering one long reply must stay under ${limit}ms`
+  )
 })
 
 test('responses: cache writes and Azure tool_usage web search count', () => {

@@ -37,7 +37,7 @@ export function joinPage(opts: {
         <li>
           <div class="step">Download Orcha for Mac</div>
           <a class="button" href="${escape(opts.macDownloadUrl)}">Download</a>
-          <div class="note">For Macs with Apple silicon (M1 or newer) on macOS 12 or later.</div>
+          <div class="note">For Macs with Apple silicon (M1 or newer) on macOS 13 or later.</div>
         </li>
         <li>
           <div class="step">Open the download and drag Orcha into Applications</div>
