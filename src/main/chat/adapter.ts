@@ -1,7 +1,7 @@
 import type { CatalogModel, ChatFile, ChatParts, ChatSource, ChatTool } from '../../shared/types'
 
 // What every chat provider (Claude through the relay, Azure through the
-// relay, and later Claude on the host's own plan) implements: run one turn,
+// relay, and Claude on the host's own plan) implements: run one turn,
 // streaming as it goes, and answer a one-off prompt (chat titles).
 
 export interface HistoryMessage {
@@ -24,6 +24,10 @@ export interface TurnInput {
   // Tools Orcha runs itself (the memory tool), as JSON Schema; each adapter
   // offers them in its provider's shape and loops until the model is done.
   tools?: ClientTool[]
+  // Claude on the host's own plan (claudeMax.ts) keeps a chat as a Claude
+  // Code session: the one this turn is in, and the reply it carries on from
+  // (null when this turn starts it). The other providers ignore it.
+  session?: { id: string; at: string | null }
 }
 
 export interface ClientTool {
@@ -46,6 +50,9 @@ export interface TurnResult {
   parts: ChatParts
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number } | null
   model: string | null // what actually answered (a refusal fallback can differ)
+  // claudeMax.ts: the session the reply went in (not always the one asked
+  // for), and where it got to, for the next turn to carry on from.
+  session?: { id: string; at: string | null }
 }
 
 export interface ChatAdapter {

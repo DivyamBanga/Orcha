@@ -169,6 +169,31 @@ export const messages = {
     return pathTo(messages.all(chatId), leafId)
   },
 
+  // Claude on the host's plan (claudeMax.ts): the session a reply is in, and
+  // where it ended (only once it finished).
+  session(id: number): { id: string; at: string | null } | null {
+    const row = database()
+      .prepare('SELECT sdk_session, sdk_uuid FROM messages WHERE id = ?')
+      .get(id) as { sdk_session: string | null; sdk_uuid: string | null } | undefined
+    return row?.sdk_session ? { id: row.sdk_session, at: row.sdk_uuid } : null
+  },
+
+  setSession(id: number, session: string, at: string | null): void {
+    database()
+      .prepare('UPDATE messages SET sdk_session = ?, sdk_uuid = ? WHERE id = ?')
+      .run(session, at, id)
+  },
+
+  // Every session a chat's replies are in.
+  sessions(chatId: string): string[] {
+    const rows = database()
+      .prepare(
+        'SELECT DISTINCT sdk_session FROM messages WHERE chat_id = ? AND sdk_session IS NOT NULL'
+      )
+      .all(chatId) as { sdk_session: string }[]
+    return rows.map((r) => r.sdk_session)
+  },
+
   // Every stored file some message still refers to.
   fileHashes(): Set<string> {
     const rows = database().prepare('SELECT files FROM messages WHERE files IS NOT NULL').all() as {

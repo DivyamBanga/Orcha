@@ -88,7 +88,7 @@ function ModelPicker({
                   <span className="min-w-0 flex-1">
                     <span className="block text-zinc-200">{m.label}</span>
                     <span className="block text-[11.5px] leading-snug text-zinc-500">
-                      {m.blocked ? 'On your own plan, in the next update' : m.description}
+                      {m.blocked ? 'Not available here' : m.description}
                     </span>
                   </span>
                   {m.id === model?.id && (

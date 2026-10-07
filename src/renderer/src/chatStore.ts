@@ -144,12 +144,13 @@ export function chatModels(
 ): (CatalogModel & { blocked: boolean })[] {
   if (!catalog) return []
   const blocked = new Set(catalog.pools.filter((p) => p.blocked).map((p) => p.id))
+  // The host's Claude runs on their own Claude plan, so the relay blocking it
+  // doesn't apply.
+  const onPlan = (m: CatalogModel): boolean =>
+    m.provider === 'anthropic' && identity?.kind !== 'guest'
   return catalog.models
     .filter((m) => m.chat)
-    .map((m) => ({
-      ...m,
-      blocked: blocked.has(m.pool) || (m.provider === 'anthropic' && identity?.kind !== 'guest')
-    }))
+    .map((m) => ({ ...m, blocked: blocked.has(m.pool) && !onPlan(m) }))
 }
 
 // Where a new chat starts: the last model picked, else the catalog's default
@@ -158,9 +159,8 @@ export function defaultModel(catalog: Catalog | null, identity: Identity | null)
   const usable = chatModels(catalog, identity).filter((m) => !m.blocked)
   const picked = useChatStore.getState().picked[NEW_CHAT]
   if (picked && usable.some((m) => m.id === picked)) return picked
-  const preferred = identity?.kind === 'guest' ? 'anthropic' : 'azure'
   return (
-    usable.find((m) => m.default && m.provider === preferred)?.id ??
+    usable.find((m) => m.default && m.provider === 'anthropic')?.id ??
     usable.find((m) => m.default)?.id ??
     usable[0]?.id ??
     null

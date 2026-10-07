@@ -181,7 +181,7 @@ export function anthropicAdapter(
 
 // Your message as content blocks: its files first (images, PDFs as documents,
 // text inline), then what you wrote. A message without files stays a string.
-function userContent(m: HistoryMessage, load: FileLoader): BetaMessageParam['content'] {
+export function userContent(m: HistoryMessage, load: FileLoader): BetaMessageParam['content'] {
   if (m.files.length === 0) return m.text
   const blocks: BetaContentBlockParam[] = m.files.map((f) => {
     const data = load(f)

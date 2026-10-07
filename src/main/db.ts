@@ -109,6 +109,15 @@ export function initDb(): void {
       INSERT INTO messages_fts (rowid, text) VALUES (new.id, new.text);
     END;
   `)
+  // Claude on the host's own plan (chat/claudeMax.ts) keeps each chat as a
+  // Claude Code session: the session a reply is in, and where it ended.
+  for (const col of ['sdk_session TEXT', 'sdk_uuid TEXT']) {
+    try {
+      db.exec(`ALTER TABLE messages ADD COLUMN ${col}`)
+    } catch {
+      // column already exists
+    }
+  }
   // A reply that was mid-stream when Orcha last closed never finished.
   db.exec("UPDATE messages SET status = 'error' WHERE status = 'streaming'")
 
