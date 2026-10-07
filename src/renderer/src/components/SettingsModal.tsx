@@ -6,7 +6,7 @@ import { levelColors, poolLevel, usd } from '../money'
 import Modal from './Modal'
 import GuestsPanel from './GuestsPanel'
 import { Check as CheckIcon, Circle, Close } from './Icon'
-import type { CodexStatus, MobileInfo } from '../../../shared/types'
+import type { CodexStatus, Memory, MobileInfo } from '../../../shared/types'
 
 function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
   return (
@@ -20,7 +20,7 @@ function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element
 }
 
 type Section =
-  'Profile' | 'Appearance' | 'Defaults' | 'Data' | 'Credits' | 'Guests' | 'Integrations'
+  'Profile' | 'Appearance' | 'Defaults' | 'Memory' | 'Data' | 'Credits' | 'Guests' | 'Integrations'
 
 function SettingsModal(): React.JSX.Element {
   const show = useStore((s) => s.showSettings)
@@ -29,8 +29,8 @@ function SettingsModal(): React.JSX.Element {
   const [section, setSection] = useState<Section>('Profile')
   const onClose = (): void => setShow(false)
   const sections: Section[] = isGuest
-    ? ['Profile', 'Appearance', 'Defaults', 'Data', 'Credits']
-    : ['Profile', 'Appearance', 'Defaults', 'Data', 'Guests', 'Integrations']
+    ? ['Profile', 'Appearance', 'Defaults', 'Memory', 'Data', 'Credits']
+    : ['Profile', 'Appearance', 'Defaults', 'Memory', 'Data', 'Guests', 'Integrations']
 
   return (
     <Modal open={show} onClose={onClose} width={780} bare>
@@ -61,6 +61,7 @@ function SettingsModal(): React.JSX.Element {
           {section === 'Profile' && <ProfileSection />}
           {section === 'Appearance' && <AppearanceSection />}
           {section === 'Defaults' && <DefaultsSection />}
+          {section === 'Memory' && <MemorySection />}
           {section === 'Data' && <DataSection />}
           {section === 'Credits' && <GuestSettings onClose={onClose} />}
           {section === 'Guests' && <GuestsPanel />}
@@ -287,6 +288,127 @@ function DefaultsSection(): React.JSX.Element | null {
           }}
         />
       </Row>
+    </>
+  )
+}
+
+// One remembered thing: click the text to edit it, × to forget it.
+function MemoryItem({
+  memory,
+  onChange
+}: {
+  memory: Memory
+  onChange: () => void
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const save = (text: string): void => {
+    setEditing(false)
+    if (text.trim() && text.trim() !== memory.text) {
+      window.orcha.memory
+        .update(memory.id, text)
+        .then(onChange)
+        .catch(() => {})
+    }
+  }
+  return (
+    <div className="group flex items-center gap-2 border-b border-edge py-2.5 last:border-b-0">
+      {editing ? (
+        <input
+          autoFocus
+          defaultValue={memory.text}
+          onBlur={(e) => save(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save(e.currentTarget.value)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+          className="input h-8 flex-1"
+        />
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="min-w-0 flex-1 text-left text-[13px] leading-snug text-zinc-200"
+          title="Edit"
+        >
+          {memory.text}
+        </button>
+      )}
+      <button
+        onClick={() =>
+          window.orcha.memory
+            .remove(memory.id)
+            .then(onChange)
+            .catch(() => {})
+        }
+        className="btn btn-ghost btn-icon h-6 w-6 shrink-0 text-zinc-500 opacity-0 group-hover:opacity-100"
+        title="Forget this"
+      >
+        <Close size={12} />
+      </button>
+    </div>
+  )
+}
+
+function MemorySection(): React.JSX.Element | null {
+  const on = useStore((s) => s.settings?.memory ?? true)
+  const save = useStore((s) => s.saveSettings)
+  const projects = useStore((s) => s.projects)
+  const [list, setList] = useState<Memory[] | null>(null)
+  const load = (): void => {
+    window.orcha.memory
+      .list()
+      .then(setList)
+      .catch(() => {})
+  }
+  useEffect(load, [])
+  const groups = [
+    { name: 'Everywhere', items: (list ?? []).filter((m) => !m.projectId) },
+    ...projects.map((p) => ({
+      name: p.name,
+      items: (list ?? []).filter((m) => m.projectId === p.id)
+    }))
+  ].filter((g) => g.items.length > 0)
+  return (
+    <>
+      <Heading
+        title="Memory"
+        hint="What chats remember about you. New chats know it; a chat in a project also knows that project's."
+      />
+      <Row
+        label="Remember things across chats"
+        hint="Chats save what would help later, and say when they do."
+      >
+        <Switch on={on} onChange={(value) => save({ memory: value })} />
+      </Row>
+      <div className="mt-4">
+        {list !== null && list.length === 0 && (
+          <div className="py-6 text-center text-[12.5px] text-zinc-500">
+            Nothing remembered yet.
+          </div>
+        )}
+        {groups.map((g) => (
+          <div key={g.name} className="mb-4">
+            <div className="eyebrow mb-1">{g.name}</div>
+            {g.items.map((m) => (
+              <MemoryItem key={m.id} memory={m} onChange={load} />
+            ))}
+          </div>
+        ))}
+        {(list?.length ?? 0) > 0 && (
+          <button
+            onClick={() => {
+              if (confirm('Forget everything chats remember about you?')) {
+                window.orcha.memory
+                  .clear()
+                  .then(load)
+                  .catch(() => {})
+              }
+            }}
+            className="btn btn-danger mt-2"
+          >
+            Forget everything
+          </button>
+        )}
+      </div>
     </>
   )
 }

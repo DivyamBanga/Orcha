@@ -25,8 +25,10 @@ import { isMac, logFilePath } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
 import { exportAllChats, exportChat, fileName } from './chat/exporter'
 import { chatSettings, saveChatSettings } from './chat/settings'
+import { knowledge, projectInstructions, setProjectInstructions } from './chat/projects'
 import type {
   Agent,
+  ChatFile,
   ChatRetryInput,
   ChatSettings,
   ChatSendInput,
@@ -130,6 +132,26 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   })
 
   ipcMain.handle(IPC.ProjectsList, () => db.projects.list())
+
+  // Projects for chats: one with no folder, its instructions (the repo's
+  // CLAUDE.md when it has one here), and its knowledge files.
+  const project = (id: string): Project => {
+    const p = db.projects.get(id)
+    if (!p) throw new Error('That project no longer exists.')
+    return p
+  }
+  ipcMain.handle(IPC.ProjectsCreateChat, (_e, name: string) =>
+    projectService.createChatProject(String(name))
+  )
+  ipcMain.handle(IPC.ProjectInstructions, (_e, id: string) => projectInstructions(project(id)))
+  ipcMain.handle(IPC.ProjectSetInstructions, (_e, id: string, text: string) =>
+    setProjectInstructions(project(id), String(text))
+  )
+  ipcMain.handle(IPC.ProjectFiles, (_e, id: string) => knowledge.list(id))
+  ipcMain.handle(IPC.ProjectAddFile, (_e, id: string, file: ChatFile) =>
+    knowledge.add(project(id).id, file)
+  )
+  ipcMain.handle(IPC.ProjectRemoveFile, (_e, fileId: number) => knowledge.remove(fileId))
 
   ipcMain.handle(IPC.ProjectsCreateRepo, (_e, name: string, isPrivate: boolean, agent?: Agent) =>
     projectService.createRepo(name, isPrivate, agentFor(agent))
@@ -355,12 +377,17 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     return { folder: filePaths[0], count: exportAllChats(filePaths[0]) }
   })
 
+  ipcMain.handle(IPC.MemoryList, () => chatService.memories())
+  ipcMain.handle(IPC.MemoryUpdate, (_e, id: number, text: string) =>
+    chatService.updateMemory(id, text)
+  )
+  ipcMain.handle(IPC.MemoryRemove, (_e, id: number) => chatService.removeMemory(id))
+  ipcMain.handle(IPC.MemoryClear, () => chatService.clearMemories())
+
   // --- settings --------------------------------------------------------------
 
   ipcMain.handle(IPC.SettingsGet, () => chatSettings())
-  ipcMain.handle(IPC.SettingsSet, (_e, changes: Partial<ChatSettings>) =>
-    saveChatSettings(changes)
-  )
+  ipcMain.handle(IPC.SettingsSet, (_e, changes: Partial<ChatSettings>) => saveChatSettings(changes))
   // Light, dark, or the system's. The window follows through
   // prefers-color-scheme, and its frame through nativeTheme's 'updated'.
   ipcMain.handle(IPC.AppSetTheme, (_e, theme: string) => {

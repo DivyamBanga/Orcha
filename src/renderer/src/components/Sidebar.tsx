@@ -4,7 +4,7 @@ import { codexModel as codexModelOf } from '../money'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import UsageGlance from './UsageGlance'
 import CreditsPanel from './CreditsPanel'
-import { chatRoute, deleteChat, NEW_CHAT, useChatStore } from '../chatStore'
+import { chatRoute, deleteChat, NEW_CHAT, startChat, useChatStore } from '../chatStore'
 import { Branch, Bubble, Diamond, Mark, More, Plus, Search, SessionState, Settings } from './Icon'
 import type { ChatSummary, Project, Workspace } from '../../../shared/types'
 
@@ -90,7 +90,8 @@ function useSessionMenu(): {
     e.stopPropagation()
     const s = useStore.getState()
     const items: MenuItem[] = [
-      ...(project.sshHost
+      { label: 'New chat', onClick: () => startChat(project.id) },
+      ...(project.sshHost || project.chatOnly
         ? []
         : [
             {
@@ -102,20 +103,23 @@ function useSessionMenu(): {
               onClick: () => window.orcha.shell.openPath(project.repoPath)
             }
           ]),
-      {
-        label: 'Copy path',
-        onClick: () => navigator.clipboard.writeText(project.remotePath ?? project.repoPath)
-      },
+      ...(project.chatOnly
+        ? []
+        : [
+            {
+              label: 'Copy path',
+              onClick: () => navigator.clipboard.writeText(project.remotePath ?? project.repoPath)
+            }
+          ]),
       {
         label: 'Remove from Orcha',
         danger: true,
         separatorAbove: true,
         onClick: () => {
-          if (
-            confirm(
-              `Remove "${project.name}" from Orcha? All its sessions close (parallel worktrees are deleted); the repo folder itself stays on disk.`
-            )
-          ) {
+          const message = project.chatOnly
+            ? `Remove "${project.name}"? Its chats stay, outside any project; its instructions, files and memories go.`
+            : `Remove "${project.name}" from Orcha? All its sessions close (parallel worktrees are deleted); the repo folder itself stays on disk. Its chats stay, outside any project.`
+          if (confirm(message)) {
             s.removeProject(project.id).catch((err) => alert(String(err)))
           }
         }
@@ -396,7 +400,7 @@ function Sidebar(): React.JSX.Element {
           <kbd className="font-mono text-[10px] text-zinc-600">{MOD}K</kbd>
         </button>
         <button
-          onClick={() => setActive(NEW_CHAT)}
+          onClick={() => startChat(null)}
           className={`boot-item boot-d3 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150 ${
             activeId === NEW_CHAT
               ? 'bg-surface-3 text-zinc-50 shadow-[inset_0_0_0_1px_var(--color-edge)]'
@@ -465,20 +469,22 @@ function Sidebar(): React.JSX.Element {
         ) : (
           projects.map((project, i) => {
             const sessions = workspaces.filter((w) => w.projectId === project.id)
-            const mainSession = sessions.find((w) => w.kind === 'main')
+            // Its latest few chats; the project's page lists them all.
+            const projectChats = chats.filter((c) => c.projectId === project.id && !c.starred)
             // Groups follow the wipe top-to-bottom; beyond the third the step
             // stops growing so a long list doesn't drag the cascade out.
             const cascade = ['boot-d4', 'boot-d5', 'boot-d6'][i] ?? 'boot-d7'
             return (
               <div key={project.id} className={`${cascade} boot-item mb-3`}>
                 <div
+                  data-row={`project:${project.id}`}
                   onContextMenu={(e) => openProjectMenu(e, project)}
                   className="group relative flex h-7 items-center gap-1 pl-2 pr-1"
                 >
                   <button
-                    onClick={() => mainSession && setActive(mainSession.id)}
+                    onClick={() => setActive(`project:${project.id}`)}
                     className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left text-[12px] font-semibold tracking-tight text-zinc-300 transition-colors duration-150 hover:text-zinc-50"
-                    title="Open the main session"
+                    title="Open the project"
                   >
                     <span className="truncate">{project.name}</span>
                     {project.sshHost && (
@@ -501,6 +507,17 @@ function Sidebar(): React.JSX.Element {
                       onMenu={openSessionMenu}
                     />
                   ))}
+                  {projectChats.slice(0, 5).map((chat) => (
+                    <ChatRow key={chat.id} chat={chat} onMenu={openChatMenu} />
+                  ))}
+                  {projectChats.length > 5 && (
+                    <button
+                      onClick={() => setActive(`project:${project.id}`)}
+                      className="h-7 pl-7 text-left text-[12px] text-zinc-500 hover:text-zinc-300"
+                    >
+                      {projectChats.length - 5} more chats
+                    </button>
+                  )}
                 </div>
               </div>
             )

@@ -9,6 +9,8 @@ import type { ChatSettings } from '../../shared/types'
 export function buildSystemPrompt(opts: {
   now: Date
   profile?: Pick<ChatSettings, 'name' | 'about' | 'style'>
+  project?: string | null // its project's instructions and knowledge (projects.ts)
+  memory?: string | null // what it remembers, and how to save more (memory.ts)
 }): string {
   const date = opts.now.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -21,12 +23,14 @@ export function buildSystemPrompt(opts: {
     "You're chatting with someone in Orcha, a desktop app for working with AI. Be direct and genuinely helpful.",
     'Write in Markdown. Match the length to the question: a casual message gets a short, natural reply; use headings, lists and tables only when they make an answer easier to read. Put code in fenced blocks with the language named.',
     `Today is ${date}.`,
+    ...(opts.project ? [opts.project] : []),
     ...(name.trim() ? [`Their name is ${name.trim()}.`] : []),
     ...(about.trim()
       ? [`What they've said about themselves:\n<about>\n${about.trim()}\n</about>`]
       : []),
     ...(style.trim()
       ? [`How they'd like you to respond:\n<preferences>\n${style.trim()}\n</preferences>`]
-      : [])
+      : []),
+    ...(opts.memory ? [opts.memory] : [])
   ].join('\n\n')
 }

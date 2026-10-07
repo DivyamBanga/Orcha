@@ -14,6 +14,10 @@
 //   ORCHA_THINK streams some thinking (a reasoning summary for GPT) before the reply
 //   ORCHA_FILES replies with what the message carried ("Received: image image/webp, …")
 //   ORCHA_SYSTEM replies with the system prompt it was sent
+//   ORCHA_CITE  searches the web, then answers citing two of the results
+//   ORCHA_REMEMBER / ORCHA_FORGET  call the memory tool (save "Likes green tea.",
+//               or remove the first memory in the system prompt); the reply
+//               after the tool runs says what was sent back
 //
 // Requests the fake upstream receives are appended to .wrangler/dev-upstream.log.
 import { spawn } from 'node:child_process'
@@ -96,15 +100,109 @@ function systemPrompt(parsed) {
   return typeof dev?.content === 'string' ? dev.content : 'no system prompt'
 }
 
+// After a memory tool call: what came back, so a test can check the loop sent
+// the right things (the call, its result, and for GPT its reasoning).
+function toolFollowUp(parsed) {
+  if (Array.isArray(parsed.messages)) {
+    const [prev, last] = parsed.messages.slice(-2)
+    const result = Array.isArray(last?.content) && last.content.find((c) => c.type === 'tool_result')
+    if (!result) return null
+    const call = Array.isArray(prev?.content) && prev.content.some((c) => c.type === 'tool_use')
+    return `Got it. The tool said "${result.content}"${call ? ', after my call' : ''}.`
+  }
+  if (Array.isArray(parsed.input)) {
+    const out = [...parsed.input].reverse().find((i) => i.type === 'function_call_output')
+    if (!out) return null
+    const sent = parsed.input.filter((i) => i.type).map((i) => i.type).join(', ')
+    const encrypted = parsed.include?.includes('reasoning.encrypted_content') ? 'with' : 'without'
+    return `Got it. The tool said "${out.output}". Sent back: ${sent}, ${encrypted} encrypted reasoning.`
+  }
+  return null
+}
+
+// ORCHA_REMEMBER / ORCHA_FORGET: the memory tool call the model makes.
+function toolCallFor(parsed, text) {
+  if (text.includes('ORCHA_REMEMBER')) return { action: 'remember', text: 'Likes green tea.' }
+  if (text.includes('ORCHA_FORGET')) {
+    const id = Number(/\[(\d+)\]/.exec(systemPrompt(parsed))?.[1])
+    return { action: 'forget', id }
+  }
+  return null
+}
+
 function replyFor(parsed) {
+  const followUp = toolFollowUp(parsed)
+  if (followUp) return { reply: followUp, delay: 10, thinking: null }
   const text = lastUserText(parsed)
+  const toolCall = toolCallFor(parsed, text)
+  if (toolCall) return { reply: 'Noting that.', delay: 10, thinking: null, toolCall }
   const thinking = text.includes('ORCHA_THINK') ? THINKING : null
   if (text.includes('ORCHA_FILES')) return { reply: `Received: ${attachedParts(parsed)}.`, delay: 30, thinking }
   if (text.includes('ORCHA_SYSTEM')) return { reply: systemPrompt(parsed), delay: 5, thinking }
   if (text.includes('ORCHA_SLOW')) return { reply: SLOW_REPLY, delay: 600, thinking }
   if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60, thinking }
   if (text.includes('ORCHA_MD')) return { reply: MD_REPLY, delay: 15, thinking }
+  if (text.includes('ORCHA_CITE')) return { reply: CITED.map((c) => c.text).join(''), delay: 20, thinking, cite: true }
   return { reply: REPLY, delay: 60, thinking }
+}
+
+// ORCHA_CITE: a web search, then two sentences each citing a result.
+const RESULTS = [
+  { url: 'https://en.wikipedia.org/wiki/Paris', title: 'Paris - Wikipedia' },
+  { url: 'https://www.britannica.com/place/Paris', title: 'Paris | History, Map & Facts | Britannica' }
+]
+const CITED = [
+  { text: 'Paris is the capital of France.', source: 0 },
+  { text: ' It is known for the Eiffel Tower.', source: 1 }
+]
+
+// Claude's shape: server_tool_use, web_search_tool_result, then text blocks
+// carrying citations.
+function citeAnthropic(res, first) {
+  let index = first
+  sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'server_tool_use', id: 'srvtoolu_fake', name: 'web_search', input: {} } })
+  sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: '{"query":"capital of France"}' } })
+  sse(res, 'content_block_stop', { type: 'content_block_stop', index })
+  index++
+  sse(res, 'content_block_start', {
+    type: 'content_block_start',
+    index,
+    content_block: {
+      type: 'web_search_tool_result',
+      tool_use_id: 'srvtoolu_fake',
+      content: RESULTS.map((r) => ({ type: 'web_search_result', ...r, encrypted_content: 'x', page_age: null }))
+    }
+  })
+  sse(res, 'content_block_stop', { type: 'content_block_stop', index })
+  for (const c of CITED) {
+    index++
+    sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '', citations: [] } })
+    sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: c.text } })
+    sse(res, 'content_block_delta', {
+      type: 'content_block_delta',
+      index,
+      delta: { type: 'citations_delta', citation: { type: 'web_search_result_location', ...RESULTS[c.source], cited_text: c.text, encrypted_index: 'x' } }
+    })
+    sse(res, 'content_block_stop', { type: 'content_block_stop', index })
+  }
+}
+
+// GPT's shape: web_search_call events, the text, then url_citation annotations
+// with character ranges.
+function citeResponses(res, nextSeq) {
+  const events = []
+  let at = 0
+  for (const c of CITED) {
+    events.push({
+      type: 'response.output_text.annotation.added',
+      item_id: 'msg_fake',
+      output_index: 1,
+      content_index: 0,
+      annotation: { type: 'url_citation', ...RESULTS[c.source], start_index: at, end_index: at + c.text.length }
+    })
+    at += c.text.length
+  }
+  for (const e of events) sse(res, e.type, { ...e, sequence_number: nextSeq() })
 }
 
 const upstream = createServer(async (req, res) => {
@@ -117,7 +215,7 @@ const upstream = createServer(async (req, res) => {
     // not JSON
   }
   appendFileSync(LOG, `${new Date().toISOString()} ${req.method} ${req.url} model=${parsed.model ?? '-'} bytes=${body.length}\n`)
-  const { reply, delay, thinking } = replyFor(parsed)
+  const { reply, delay, thinking, cite, toolCall } = replyFor(parsed)
 
   if (req.url.startsWith('/v1/messages/count_tokens')) {
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -157,13 +255,27 @@ const upstream = createServer(async (req, res) => {
       sse(res, 'content_block_stop', { type: 'content_block_stop', index })
       index++
     }
-    sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
-    for (const word of reply.split(' ')) {
-      sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: word + ' ' } })
-      await new Promise((r) => setTimeout(r, delay))
+    if (cite) {
+      citeAnthropic(res, index)
+    } else {
+      sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
+      for (const word of reply.split(' ')) {
+        sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: word + ' ' } })
+        await new Promise((r) => setTimeout(r, delay))
+      }
+      sse(res, 'content_block_stop', { type: 'content_block_stop', index })
     }
-    sse(res, 'content_block_stop', { type: 'content_block_stop', index })
-    sse(res, 'message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 20 } })
+    if (toolCall) {
+      index++
+      sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'tool_use', id: 'toolu_fake', name: 'memory', input: {} } })
+      sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(toolCall) } })
+      sse(res, 'content_block_stop', { type: 'content_block_stop', index })
+    }
+    sse(res, 'message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: toolCall ? 'tool_use' : 'end_turn', stop_sequence: null },
+      usage: { output_tokens: 20, ...(cite ? { server_tool_use: { web_search_requests: 1 } } : {}) }
+    })
     sse(res, 'message_stop', { type: 'message_stop' })
     return res.end()
   }
@@ -195,12 +307,28 @@ const upstream = createServer(async (req, res) => {
       sse(res, 'response.reasoning_summary_text.delta', { type: 'response.reasoning_summary_text.delta', sequence_number: seq++, item_id: 'rs_fake', output_index: 0, summary_index: 0, delta: word + ' ' })
       await new Promise((r) => setTimeout(r, 80))
     }
+    if (cite) {
+      for (const t of ['added', 'in_progress', 'searching', 'completed']) {
+        const type = t === 'added' ? 'response.output_item.added' : `response.web_search_call.${t}`
+        sse(res, type, { type, sequence_number: seq++, output_index: 0, item_id: 'ws_fake', item: { type: 'web_search_call', id: 'ws_fake', status: 'in_progress' } })
+      }
+    }
     sse(res, 'response.output_item.added', { type: 'response.output_item.added', sequence_number: seq++, output_index: 0, item: { ...item, status: 'in_progress', content: [] } })
-    for (const word of reply.split(' ')) {
-      sse(res, 'response.output_text.delta', { type: 'response.output_text.delta', sequence_number: seq++, item_id: 'msg_fake', output_index: 0, content_index: 0, delta: word + ' ' })
+    // A citing reply arrives as its two sentences (no extra spaces between
+    // words), so the annotation ranges line up.
+    for (const piece of cite ? CITED.map((c) => c.text) : reply.split(' ').map((w) => w + ' ')) {
+      sse(res, 'response.output_text.delta', { type: 'response.output_text.delta', sequence_number: seq++, item_id: 'msg_fake', output_index: 0, content_index: 0, delta: piece })
       await new Promise((r) => setTimeout(r, delay))
     }
+    if (cite) citeResponses(res, () => seq++)
     sse(res, 'response.output_item.done', { type: 'response.output_item.done', sequence_number: seq++, output_index: 0, item })
+    if (toolCall) {
+      const reasoning = { type: 'reasoning', id: 'rs_fake', summary: [], encrypted_content: 'enc-fake' }
+      const call = { type: 'function_call', id: 'fc_fake', call_id: 'call_fake', name: 'memory', arguments: JSON.stringify(toolCall), status: 'completed' }
+      sse(res, 'response.output_item.done', { type: 'response.output_item.done', sequence_number: seq++, output_index: 1, item: reasoning })
+      sse(res, 'response.function_call_arguments.done', { type: 'response.function_call_arguments.done', sequence_number: seq++, item_id: 'fc_fake', output_index: 2, arguments: call.arguments })
+      sse(res, 'response.output_item.done', { type: 'response.output_item.done', sequence_number: seq++, output_index: 2, item: call })
+    }
     sse(res, 'response.completed', {
       type: 'response.completed',
       sequence_number: seq++,

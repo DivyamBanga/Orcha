@@ -4,6 +4,7 @@ import { useAnimatedNumber } from '../motion'
 import { codexModel, modelName, poolFor, poolState, sessionCost, usd } from '../money'
 import ChatView from './ChatView'
 import ChatPane from './chat/ChatPane'
+import ProjectHome from './chat/ProjectHome'
 import TerminalView from './TerminalView'
 import SessionPopover from './SessionPopover'
 import { ArrowDown, ArrowUp, ChevronDown, Diamond } from './Icon'
@@ -183,10 +184,14 @@ function MainPane(): React.JSX.Element {
     </>
   )
 
-  if (activeId?.startsWith('chat:')) {
+  if (activeId?.startsWith('chat:') || activeId?.startsWith('project:')) {
     return (
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <ChatPane route={activeId} />
+        {activeId.startsWith('chat:') ? (
+          <ChatPane route={activeId} />
+        ) : (
+          <ProjectHome projectId={activeId.slice('project:'.length)} />
+        )}
         {terminalHost}
       </main>
     )

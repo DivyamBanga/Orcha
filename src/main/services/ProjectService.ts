@@ -43,10 +43,29 @@ export class ProjectService {
       remotePath: null,
       sshHost: null,
       sshUser: null,
-      sshPort: null
+      sshPort: null,
+      chatOnly: false
     }
     db.projects.insert(project)
     this.workspaceManager.createMain(project.id, agent)
+    return project
+  }
+
+  // A project for chats alone: no folder, so no sessions.
+  createChatProject(name: string): Project {
+    const id = randomUUID()
+    const project: Project = {
+      id,
+      name: name.trim().slice(0, 80) || 'New project',
+      repoPath: `chat:${id}`,
+      createdAt: Date.now(),
+      remotePath: null,
+      sshHost: null,
+      sshUser: null,
+      sshPort: null,
+      chatOnly: true
+    }
+    db.projects.insert(project)
     return project
   }
 
@@ -75,7 +94,8 @@ export class ProjectService {
       remotePath,
       sshHost: host,
       sshUser: user,
-      sshPort: port
+      sshPort: port,
+      chatOnly: false
     }
     db.projects.insert(project)
     this.workspaceManager.createMain(project.id)

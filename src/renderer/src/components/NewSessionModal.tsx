@@ -7,7 +7,8 @@ import type { Agent } from '../../../shared/types'
 // Creates a parallel session: a git worktree + branch opened as another tab.
 // Opened from a project's context menu, which preselects that project.
 function NewSessionModal(): React.JSX.Element {
-  const projects = useStore((s) => s.projects)
+  // Sessions need a folder, which a project made for chats doesn't have.
+  const projects = useStore((s) => s.projects).filter((p) => !p.chatOnly)
   const show = useStore((s) => s.showNewSession)
   const setShow = useStore((s) => s.setShowNewSession)
   const createParallelSession = useStore((s) => s.createParallelSession)

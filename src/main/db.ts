@@ -49,7 +49,13 @@ export function initDb(): void {
       // column already exists
     }
   }
-  for (const col of ['remote_path TEXT', 'ssh_host TEXT', 'ssh_user TEXT', 'ssh_port INTEGER']) {
+  for (const col of [
+    'remote_path TEXT',
+    'ssh_host TEXT',
+    'ssh_user TEXT',
+    'ssh_port INTEGER',
+    'instructions TEXT'
+  ]) {
     try {
       db.exec(`ALTER TABLE projects ADD COLUMN ${col}`)
     } catch {
@@ -106,6 +112,28 @@ export function initDb(): void {
   // A reply that was mid-stream when Orcha last closed never finished.
   db.exec("UPDATE messages SET status = 'error' WHERE status = 'streaming'")
 
+  // A project's knowledge: files every chat in it starts with (stored like
+  // attachments, by hash).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_files (
+      id         INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      file       TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
+  // What chats remember about you (chat/memory.ts): global, or one project's.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memories (
+      id         INTEGER PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      text       TEXT NOT NULL,
+      chat_id    TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
   // Terminal-first rework: retire pre-rework SDK-chat workspaces, then make
   // sure every project has a 'main' session rooted at the repo folder.
   const migrated = db.prepare("SELECT value FROM app_state WHERE key = 'terminal_rework'").get()
@@ -113,7 +141,10 @@ export function initDb(): void {
     db.exec("UPDATE workspaces SET status = 'archived' WHERE kind = 'worktree'")
     db.prepare("INSERT INTO app_state (key, value) VALUES ('terminal_rework', '1')").run()
   }
-  const projectRows = db.prepare('SELECT * FROM projects').all() as ProjectRow[]
+  // (A project made for chats alone has no folder, so no session.)
+  const projectRows = db
+    .prepare("SELECT * FROM projects WHERE repo_path NOT LIKE 'chat:%'")
+    .all() as ProjectRow[]
   for (const p of projectRows) {
     const main = db
       .prepare("SELECT id FROM workspaces WHERE project_id = ? AND kind = 'main' AND status = 'active'")
@@ -169,7 +200,8 @@ function toProject(r: ProjectRow): Project {
     remotePath: r.remote_path,
     sshHost: r.ssh_host,
     sshUser: r.ssh_user,
-    sshPort: r.ssh_port
+    sshPort: r.ssh_port,
+    chatOnly: r.repo_path.startsWith('chat:')
   }
 }
 

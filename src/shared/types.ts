@@ -7,6 +7,8 @@ export interface Project {
   sshHost: string | null
   sshUser: string | null
   sshPort: number | null // null = default 22
+  // Made for chats alone: no folder, so no sessions (repoPath is "chat:<id>").
+  chatOnly: boolean
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -266,11 +268,19 @@ export interface ChatSource {
   title: string
 }
 
+// Something a reply did on the way: searched the web, or saved or removed a
+// memory (memoryId lets the chat offer Undo on a save).
+export interface ChatTool {
+  kind: 'search' | 'memory'
+  label: string
+  memoryId?: number
+}
+
 // Everything about a reply besides its text: the reasoning it showed, the
 // tools it used, the pages it cited, and what went wrong if anything did.
 export interface ChatParts {
   thinking?: { text: string; ms: number }
-  tools?: { kind: 'search' | 'memory'; label: string }[]
+  tools?: ChatTool[]
   sources?: ChatSource[]
   error?: string
 }
@@ -306,8 +316,8 @@ export interface ChatSendInput {
   webSearch?: boolean
 }
 
-// Settings → Profile, Appearance and Defaults. The profile goes into the
-// system prompt of chats started after it changes.
+// Settings → Profile, Appearance, Defaults and Memory. The profile and
+// memories go into the system prompt of chats started after they change.
 export interface ChatSettings {
   name: string
   about: string // what Orcha should know about you
@@ -316,6 +326,22 @@ export interface ChatSettings {
   thinking: boolean
   webSearch: boolean
   textSize: 'small' | 'default' | 'large'
+  memory: boolean // chats remember things across chats
+}
+
+// A project's instructions for its chats: the repo's CLAUDE.md (path set) for
+// a project with a folder here, otherwise kept by Orcha (path null).
+export interface ProjectInstructions {
+  text: string
+  path: string | null
+}
+
+// Something a chat remembers about you; projectId null = everywhere.
+export interface Memory {
+  id: number
+  projectId: string | null
+  text: string
+  createdAt: number
 }
 
 // Answer a user message again (the new reply becomes a sibling of the old).
@@ -330,7 +356,7 @@ export interface ChatRetryInput {
 // Streamed from main while a reply is being written.
 export type ChatStreamEvent =
   | { chatId: string; messageId: number; kind: 'text' | 'thinking'; delta: string }
-  | { chatId: string; messageId: number; kind: 'tool'; tool: 'search' | 'memory'; label: string }
+  | { chatId: string; messageId: number; kind: 'tool'; tool: ChatTool }
   | { chatId: string; messageId: number; kind: 'done'; message: ChatMessage }
 
 // Who this Orcha bills. 'guest': paired by invite, everything through the

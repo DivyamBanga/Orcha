@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   ChatSummary,
+  ChatTool,
   Identity
 } from '../../shared/types'
 
@@ -26,7 +27,7 @@ export const chatIdOf = (route: string | null): string | null =>
 export interface LiveReply {
   text: string
   thinking: string
-  tools: { kind: 'search' | 'memory'; label: string }[]
+  tools: ChatTool[]
 }
 
 interface ChatStore {
@@ -48,6 +49,8 @@ interface ChatStore {
   renaming: string | null
   // Files waiting to go with the next message, per route.
   attachments: Record<string, PendingFile[]>
+  // The project a new chat is being started in (null: none).
+  newChatProject: string | null
 }
 
 // A file on its way into the composer: a preview straight away, the stored
@@ -71,8 +74,17 @@ export const useChatStore = create<ChatStore>(() => ({
   webSearch: false,
   focusMessage: null,
   renaming: null,
-  attachments: {}
+  attachments: {},
+  newChatProject: null
 }))
+
+// Opens the new-chat screen, in a project or not.
+export function startChat(projectId: string | null = null): void {
+  useChatStore.setState({ newChatProject: projectId })
+  useStore.getState().setActive(NEW_CHAT)
+}
+
+export const projectRoute = (projectId: string): string => `project:${projectId}`
 
 const updateFiles = (route: string, fn: (files: PendingFile[]) => PendingFile[]): void =>
   useChatStore.setState((s) => ({
@@ -206,12 +218,13 @@ export async function sendMessage(
   model: string,
   files?: ChatFile[]
 ): Promise<void> {
-  const { thinking, webSearch, attachments } = useChatStore.getState()
+  const { thinking, webSearch, attachments, newChatProject } = useChatStore.getState()
   const route = chatId ? chatRoute(chatId) : NEW_CHAT
   const attached = files ?? (attachments[route] ?? []).flatMap((p) => (p.file ? [p.file] : []))
   try {
     const sent = await window.orcha.chat.send({
       chatId,
+      projectId: chatId ? undefined : newChatProject,
       parentId,
       text,
       files: attached,
@@ -225,7 +238,8 @@ export async function sendMessage(
     if (!chatId) {
       useChatStore.setState((s) => ({
         picked: { ...s.picked, [NEW_CHAT]: model },
-        drafts: { ...s.drafts, [NEW_CHAT]: '' }
+        drafts: { ...s.drafts, [NEW_CHAT]: '' },
+        newChatProject: null
       }))
       useStore.getState().setActive(chatRoute(sent.chatId))
     }
@@ -304,7 +318,7 @@ function flush(): void {
       const reply = live[e.messageId] ?? { text: '', thinking: '', tools: [] }
       live[e.messageId] =
         e.kind === 'tool'
-          ? { ...reply, tools: [...reply.tools, { kind: e.tool, label: e.label }] }
+          ? { ...reply, tools: [...reply.tools, e.tool] }
           : { ...reply, [e.kind]: reply[e.kind] + e.delta }
     }
     return { live, running, details }

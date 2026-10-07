@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { reduceMessage } from './wireIpc'
-import { chatIdOf, NEW_CHAT, useChatStore } from './chatStore'
+import { chatIdOf, loadChats, NEW_CHAT, useChatStore } from './chatStore'
 import type {
   Project,
   Workspace,
@@ -51,7 +51,8 @@ interface OrchaStore {
   setup: { gh: boolean; claude: boolean } | null
   projects: Project[]
   workspaces: Workspace[]
-  activeId: string | null // workspace id, 'orchestrator', or a chat route (chatStore)
+  // A workspace id, 'orchestrator', a chat route, or 'project:<id>' (chatStore)
+  activeId: string | null
   openSessions: string[] // terminals kept mounted
   activity: Record<string, 'working' | 'waiting' | 'off'>
   gitStatus: Record<string, GitStatus>
@@ -213,6 +214,8 @@ export const useStore = create<OrchaStore>((set) => ({
       (rawActive === MC ||
         rawActive === NEW_CHAT ||
         (chatId && useChatStore.getState().chats.some((c) => c.id === chatId)) ||
+        (rawActive.startsWith('project:') &&
+          useStore.getState().projects.some((p) => `project:${p.id}` === rawActive)) ||
         useStore.getState().openSessions.includes(rawActive))
     ) {
       set({ activeId: rawActive })
@@ -223,7 +226,11 @@ export const useStore = create<OrchaStore>((set) => ({
     set((s) => {
       // Only sessions have terminals to keep open.
       const openSessions =
-        id && id !== MC && !id.startsWith('chat:') && !s.openSessions.includes(id)
+        id &&
+        id !== MC &&
+        !id.startsWith('chat:') &&
+        !id.startsWith('project:') &&
+        !s.openSessions.includes(id)
           ? [...s.openSessions, id]
           : s.openSessions
       if (openSessions !== s.openSessions) persistOpenSessions(openSessions)
@@ -252,13 +259,16 @@ export const useStore = create<OrchaStore>((set) => ({
     await window.orcha.projects.remove(projectId)
     set((s) => {
       const removedIds = s.workspaces.filter((w) => w.projectId === projectId).map((w) => w.id)
+      const gone = removedIds.includes(s.activeId ?? '') || s.activeId === `project:${projectId}`
       return {
         projects: s.projects.filter((p) => p.id !== projectId),
         workspaces: s.workspaces.filter((w) => w.projectId !== projectId),
         openSessions: s.openSessions.filter((id) => !removedIds.includes(id)),
-        activeId: removedIds.includes(s.activeId ?? '') ? null : s.activeId
+        activeId: gone ? NEW_CHAT : s.activeId
       }
     })
+    // Its chats stay, as chats outside any project.
+    loadChats().catch(() => {})
   },
 
   createParallelSession: async (projectId, name, model = null, effort = null, agent = 'claude') => {

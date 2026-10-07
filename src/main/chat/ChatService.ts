@@ -5,6 +5,8 @@ import * as db from '../db'
 import { chats, messages, searchMessages } from './store'
 import { buildSystemPrompt } from './prompt'
 import { chatSettings } from './settings'
+import { memories, MEMORY_TOOL, memoryPrompt } from './memory'
+import { knowledge, projectPrompt } from './projects'
 import { anthropicAdapter } from './anthropic'
 import { responsesAdapter } from './responses'
 import {
@@ -19,6 +21,7 @@ import {
   TurnAborted,
   type ChatAdapter,
   type StreamEvent,
+  type ToolRunner,
   type TurnResult
 } from './adapter'
 import type {
@@ -29,7 +32,9 @@ import type {
   ChatRetryInput,
   ChatSendInput,
   ChatStreamEvent,
-  ChatSummary
+  ChatSummary,
+  ChatTool,
+  Memory
 } from '../../shared/types'
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -47,7 +52,10 @@ export class ChatService {
 
   constructor(private push: SendFn) {
     // Files left behind by deleted chats, once startup has settled.
-    setTimeout(() => sweepAttachments(messages.fileHashes()), 30_000).unref()
+    setTimeout(
+      () => sweepAttachments(new Set([...messages.fileHashes(), ...knowledge.hashes()])),
+      30_000
+    ).unref()
   }
 
   list(): ChatSummary[] {
@@ -78,11 +86,28 @@ export class ChatService {
     this.changed()
   }
 
+  // Settings → Memory, and Undo on a "Remembered" row.
+  memories(): Memory[] {
+    return memories.list(null, true)
+  }
+
+  updateMemory(id: number, text: string): void {
+    if (text.trim()) memories.update(id, text.trim().slice(0, 500))
+  }
+
+  removeMemory(id: number): void {
+    memories.remove(id)
+  }
+
+  clearMemories(): void {
+    memories.clear()
+  }
+
   // Settings → Data → Delete all chats: every chat and every attached file.
   removeAll(): void {
     for (const controller of this.running.values()) controller.abort()
     chats.removeAll()
-    sweepAttachments(new Set(), true)
+    sweepAttachments(new Set(knowledge.hashes()), true)
     this.changed()
   }
 
@@ -212,11 +237,19 @@ export class ChatService {
     const abort = new AbortController()
     this.running.set(chatId, abort)
 
-    // Built once, when the chat starts, and kept (see prompt.ts).
+    // Built once, when the chat starts, and kept (see prompt.ts): your
+    // profile, and what it remembers (yours, and this project's).
     const chat = chats.get(chatId)!
+    const settings = chatSettings()
     let system = chat.systemPrompt
     if (!system) {
-      system = buildSystemPrompt({ now: new Date(), profile: chatSettings() })
+      const project = chat.projectId ? db.projects.get(chat.projectId) : undefined
+      system = buildSystemPrompt({
+        now: new Date(),
+        profile: settings,
+        project: project ? projectPrompt(project) : null,
+        memory: settings.memory ? memoryPrompt(memories.list(chat.projectId)) : null
+      })
       chats.update(chatId, { systemPrompt: system })
     }
     const history = messages
@@ -237,21 +270,35 @@ export class ChatService {
       pending.length = 0
     }
     const timer = setInterval(flush, FLUSH_MS)
-    const tools: { kind: 'search' | 'memory'; label: string }[] = []
+    const tools: ChatTool[] = []
     const onEvent = (event: StreamEvent): void => {
       if (event.kind === 'tool') {
-        tools.push({ kind: event.tool, label: event.label })
+        tools.push(event.tool)
         flush()
-        this.emit({
-          chatId,
-          messageId: assistantId,
-          kind: 'tool',
-          tool: event.tool,
-          label: event.label
-        })
+        this.emit({ chatId, messageId: assistantId, kind: 'tool', tool: event.tool })
       } else {
         pending.push(event)
       }
+    }
+    // The memory tool: saves to this chat's project, or to your general
+    // memory, and shows in the reply (with Undo on a save).
+    const runTool: ToolRunner = ({ name, input }) => {
+      const call = (input ?? {}) as { action?: string; text?: string; id?: number }
+      if (name !== MEMORY_TOOL.name) return `There's no tool called ${name}.`
+      if (call.action === 'remember' && call.text?.trim()) {
+        const text = call.text.trim().slice(0, 500)
+        const memoryId = memories.add(chat.projectId, text, chatId)
+        onEvent({ kind: 'tool', tool: { kind: 'memory', label: text, memoryId } })
+        return `Saved as memory ${memoryId}.`
+      }
+      if (call.action === 'forget' && typeof call.id === 'number') {
+        const memory = memories.get(call.id)
+        if (!memory) return `There's no memory ${call.id}.`
+        memories.remove(call.id)
+        onEvent({ kind: 'tool', tool: { kind: 'memory', label: `Forgot: ${memory.text}` } })
+        return `Memory ${call.id} removed.`
+      }
+      return 'Nothing changed. Use action "remember" with text, or "forget" with an id.'
     }
 
     let result: TurnResult | null = null
@@ -264,10 +311,12 @@ export class ChatService {
           system,
           history,
           thinking: input.thinking ?? false,
-          webSearch: input.webSearch ?? false
+          webSearch: input.webSearch ?? false,
+          tools: settings.memory ? [MEMORY_TOOL] : []
         },
         onEvent,
-        abort.signal
+        abort.signal,
+        settings.memory ? runTool : undefined
       )
     } catch (err) {
       if (err instanceof TurnAborted) {

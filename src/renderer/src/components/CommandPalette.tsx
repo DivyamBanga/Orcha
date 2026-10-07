@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, useIsGuest } from '../store'
-import { chatRoute, NEW_CHAT, useChatStore } from '../chatStore'
+import { chatRoute, startChat, useChatStore } from '../chatStore'
 import { usePresence } from '../motion'
-import { Bubble, Mark, Plus, Search, Settings, SessionState } from './Icon'
+import { Bubble, Folder, Mark, Plus, Search, Settings, SessionState } from './Icon'
 
 interface Item {
   id: string
@@ -102,7 +102,7 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
         group: 'Actions',
         label: 'New chat',
         icon: <Plus size={14} />,
-        run: go(NEW_CHAT)
+        run: () => startChat(null)
       },
       {
         id: 'a:mc',
@@ -160,6 +160,15 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
       }
     })
 
+    const projectItems: Item[] = projects.map((p) => ({
+      id: `p:${p.id}`,
+      group: 'Projects',
+      label: p.name,
+      detail: p.chatOnly ? 'chats only' : 'project',
+      icon: <Folder size={14} />,
+      run: go(`project:${p.id}`)
+    }))
+
     if (words.length === 0) return [...actions, ...chatItems.slice(0, 6)]
     const found = (xs: Item[]): Item[] =>
       xs.filter((x) => matches(`${x.label} ${typeof x.detail === 'string' ? x.detail : ''}`, words))
@@ -176,6 +185,7 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
     }))
     return [
       ...found(chatItems).slice(0, 6),
+      ...found(projectItems).slice(0, 4),
       ...found(sessionItems).slice(0, 6),
       ...found(actions),
       ...(q.length >= 2 ? messageItems : [])

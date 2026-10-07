@@ -190,11 +190,13 @@ export class OrchestratorService {
             agent: z.enum(['claude', 'codex']).optional()
           },
           async (args) => {
-            const project = db.projects
-              .list()
-              .find((p) => p.name.toLowerCase() === args.project_name.toLowerCase())
+            // Projects made for chats alone have no folder to work in.
+            const code = db.projects.list().filter((p) => !p.chatOnly)
+            const project = code.find(
+              (p) => p.name.toLowerCase() === args.project_name.toLowerCase()
+            )
             if (!project) {
-              const names = db.projects.list().map((p) => p.name)
+              const names = code.map((p) => p.name)
               return this.text({
                 error: `Unknown project "${args.project_name}". Valid: ${names.join(', ')}`
               })

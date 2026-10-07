@@ -16,7 +16,7 @@ import {
 import { pathTo, siblings } from '../../../../shared/chatTree'
 import Composer from './Composer'
 import { AssistantMessage, UserMessage, type Branches } from './Message'
-import { ArrowDown, More, Star } from '../Icon'
+import { ArrowDown, Close, More, Star } from '../Icon'
 import ContextMenu from '../ContextMenu'
 
 function greeting(hour: number): string {
@@ -75,6 +75,8 @@ function NewChat(): React.JSX.Element {
   const catalog = useStore((s) => s.catalog)
   const identity = useStore((s) => s.identity)
   const picked = useChatStore((s) => s.picked[NEW_CHAT])
+  const projectId = useChatStore((s) => s.newChatProject)
+  const project = useStore((s) => s.projects.find((p) => p.id === projectId))
   const [hour] = useState(() => new Date().getHours())
   const modelId = picked ?? defaultModel(catalog, identity)
   const model = chatModels(catalog, identity).find((m) => m.id === modelId) ?? null
@@ -86,8 +88,22 @@ function NewChat(): React.JSX.Element {
     >
       <div className="boot-item w-full max-w-[720px]">
         <h1 className="mb-6 text-center text-[26px] font-medium tracking-tight text-zinc-100">
-          {greeting(hour)}
+          {project ? project.name : greeting(hour)}
         </h1>
+        {project && (
+          <div className="-mt-4 mb-5 flex justify-center">
+            <span className="flex items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[12px] text-zinc-400">
+              New chat in this project
+              <button
+                onClick={() => useChatStore.setState({ newChatProject: null })}
+                className="text-zinc-500 hover:text-zinc-200"
+                title="Start it outside the project"
+              >
+                <Close size={11} />
+              </button>
+            </span>
+          </div>
+        )}
         <Composer
           route={NEW_CHAT}
           model={model}
@@ -103,6 +119,7 @@ function NewChat(): React.JSX.Element {
 
 function ChatHeader({ chatId }: { chatId: string }): React.JSX.Element {
   const chat = useChatStore((s) => s.chats.find((c) => c.id === chatId))
+  const project = useStore((s) => s.projects.find((p) => p.id === chat?.projectId))
   const asked = useChatStore((s) => s.renaming === chatId)
   const [editing, setEditing] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
@@ -123,6 +140,18 @@ function ChatHeader({ chatId }: { chatId: string }): React.JSX.Element {
   return (
     <header className="titlebar titlebar-trail flex h-12 shrink-0 items-center gap-2 border-b border-edge px-4">
       <div className="boot-item boot-d1 flex min-w-0 flex-1 items-center gap-1">
+        {project && (
+          <>
+            <button
+              onClick={() => useStore.getState().setActive(`project:${project.id}`)}
+              className="max-w-[200px] shrink-0 truncate rounded-md px-1.5 py-0.5 text-zinc-500 transition-colors duration-150 hover:bg-overlay/[0.05] hover:text-zinc-200"
+              title="Open the project"
+            >
+              {project.name}
+            </button>
+            <span className="text-zinc-600">/</span>
+          </>
+        )}
         {renaming ? (
           <input
             autoFocus

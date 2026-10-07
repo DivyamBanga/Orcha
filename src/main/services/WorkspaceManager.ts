@@ -46,6 +46,9 @@ export class WorkspaceManager {
   ): Promise<Workspace> {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
+    if (project.chatOnly) {
+      throw new Error(`${project.name} is for chats; it has no folder for a session.`)
+    }
     if (project.sshHost) {
       throw new Error('Parallel sessions are not supported for remote projects yet')
     }
@@ -94,6 +97,9 @@ export class WorkspaceManager {
   createMain(projectId: string, agent: Agent = 'claude'): Workspace {
     const project = db.projects.list().find((p) => p.id === projectId)
     if (!project) throw new Error(`Unknown project: ${projectId}`)
+    if (project.chatOnly) {
+      throw new Error(`${project.name} is for chats; it has no folder for a session.`)
+    }
     const workspace: Workspace = {
       id: randomUUID(),
       projectId,

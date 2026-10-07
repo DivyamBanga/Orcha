@@ -133,9 +133,9 @@ export function readAttachment(file: ChatFile): { base64: string } | { text: str
   return { base64: readFileSync(join(dir(), blobName(file))).toString('base64') }
 }
 
-// Deletes stored files no message refers to any more (their chats were
-// deleted, or they were attached and never sent) once they're a day old, so
-// nothing being attached right now is touched. `everything` clears it all.
+// Deletes stored files nothing refers to any more (their chats were deleted,
+// or they were attached and never sent) once they're a day old, so nothing
+// being attached right now is touched. `everything` drops all but `keep` now.
 export function sweepAttachments(keep: Set<string>, everything = false): void {
   let names: string[]
   try {
@@ -147,7 +147,7 @@ export function sweepAttachments(keep: Set<string>, everything = false): void {
   for (const name of names) {
     const path = join(dir(), name)
     try {
-      if (everything || (!keep.has(name.slice(0, 64)) && statSync(path).mtimeMs < cutoff)) {
+      if (!keep.has(name.slice(0, 64)) && (everything || statSync(path).mtimeMs < cutoff)) {
         rmSync(path, { force: true })
       }
     } catch {

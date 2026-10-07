@@ -12,7 +12,8 @@ const DEFAULTS: ChatSettings = {
   model: null,
   thinking: false,
   webSearch: false,
-  textSize: 'default'
+  textSize: 'default',
+  memory: true
 }
 
 const LIMIT = 4000

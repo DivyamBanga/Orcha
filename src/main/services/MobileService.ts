@@ -289,7 +289,10 @@ export class MobileService {
     const plan = await fetchPlanUsage(false).catch(() => null)
     const five = plan?.limits.find((l) => l.key === 'five_hour') ?? null
     const workspaces = db.workspaces.listActive()
-    const projects: FleetProject[] = db.projects.list().map((p) => {
+    const projects: FleetProject[] = db.projects
+      .list()
+      .filter((p) => !p.chatOnly)
+      .map((p) => {
       const sessions = workspaces
         .filter((w) => w.projectId === p.id)
         .map((w): FleetSession => {

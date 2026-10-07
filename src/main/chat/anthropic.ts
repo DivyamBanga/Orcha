@@ -2,10 +2,15 @@ import Anthropic from '@anthropic-ai/sdk'
 import type {
   BetaContentBlockParam,
   BetaMessageParam,
-  BetaMessageStreamParams
+  BetaMessageStreamParams,
+  BetaTool
 } from '@anthropic-ai/sdk/resources/beta/messages/messages'
+import type { ChatSource } from '../../shared/types'
 import {
+  addUsage,
+  citeMarks,
   fileText,
+  MAX_ROUNDS,
   mediaHeader,
   TurnAborted,
   type ChatAdapter,
@@ -37,57 +42,122 @@ export function anthropicAdapter(
   })
 
   return {
-    async run(turn, emit, signal) {
+    async run(turn, emit, signal, runTool) {
       const params = requestFor(turn, load)
-      const stream = client.beta.messages.stream(params, {
-        signal,
-        headers: mediaHeader(turn.history)
-      })
+      const messages = [...params.messages]
       let text = ''
       let thinking = ''
       let thinkingStarted = 0
       let thinkingMs = 0
+      let usage: TurnResult['usage'] = null
+      let model: string | null = null
+      // Pages the search found, and which of them the text block being
+      // written cites (marked at its end, where the claim finishes).
+      const sources: ChatSource[] = []
+      let cited: number[] = []
       const partial = (): TurnResult => ({
         text,
-        parts: thinking ? { thinking: { text: thinking, ms: thinkingMs } } : {},
-        usage: null,
-        model: null
+        parts: {
+          ...(thinking ? { thinking: { text: thinking, ms: thinkingMs } } : {}),
+          ...(sources.length ? { sources } : {})
+        },
+        usage,
+        model
       })
+      const source = (url: string, title: string | null | undefined): number => {
+        const known = sources.findIndex((s) => s.url === url)
+        if (known >= 0) return known
+        sources.push({ url, title: title || url })
+        return sources.length - 1
+      }
       try {
-        for await (const event of stream) {
-          if (event.type === 'content_block_start') {
-            if (event.content_block.type === 'server_tool_use') {
-              emit({ kind: 'tool', tool: 'search', label: 'Searching the web' })
-            }
-          } else if (event.type === 'content_block_delta') {
-            if (event.delta.type === 'thinking_delta') {
-              if (!thinkingStarted) thinkingStarted = Date.now()
-              thinking += event.delta.thinking
-              emit({ kind: 'thinking', delta: event.delta.thinking })
-            } else if (event.delta.type === 'text_delta') {
-              if (thinkingStarted && !thinkingMs) thinkingMs = Date.now() - thinkingStarted
-              text += event.delta.text
-              emit({ kind: 'text', delta: event.delta.text })
+        // One model call per round; a tool use (or a long search pausing the
+        // turn) sends what it did back and goes again.
+        for (let round = 0; round < MAX_ROUNDS; round++) {
+          const stream = client.beta.messages.stream(
+            { ...params, messages },
+            { signal, headers: mediaHeader(turn.history) }
+          )
+          // A later round's words start a new paragraph after the last ones.
+          let opened = round === 0
+          for await (const event of stream) {
+            if (event.type === 'content_block_start') {
+              const block = event.content_block
+              if (block.type === 'server_tool_use') {
+                emit({ kind: 'tool', tool: { kind: 'search', label: 'Searching the web' } })
+              } else if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+                for (const r of block.content) {
+                  if (r.type === 'web_search_result') source(r.url, r.title)
+                }
+              } else if (block.type === 'text') {
+                cited = []
+              }
+            } else if (event.type === 'content_block_stop') {
+              if (cited.length) {
+                const marks = citeMarks(cited, sources)
+                text += marks
+                emit({ kind: 'text', delta: marks })
+                cited = []
+              }
+            } else if (event.type === 'content_block_delta') {
+              if (
+                event.delta.type === 'citations_delta' &&
+                event.delta.citation.type === 'web_search_result_location'
+              ) {
+                const n = source(event.delta.citation.url, event.delta.citation.title)
+                if (!cited.includes(n)) cited.push(n)
+              }
+              if (event.delta.type === 'thinking_delta') {
+                if (!thinkingStarted) thinkingStarted = Date.now()
+                thinking += event.delta.thinking
+                emit({ kind: 'thinking', delta: event.delta.thinking })
+              } else if (event.delta.type === 'text_delta') {
+                if (thinkingStarted && !thinkingMs) thinkingMs = Date.now() - thinkingStarted
+                let delta = event.delta.text
+                if (!opened && text.trim()) delta = '\n\n' + delta.trimStart()
+                opened = true
+                text += delta
+                emit({ kind: 'text', delta })
+              }
             }
           }
-        }
-        const final = await stream.finalMessage()
-        if (final.stop_reason === 'refusal') {
-          throw new Error(
-            'The model declined to answer this one. Try rephrasing it, or ask another model.'
-          )
-        }
-        const u = final.usage
-        return {
-          ...partial(),
-          usage: {
+          const final = await stream.finalMessage()
+          if (final.stop_reason === 'refusal') {
+            throw new Error(
+              'The model declined to answer this one. Try rephrasing it, or ask another model.'
+            )
+          }
+          const u = final.usage
+          usage = addUsage(usage, {
             input: u.input_tokens,
             output: u.output_tokens,
             cacheRead: u.cache_read_input_tokens ?? 0,
             cacheWrite: u.cache_creation_input_tokens ?? 0
-          },
-          model: final.model
+          })
+          model = final.model
+          const toolUse = final.stop_reason === 'tool_use' && runTool
+          if (final.stop_reason !== 'pause_turn' && !toolUse) break
+          // What it said and did goes back as is (thinking signatures and all,
+          // which a turn that's still going needs).
+          messages.push({ role: 'assistant', content: final.content as BetaContentBlockParam[] })
+          if (toolUse) {
+            messages.push({
+              role: 'user',
+              content: final.content.flatMap((b) =>
+                b.type === 'tool_use'
+                  ? [
+                      {
+                        type: 'tool_result' as const,
+                        tool_use_id: b.id,
+                        content: runTool({ name: b.name, input: b.input })
+                      }
+                    ]
+                  : []
+              )
+            })
+          }
         }
+        return partial()
       } catch (err) {
         if (signal.aborted) throw new TurnAborted(partial())
         throw new Error(describe(err))
@@ -159,9 +229,18 @@ export function requestFor(turn: TurnInput, load: FileLoader): BetaMessageStream
   } else if (model.thinking === 'budget' && turn.thinking) {
     params.thinking = { type: 'enabled', budget_tokens: 8_000 }
   }
+  const tools: BetaMessageStreamParams['tools'] = []
   if (turn.webSearch && model.webSearch) {
-    params.tools = [{ type: model.webSearch, name: 'web_search', max_uses: 5 } as never]
+    tools.push({ type: model.webSearch, name: 'web_search', max_uses: 5 } as never)
   }
+  for (const t of turn.tools ?? []) {
+    tools.push({
+      name: t.name,
+      description: t.description,
+      input_schema: t.schema as BetaTool.InputSchema
+    })
+  }
+  if (tools.length) params.tools = tools
   return params
 }
 

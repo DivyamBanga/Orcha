@@ -248,6 +248,23 @@ export function Globe(props: IconProps): React.JSX.Element {
   )
 }
 
+export function Folder(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M2.5 4.6a1.1 1.1 0 0 1 1.1-1.1h2.6l1.4 1.6h4.8a1.1 1.1 0 0 1 1.1 1.1v5.7a1.1 1.1 0 0 1-1.1 1.1H3.6a1.1 1.1 0 0 1-1.1-1.1z" />
+    </Stroke>
+  )
+}
+
+// Memory: something kept for later.
+export function Bookmark(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M4.5 3.6A1.1 1.1 0 0 1 5.6 2.5h4.8a1.1 1.1 0 0 1 1.1 1.1v10L8 11.2l-3.5 2.4z" />
+    </Stroke>
+  )
+}
+
 export function Paperclip(props: IconProps): React.JSX.Element {
   return (
     <Stroke {...props}>

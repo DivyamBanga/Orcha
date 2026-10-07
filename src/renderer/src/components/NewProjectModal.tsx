@@ -3,7 +3,7 @@ import { useStore, useIsGuest, useCodexAvailable } from '../store'
 import Modal from './Modal'
 import type { Agent } from '../../../shared/types'
 
-type Mode = 'new' | 'github' | 'local' | 'remote'
+type Mode = 'new' | 'github' | 'local' | 'remote' | 'chats'
 
 const cleanError = (err: unknown): string =>
   (err instanceof Error ? err.message : String(err)).replace(
@@ -30,7 +30,8 @@ function NewProjectModal(): React.JSX.Element {
         ] as [Mode, string][])
       : []),
     ['local', isGuest ? 'Open a folder' : 'Local'],
-    ...(isGuest ? [] : ([['remote', 'Remote']] as [Mode, string][]))
+    ...(isGuest ? [] : ([['remote', 'Remote']] as [Mode, string][])),
+    ['chats', 'Chats only']
   ]
 
   const [mode, setMode] = useState<Mode>(isGuest ? 'local' : 'new')
@@ -119,6 +120,24 @@ function NewProjectModal(): React.JSX.Element {
     return run('Setting up git…', () => window.orcha.projects.initGit(folder, agent))
   }
 
+  // A project with no folder: chats with shared instructions and files.
+  const handleChats = async (): Promise<void> => {
+    if (!name.trim()) return
+    setWorking('Creating…')
+    setError(null)
+    try {
+      const project = await window.orcha.projects.createChat(name.trim())
+      await load()
+      setActive(`project:${project.id}`)
+      close()
+      setName('')
+    } catch (err) {
+      setError(cleanError(err))
+    } finally {
+      setWorking(null)
+    }
+  }
+
   const handleRemote = (): Promise<void> | void => {
     const trimmedHost = host.trim()
     const trimmedUser = user.trim()
@@ -139,7 +158,7 @@ function NewProjectModal(): React.JSX.Element {
     <Modal open={show} onClose={close} dismissable={!working} width={440}>
       <div className="mb-4 text-[15px] font-semibold tracking-tight text-zinc-50">New project</div>
 
-      {codexAvailable && (
+      {codexAvailable && mode !== 'chats' && (
         <>
           <div className="field-label">Runs with</div>
           <div className="segmented mb-4">
@@ -258,6 +277,33 @@ function NewProjectModal(): React.JSX.Element {
                 </button>
               ))
             )}
+          </div>
+        </>
+      ) : mode === 'chats' ? (
+        <>
+          <label className="field-label" htmlFor="chat-project-name">
+            Name
+          </label>
+          <input
+            id="chat-project-name"
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleChats()}
+            placeholder="Trip planning"
+            className="input mb-3"
+          />
+          <div className="mb-5 text-[12px] leading-relaxed text-zinc-500">
+            A place for related chats. Give them instructions and files they all start with. No
+            folder or code.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={close} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button onClick={handleChats} disabled={!name.trim()} className="btn btn-primary">
+              Create
+            </button>
           </div>
         </>
       ) : mode === 'local' ? (

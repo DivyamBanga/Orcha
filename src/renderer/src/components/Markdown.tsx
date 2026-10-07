@@ -47,13 +47,22 @@ function CodeBlock({ children, ...rest }: React.ComponentProps<'pre'>): React.JS
 }
 
 // Links open in the browser. Anything that isn't a web or mail link (a relative
-// path would navigate Orcha itself) does nothing.
-function Link({ href, children }: React.ComponentProps<'a'>): React.JSX.Element {
+// path would navigate Orcha itself) does nothing. A link titled "cite" is a
+// citation from web search, drawn as a small numbered chip.
+function Link({ href, title, children }: React.ComponentProps<'a'>): React.JSX.Element {
   const external = href && /^(https?:|mailto:)/i.test(href)
+  const cite = title === 'cite'
+  let site = href
+  try {
+    site = href ? new URL(href).hostname.replace(/^www\./, '') : href
+  } catch {
+    // not a URL
+  }
   return (
     <a
       href={href}
-      title={external ? href : undefined}
+      className={cite ? 'cite' : undefined}
+      title={cite ? site : external ? href : undefined}
       onClick={(e) => {
         e.preventDefault()
         if (external) window.open(href)

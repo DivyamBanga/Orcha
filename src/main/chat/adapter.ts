@@ -1,4 +1,4 @@
-import type { CatalogModel, ChatFile, ChatParts } from '../../shared/types'
+import type { CatalogModel, ChatFile, ChatParts, ChatSource, ChatTool } from '../../shared/types'
 
 // What every chat provider (Claude through the relay, Azure through the
 // relay, and later Claude on the host's own plan) implements: run one turn,
@@ -21,11 +21,25 @@ export interface TurnInput {
   history: HistoryMessage[]
   thinking: boolean
   webSearch: boolean
+  // Tools Orcha runs itself (the memory tool), as JSON Schema; each adapter
+  // offers them in its provider's shape and loops until the model is done.
+  tools?: ClientTool[]
 }
 
+export interface ClientTool {
+  name: string
+  description: string
+  schema: Record<string, unknown>
+}
+
+// Runs one call to a client tool and says how it went, for the model.
+export type ToolRunner = (call: { name: string; input: unknown }) => string
+
+// The most model calls one turn makes (each tool use is another call).
+export const MAX_ROUNDS = 6
+
 export type StreamEvent =
-  | { kind: 'text' | 'thinking'; delta: string }
-  | { kind: 'tool'; tool: 'search' | 'memory'; label: string }
+  { kind: 'text' | 'thinking'; delta: string } | { kind: 'tool'; tool: ChatTool }
 
 export interface TurnResult {
   text: string
@@ -35,8 +49,39 @@ export interface TurnResult {
 }
 
 export interface ChatAdapter {
-  run(turn: TurnInput, emit: (event: StreamEvent) => void, signal: AbortSignal): Promise<TurnResult>
+  run(
+    turn: TurnInput,
+    emit: (event: StreamEvent) => void,
+    signal: AbortSignal,
+    runTool?: ToolRunner
+  ): Promise<TurnResult>
   complete(model: string, system: string, prompt: string): Promise<string>
+}
+
+// Usage across a turn's model calls, summed.
+export function addUsage(
+  total: TurnResult['usage'],
+  next: NonNullable<TurnResult['usage']>
+): NonNullable<TurnResult['usage']> {
+  if (!total) return next
+  return {
+    input: total.input + next.input,
+    output: total.output + next.output,
+    cacheRead: total.cacheRead + next.cacheRead,
+    cacheWrite: total.cacheWrite + next.cacheWrite
+  }
+}
+
+// Citation chips after a claim: " [1][3]", each a Markdown link to its source
+// titled "cite" (which the chat draws as a chip, and Copy leaves out).
+export function citeMarks(numbers: number[], sources: ChatSource[]): string {
+  return (
+    ' ' +
+    numbers
+      .filter((n) => sources[n])
+      .map((n) => `[${n + 1}](<${sources[n].url.replace(/[<>\s]/g, encodeURIComponent)}> "cite")`)
+      .join('')
+  )
 }
 
 // How a file is read for sending (attachments.ts in the app, a stub in tests).

@@ -2,9 +2,19 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown from '../Markdown'
 import { usd } from '../../money'
 import { fileMeta, imageUrl } from '../../attach'
-import { Check, ChevronLeft, ChevronRight, Copy, FileDoc, Pencil, Refresh, Spark } from '../Icon'
+import {
+  Bookmark,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  FileDoc,
+  Pencil,
+  Refresh,
+  Spark
+} from '../Icon'
 import type { LiveReply } from '../../chatStore'
-import type { ChatFile, ChatMessage } from '../../../../shared/types'
+import type { ChatFile, ChatMessage, ChatSource, ChatTool } from '../../../../shared/types'
 
 // Where a message sits among its alternatives (edits or retries): 0-based
 // index of how many. Callbacks take the message id so they can stay the same
@@ -220,6 +230,71 @@ export const UserMessage = memo(function UserMessage({
 
 // ---- the reply ------------------------------------------------------------------
 
+// A memory the reply saved ("Remembered: …", with Undo) or removed.
+function MemoryRow({ tool }: { tool: ChatTool }): React.JSX.Element {
+  const [undone, setUndone] = useState(false)
+  const saved = tool.memoryId !== undefined
+  return (
+    <div className="mb-2 flex items-center gap-2 text-[12.5px] text-zinc-500">
+      <Bookmark size={12} />
+      <span className={`min-w-0 truncate ${undone ? 'line-through' : ''}`}>
+        {saved ? `Remembered: ${tool.label}` : tool.label}
+      </span>
+      {saved &&
+        (undone ? (
+          <span className="shrink-0 text-zinc-600">Undone</span>
+        ) : (
+          <button
+            onClick={() => {
+              window.orcha.memory.remove(tool.memoryId!).catch(() => {})
+              setUndone(true)
+            }}
+            className="shrink-0 text-zinc-400 underline-offset-2 hover:text-zinc-100 hover:underline"
+          >
+            Undo
+          </button>
+        ))}
+    </div>
+  )
+}
+
+// A citation chip as written into the text (see citeMarks in main).
+const CITE_MARK = / ?\[\d+\]\(<[^>]*> "cite"\)/g
+
+// The pages a web search drew on, numbered as the chips in the text.
+function Sources({ sources }: { sources: ChatSource[] }): React.JSX.Element {
+  const [all, setAll] = useState(false)
+  const shown = all ? sources : sources.slice(0, 4)
+  const site = (url: string): string => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '')
+    } catch {
+      return url
+    }
+  }
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {shown.map((s, i) => (
+        <button
+          key={s.url}
+          onClick={() => window.open(s.url)}
+          className="source-chip"
+          title={s.url}
+        >
+          <span className="tnum text-zinc-500">{i + 1}</span>
+          <span className="truncate text-zinc-300">{s.title}</span>
+          <span className="shrink-0 text-zinc-500">{site(s.url)}</span>
+        </button>
+      ))}
+      {sources.length > shown.length && (
+        <button onClick={() => setAll(true)} className="source-chip text-zinc-400">
+          {sources.length - shown.length} more
+        </button>
+      )}
+    </div>
+  )
+}
+
 function Thinking({
   text,
   ms,
@@ -285,16 +360,22 @@ export const AssistantMessage = memo(function AssistantMessage({
           live={streaming && !text}
         />
       )}
-      {tools.map((tool, i) => (
-        <div key={i} className="mb-2 flex items-center gap-2 text-[12.5px] text-zinc-500">
-          {streaming && i === tools.length - 1 && !text ? (
-            <span className="busy-ring" />
-          ) : (
-            <Check size={12} />
-          )}
-          {tool.label}
-        </div>
-      ))}
+      {tools.map((tool, i) =>
+        tool.kind === 'memory' ? (
+          <MemoryRow key={i} tool={tool} />
+        ) : (
+          <div key={i} className="mb-2 flex items-center gap-2 text-[12.5px] text-zinc-500">
+            {streaming && i === tools.length - 1 && !text ? (
+              <span className="busy-ring" />
+            ) : (
+              <Check size={12} />
+            )}
+            {streaming && i === tools.length - 1 && !text
+              ? tool.label
+              : tool.label.replace(/^Searching/, 'Searched')}
+          </div>
+        )
+      )}
       {text ? (
         <Markdown text={text} className="chat-text text-zinc-200" />
       ) : (
@@ -305,6 +386,9 @@ export const AssistantMessage = memo(function AssistantMessage({
           </div>
         )
       )}
+      {!streaming && message.parts?.sources?.length ? (
+        <Sources sources={message.parts.sources} />
+      ) : null}
       {message.status === 'error' && (
         <div className="mt-2 select-text rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2 text-[12.5px] text-red-400">
           {error ?? 'Something went wrong before the reply finished.'}
@@ -316,7 +400,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             last ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          {text && <CopyButton text={text} />}
+          {text && <CopyButton text={text.replace(CITE_MARK, '')} />}
           {onRetry && (
             <button
               onClick={() => onRetry(message.id)}

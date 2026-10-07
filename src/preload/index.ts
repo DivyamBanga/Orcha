@@ -27,6 +27,8 @@ import type {
   ChatRetryInput,
   ChatSendInput,
   ChatSettings,
+  Memory,
+  ProjectInstructions,
   ChatSummary
 } from '../shared/types'
 
@@ -62,6 +64,20 @@ const api = {
     initGit: (folder: string, agent?: Agent): Promise<Project> =>
       ipcRenderer.invoke(IPC.ProjectsInitGit, folder, agent),
     list: (): Promise<Project[]> => ipcRenderer.invoke(IPC.ProjectsList),
+    // A project for chats alone (no folder), and what a project's chats
+    // start with: instructions and knowledge files.
+    createChat: (name: string): Promise<Project> =>
+      ipcRenderer.invoke(IPC.ProjectsCreateChat, name),
+    instructions: (projectId: string): Promise<ProjectInstructions> =>
+      ipcRenderer.invoke(IPC.ProjectInstructions, projectId),
+    setInstructions: (projectId: string, text: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.ProjectSetInstructions, projectId, text),
+    files: (projectId: string): Promise<(ChatFile & { id: number })[]> =>
+      ipcRenderer.invoke(IPC.ProjectFiles, projectId),
+    addFile: (projectId: string, file: ChatFile): Promise<void> =>
+      ipcRenderer.invoke(IPC.ProjectAddFile, projectId, file),
+    removeFile: (fileId: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.ProjectRemoveFile, fileId),
     createRepo: (name: string, isPrivate: boolean, agent?: Agent): Promise<Project> =>
       ipcRenderer.invoke(IPC.ProjectsCreateRepo, name, isPrivate, agent),
     listGithub: (): Promise<{ nameWithOwner: string; name: string }[]> =>
@@ -152,6 +168,14 @@ const api = {
   },
   // The models on offer (from the relay; see EvCatalog for updates).
   catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
+  // What chats remember about you (Settings → Memory, and Undo in a chat).
+  memory: {
+    list: (): Promise<Memory[]> => ipcRenderer.invoke(IPC.MemoryList),
+    update: (id: number, text: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.MemoryUpdate, id, text),
+    remove: (id: number): Promise<void> => ipcRenderer.invoke(IPC.MemoryRemove, id),
+    clear: (): Promise<void> => ipcRenderer.invoke(IPC.MemoryClear)
+  },
   // Settings → Profile, Appearance and Defaults.
   settings: {
     get: (): Promise<ChatSettings> => ipcRenderer.invoke(IPC.SettingsGet),
