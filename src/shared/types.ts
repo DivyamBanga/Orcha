@@ -254,6 +254,11 @@ export interface ChatFile {
   name: string
   mime: string
   bytes: number
+  // How a model gets it: an image, a PDF, or text (plain files, and what was
+  // read out of Word, PowerPoint and Excel files).
+  kind: 'image' | 'pdf' | 'text'
+  pages?: number
+  chars?: number
 }
 
 export interface ChatSource {
@@ -295,6 +300,7 @@ export interface ChatSendInput {
   projectId?: string | null
   parentId: number | null // the message this one follows (null = first)
   text: string
+  files?: ChatFile[] // from chat.attach
   model: string
   thinking?: boolean
   webSearch?: boolean

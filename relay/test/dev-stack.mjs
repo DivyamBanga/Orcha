@@ -12,6 +12,7 @@
 //   ORCHA_ASK   ends on a question with numbered options, so the session reads as blocked
 //   ORCHA_MD    a reply using every kind of markdown chat renders (table, code, maths)
 //   ORCHA_THINK streams some thinking (a reasoning summary for GPT) before the reply
+//   ORCHA_FILES replies with what the message carried ("Received: image image/webp, …")
 //
 // Requests the fake upstream receives are appended to .wrangler/dev-upstream.log.
 import { spawn } from 'node:child_process'
@@ -68,9 +69,28 @@ function lastUserText(parsed) {
   return (last.content ?? []).map((c) => c.text ?? '').join('\n')
 }
 
+// What the newest user turn carried besides its words, for ORCHA_FILES:
+// "image image/webp, document paper.pdf, file notes.md" (either API's shape).
+function attachedParts(parsed) {
+  const turns = parsed.messages ?? (Array.isArray(parsed.input) ? parsed.input : [])
+  const last = [...turns].reverse().find((m) => m.role === 'user')
+  if (!last || !Array.isArray(last.content)) return 'nothing'
+  const parts = []
+  for (const c of last.content) {
+    if (c.type === 'image') parts.push(`image ${c.source?.media_type}`)
+    else if (c.type === 'input_image') parts.push(`image ${/^data:([^;]+)/.exec(c.image_url ?? '')?.[1]}`)
+    else if (c.type === 'document') parts.push(`document ${c.title}`)
+    else if (c.type === 'input_file') parts.push(`document ${c.filename}`)
+    const file = /^<file name="([^"]+)">/.exec(c.text ?? '')
+    if (file) parts.push(`file ${file[1]}`)
+  }
+  return parts.join(', ') || 'nothing'
+}
+
 function replyFor(parsed) {
   const text = lastUserText(parsed)
   const thinking = text.includes('ORCHA_THINK') ? THINKING : null
+  if (text.includes('ORCHA_FILES')) return { reply: `Received: ${attachedParts(parsed)}.`, delay: 30, thinking }
   if (text.includes('ORCHA_SLOW')) return { reply: SLOW_REPLY, delay: 600, thinking }
   if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60, thinking }
   if (text.includes('ORCHA_MD')) return { reply: MD_REPLY, delay: 15, thinking }

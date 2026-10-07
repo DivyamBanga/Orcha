@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import {
+  addFiles,
   chatIdOf,
   chatModels,
   defaultModel,
@@ -25,6 +26,50 @@ function greeting(hour: number): string {
   return 'Good evening'
 }
 
+// Files dragged anywhere over a chat attach to its next message.
+function DropZone({
+  route,
+  className,
+  children
+}: {
+  route: string
+  className: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  const [over, setOver] = useState(false)
+  // Enter and leave fire for every child crossed; count to know when it's out.
+  const depth = useRef(0)
+  const files = (e: React.DragEvent): boolean => e.dataTransfer.types.includes('Files')
+  return (
+    <div
+      className={`relative ${className}`}
+      onDragEnter={(e) => {
+        if (!files(e)) return
+        depth.current++
+        setOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!files(e)) return
+        depth.current = Math.max(0, depth.current - 1)
+        if (depth.current === 0) setOver(false)
+      }}
+      onDragOver={(e) => {
+        if (files(e)) e.preventDefault()
+      }}
+      onDrop={(e) => {
+        if (!files(e)) return
+        e.preventDefault()
+        depth.current = 0
+        setOver(false)
+        addFiles(route, [...e.dataTransfer.files])
+      }}
+    >
+      {children}
+      {over && <div className="drop-veil">Drop to attach</div>}
+    </div>
+  )
+}
+
 // The empty screen a new chat starts from: a greeting and the composer.
 function NewChat(): React.JSX.Element {
   const catalog = useStore((s) => s.catalog)
@@ -35,7 +80,10 @@ function NewChat(): React.JSX.Element {
   const model = chatModels(catalog, identity).find((m) => m.id === modelId) ?? null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-[12vh]">
+    <DropZone
+      route={NEW_CHAT}
+      className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-[12vh]"
+    >
       <div className="boot-item w-full max-w-[720px]">
         <h1 className="mb-6 text-center text-[26px] font-medium tracking-tight text-zinc-100">
           {greeting(hour)}
@@ -49,7 +97,7 @@ function NewChat(): React.JSX.Element {
           onStop={() => {}}
         />
       </div>
-    </div>
+    </DropZone>
   )
 }
 
@@ -198,7 +246,7 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
       const message = d?.messages.find((m) => m.id === messageId)
       if (!message || !modelId) return
       pinned.current = true
-      sendMessage(chatId, message.parentId, text, modelId).catch(() => {})
+      sendMessage(chatId, message.parentId, text, modelId, message.files).catch(() => {})
     },
     [chatId, modelId]
   )
@@ -253,7 +301,7 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
   }
 
   return (
-    <>
+    <DropZone route={route} className="flex min-h-0 flex-1 flex-col">
       <div className="relative min-h-0 flex-1">
         <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto">
           <div className="mx-auto w-full max-w-[720px] px-6 pb-6 pt-4">
@@ -304,7 +352,7 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
           onStop={() => window.orcha.chat.stop(chatId).catch(() => {})}
         />
       </div>
-    </>
+    </DropZone>
   )
 }
 

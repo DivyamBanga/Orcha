@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { useStore } from './store'
 import { deepestLatest } from '../../shared/chatTree'
+import { prepare } from './attach'
 import type {
   Catalog,
   CatalogModel,
   ChatDetail,
+  ChatFile,
   ChatMessage,
   ChatStreamEvent,
   ChatSummary,
@@ -44,6 +46,18 @@ interface ChatStore {
   focusMessage: { chatId: string; messageId: number } | null
   // A chat whose title should open for editing (Rename from the sidebar).
   renaming: string | null
+  // Files waiting to go with the next message, per route.
+  attachments: Record<string, PendingFile[]>
+}
+
+// A file on its way into the composer: a preview straight away, the stored
+// file once it's saved.
+export interface PendingFile {
+  id: string
+  name: string
+  image: boolean
+  preview: string | null // object URL, images only
+  file: ChatFile | null
 }
 
 export const useChatStore = create<ChatStore>(() => ({
@@ -56,8 +70,47 @@ export const useChatStore = create<ChatStore>(() => ({
   thinking: false,
   webSearch: false,
   focusMessage: null,
-  renaming: null
+  renaming: null,
+  attachments: {}
 }))
+
+const updateFiles = (route: string, fn: (files: PendingFile[]) => PendingFile[]): void =>
+  useChatStore.setState((s) => ({
+    attachments: { ...s.attachments, [route]: fn(s.attachments[route] ?? []) }
+  }))
+
+// Adds files to the next message. Each shows at once and is stored in the
+// background; one that can't be read is dropped with a notice saying why.
+export function addFiles(route: string, files: File[]): void {
+  for (const f of files) {
+    const id = crypto.randomUUID()
+    const image = f.type.startsWith('image/') && f.type !== 'image/svg+xml'
+    const preview = image ? URL.createObjectURL(f) : null
+    updateFiles(route, (list) => [...list, { id, name: f.name, image, preview, file: null }])
+    prepare(f)
+      .then(({ name, mime, data }) => window.orcha.chat.attach(name, mime, data))
+      .then((file) =>
+        updateFiles(route, (list) => list.map((p) => (p.id === id ? { ...p, file } : p)))
+      )
+      .catch((err) => {
+        removeFile(route, id)
+        failed(err)
+      })
+  }
+}
+
+export function removeFile(route: string, id: string): void {
+  const gone = useChatStore.getState().attachments[route]?.find((p) => p.id === id)
+  if (gone?.preview) URL.revokeObjectURL(gone.preview)
+  updateFiles(route, (list) => list.filter((p) => p.id !== id))
+}
+
+function clearFiles(route: string): void {
+  for (const p of useChatStore.getState().attachments[route] ?? []) {
+    if (p.preview) URL.revokeObjectURL(p.preview)
+  }
+  updateFiles(route, () => [])
+}
 
 // The models this person can chat with. Only a guest's Claude goes through
 // the relay; your own arrives with the Max-plan chat, so until then it shows
@@ -112,12 +165,13 @@ export function setDraft(route: string, text: string): void {
 }
 
 // Picks the model for the next message. Claude and GPT can't share a chat, so
-// a pick across starts a new chat on it, taking the unsent text along.
+// a pick across starts a new chat on it, taking the unsent text and files.
 export function pickModel(route: string, model: CatalogModel, chatProvider: string | null): void {
   if (chatProvider && chatProvider !== model.provider) {
     useChatStore.setState((s) => ({
       picked: { ...s.picked, [NEW_CHAT]: model.id },
-      drafts: { ...s.drafts, [NEW_CHAT]: s.drafts[route] ?? '', [route]: '' }
+      drafts: { ...s.drafts, [NEW_CHAT]: s.drafts[route] ?? '', [route]: '' },
+      attachments: { ...s.attachments, [NEW_CHAT]: s.attachments[route] ?? [], [route]: [] }
     }))
     useStore.getState().setActive(NEW_CHAT)
     return
@@ -142,23 +196,30 @@ function started(chatId: string, assistantId: number): void {
   }))
 }
 
-// Sends from the composer. A new chat (chatId null) opens once it exists.
+// Sends a message. `files` defaults to what's attached in the composer for
+// this chat (and those are cleared once sent); an edit passes its own. A new
+// chat (chatId null) opens once it exists.
 export async function sendMessage(
   chatId: string | null,
   parentId: number | null,
   text: string,
-  model: string
+  model: string,
+  files?: ChatFile[]
 ): Promise<void> {
-  const { thinking, webSearch } = useChatStore.getState()
+  const { thinking, webSearch, attachments } = useChatStore.getState()
+  const route = chatId ? chatRoute(chatId) : NEW_CHAT
+  const attached = files ?? (attachments[route] ?? []).flatMap((p) => (p.file ? [p.file] : []))
   try {
     const sent = await window.orcha.chat.send({
       chatId,
       parentId,
       text,
+      files: attached,
       model,
       thinking,
       webSearch
     })
+    if (!files) clearFiles(route)
     started(sent.chatId, sent.assistantId)
     await loadChat(sent.chatId)
     if (!chatId) {

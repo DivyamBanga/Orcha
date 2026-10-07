@@ -863,6 +863,51 @@ textarea {
   background: color-mix(in srgb, var(--color-overlay) 7%, transparent);
 }
 
+/* A file in the composer pops in; its remove button shows on hover. */
+.attachment {
+  animation: orcha-pop-in 260ms var(--ease-spring) both;
+}
+.attachment-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-surface-3);
+  color: var(--color-zinc-300);
+  box-shadow:
+    inset 0 0 0 1px var(--color-edge-bright),
+    var(--shadow-lift);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.attachment:hover .attachment-remove,
+.attachment-remove:focus-visible {
+  opacity: 1;
+}
+
+/* Files dragged over a chat. */
+.drop-veil {
+  position: absolute;
+  inset: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1.5px dashed var(--color-edge-strong);
+  background: color-mix(in srgb, var(--color-surface-0) 82%, transparent);
+  color: var(--color-zinc-200);
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+  animation: orcha-fade-in 120ms ease-out both;
+}
+
 /* A message arriving settles up into place. */
 .msg-in {
   animation: orcha-msg-in 260ms var(--ease-out-expo) both;
@@ -1169,7 +1214,9 @@ body.boot-cascade .boot-d7 {
   .switch-veil,
   .toast,
   .msg-in,
-  .msg-flash {
+  .msg-flash,
+  .attachment,
+  .drop-veil {
     animation: none !important;
   }
   .switch-veil {

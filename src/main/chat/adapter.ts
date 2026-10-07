@@ -39,6 +39,24 @@ export interface ChatAdapter {
   complete(model: string, system: string, prompt: string): Promise<string>
 }
 
+// How a file is read for sending (attachments.ts in the app, a stub in tests).
+export type FileLoader = (file: ChatFile) => { base64: string } | { text: string }
+
+// A text file (or the text of an Office file), inline in the message.
+export function fileText(name: string, text: string): string {
+  return `<file name="${name.replace(/"/g, "'")}">\n${text}\n</file>`
+}
+
+// Tells the relay how many images and PDFs a request carries and their size
+// in base64, so an interrupted reply's input isn't estimated as if all that
+// were text. Empty when there are none.
+export function mediaHeader(history: HistoryMessage[]): Record<string, string> {
+  const media = history.flatMap((m) => m.files).filter((f) => f.kind !== 'text')
+  if (media.length === 0) return {}
+  const bytes = media.reduce((n, f) => n + Math.ceil(f.bytes / 3) * 4, 0)
+  return { 'x-orcha-media': `${media.length},${bytes}` }
+}
+
 // An interrupted turn still has whatever streamed before the stop.
 export class TurnAborted extends Error {
   constructor(public partial: TurnResult) {

@@ -1,8 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { requestFor } from './anthropic'
-import { requestBody } from './responses'
-import type { CatalogModel } from '../../shared/types'
-import type { TurnInput } from './adapter'
+import { requestFor as claudeRequest } from './anthropic'
+import { requestBody as responsesBody } from './responses'
+import { mediaHeader, type FileLoader, type TurnInput } from './adapter'
+import type { CatalogModel, ChatFile } from '../../shared/types'
+
+// Files read back as fixed stand-ins.
+const load: FileLoader = (f) =>
+  f.kind === 'text' ? { text: `contents of ${f.name}` } : { base64: `B64${f.kind}` }
+const requestFor = (t: TurnInput): ReturnType<typeof claudeRequest> => claudeRequest(t, load)
+const requestBody = (t: TurnInput): string => responsesBody(t, load)
+
+const file = (kind: ChatFile['kind'], name: string, mime: string, bytes = 300): ChatFile => ({
+  hash: 'a'.repeat(64),
+  name,
+  mime,
+  bytes,
+  kind
+})
+const withFiles: TurnInput['history'] = [
+  {
+    role: 'user',
+    text: 'What do these say?',
+    files: [
+      file('image', 'shot.png', 'image/png'),
+      file('pdf', 'paper.pdf', 'application/pdf', 3000),
+      file('text', 'notes.md', 'text/markdown')
+    ]
+  }
+]
 
 const model = (over: Partial<CatalogModel>): CatalogModel => ({
   id: 'claude-sonnet-5',
@@ -100,5 +125,41 @@ describe('Azure (Responses) requests', () => {
     ])
     expect(body.reasoning).toEqual({ effort: 'high', summary: 'auto' })
     expect(body.tools).toEqual([{ type: 'web_search' }])
+  })
+})
+
+describe('attached files', () => {
+  it('go to Claude before the text: image, PDF document, text inline', () => {
+    const content = requestFor(turn({ history: withFiles })).messages[0].content
+    expect(content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'B64image' } },
+      {
+        type: 'document',
+        title: 'paper.pdf',
+        source: { type: 'base64', media_type: 'application/pdf', data: 'B64pdf' }
+      },
+      { type: 'text', text: '<file name="notes.md">\ncontents of notes.md\n</file>' },
+      { type: 'text', text: 'What do these say?' }
+    ])
+  })
+
+  it('go to GPT as data URLs and inline text', () => {
+    const gpt = model({ id: 'gpt-6-sol', provider: 'azure', pool: 'sol', thinking: 'reasoning' })
+    const body = JSON.parse(requestBody(turn({ model: gpt, history: withFiles })))
+    expect(body.input[1].content).toEqual([
+      { type: 'input_image', image_url: 'data:image/png;base64,B64image' },
+      {
+        type: 'input_file',
+        filename: 'paper.pdf',
+        file_data: 'data:application/pdf;base64,B64pdf'
+      },
+      { type: 'input_text', text: '<file name="notes.md">\ncontents of notes.md\n</file>' },
+      { type: 'input_text', text: 'What do these say?' }
+    ])
+  })
+
+  it('tell the relay how much media a request carries', () => {
+    expect(mediaHeader(withFiles)).toEqual({ 'x-orcha-media': '2,4400' })
+    expect(mediaHeader(turn({}).history)).toEqual({})
   })
 })

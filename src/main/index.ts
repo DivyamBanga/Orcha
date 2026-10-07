@@ -1,4 +1,13 @@
-import { app, shell, BrowserWindow, Menu, dialog, nativeTheme, powerSaveBlocker } from 'electron'
+import {
+  app,
+  shell,
+  BrowserWindow,
+  Menu,
+  dialog,
+  nativeTheme,
+  powerSaveBlocker,
+  protocol
+} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -23,6 +32,7 @@ import { isMac, resolveShellEnv, startLogFile } from './platform'
 import { Updater } from './updater'
 import { registerSmoke } from './smoke'
 import { ChatService } from './chat/ChatService'
+import { serveAttachments } from './chat/attachments'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
@@ -319,6 +329,11 @@ async function offerMoveToApplications(): Promise<boolean> {
   }
 }
 
+// Chat attachments (see chat/attachments.ts); must be declared before ready.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'orcha-file', privileges: { standard: true, secure: true } }
+])
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.orcha.app')
   startLogFile()
@@ -327,6 +342,7 @@ app.whenReady().then(async () => {
   await resolveShellEnv()
   buildMenu()
   initDb()
+  serveAttachments()
   if (isMac && app.isPackaged) app.setAsDefaultProtocolClient('orcha')
 
   app.on('browser-window-created', (_, window) => {

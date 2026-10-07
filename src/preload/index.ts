@@ -23,6 +23,7 @@ import type {
   Identity,
   Catalog,
   ChatDetail,
+  ChatFile,
   ChatRetryInput,
   ChatSendInput,
   ChatSummary
@@ -128,6 +129,9 @@ const api = {
       ipcRenderer.invoke(IPC.ChatSend, input),
     retry: (input: ChatRetryInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
       ipcRenderer.invoke(IPC.ChatRetry, input),
+    // Stores a file for the next message; what it is comes back.
+    attach: (name: string, mime: string, data: Uint8Array): Promise<ChatFile> =>
+      ipcRenderer.invoke(IPC.ChatAttach, name, mime, data),
     stop: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatStop, chatId),
     setLeaf: (chatId: string, leafId: number): Promise<void> =>
       ipcRenderer.invoke(IPC.ChatSetLeaf, chatId, leafId),

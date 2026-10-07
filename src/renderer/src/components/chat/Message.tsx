@@ -1,9 +1,10 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Markdown from '../Markdown'
 import { usd } from '../../money'
-import { Check, ChevronLeft, ChevronRight, Copy, Pencil, Refresh, Spark } from '../Icon'
+import { fileMeta, imageUrl } from '../../attach'
+import { Check, ChevronLeft, ChevronRight, Copy, FileDoc, Pencil, Refresh, Spark } from '../Icon'
 import type { LiveReply } from '../../chatStore'
-import type { ChatMessage } from '../../../../shared/types'
+import type { ChatFile, ChatMessage } from '../../../../shared/types'
 
 // Where a message sits among its alternatives (edits or retries): 0-based
 // index of how many. Callbacks take the message id so they can stay the same
@@ -66,6 +67,63 @@ function CopyButton({ text }: { text: string }): React.JSX.Element {
 }
 
 // ---- yours ----------------------------------------------------------------------
+
+// An image at full size over everything; a click or Esc closes it.
+function Lightbox({ src, onClose }: { src: string; onClose: () => void }): React.JSX.Element {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="overlay-backdrop cursor-zoom-out p-8" onMouseDown={onClose}>
+      <img
+        src={src}
+        alt=""
+        className="overlay-panel max-h-full max-w-full rounded-xl border-0 object-contain"
+      />
+    </div>
+  )
+}
+
+// What came with a message: image thumbnails (click for full size) and a
+// chip for each other file.
+function SentFiles({ files }: { files: ChatFile[] }): React.JSX.Element {
+  const [viewing, setViewing] = useState<string | null>(null)
+  return (
+    <div className="mb-1.5 flex max-w-[85%] flex-wrap justify-end gap-2">
+      {files.map((f) =>
+        f.kind === 'image' ? (
+          <button
+            key={f.hash + f.name}
+            onClick={() => setViewing(imageUrl(f))}
+            className="cursor-zoom-in overflow-hidden rounded-xl border border-edge"
+            title={f.name}
+          >
+            <img src={imageUrl(f)} alt={f.name} className="h-28 max-w-[240px] object-cover" />
+          </button>
+        ) : (
+          <div
+            key={f.hash + f.name}
+            className="flex h-14 w-52 items-center gap-2.5 rounded-xl border border-edge bg-surface-1 px-2.5 text-left"
+            title={f.name}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-3 text-zinc-400">
+              <FileDoc size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-[12.5px] text-zinc-200">{f.name}</span>
+              <span className="block truncate text-[11px] text-zinc-500">{fileMeta(f)}</span>
+            </span>
+          </div>
+        )
+      )}
+      {viewing && <Lightbox src={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  )
+}
 
 export const UserMessage = memo(function UserMessage({
   message,
@@ -134,9 +192,12 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <div data-message={message.id} className="msg-in group my-5 flex flex-col items-end">
-      <div className="max-w-[85%] select-text whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
-        {message.text}
-      </div>
+      {message.files.length > 0 && <SentFiles files={message.files} />}
+      {message.text && (
+        <div className="max-w-[85%] select-text whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+          {message.text}
+        </div>
+      )}
       <div className="mt-1 flex h-6 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[button:focus-visible]:opacity-100">
         <BranchNav id={message.id} branches={branches} go={onBranch} />
         <CopyButton text={message.text} />

@@ -315,6 +315,9 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.ChatGet, (_e, chatId: string) => chatService.detail(chatId))
   ipcMain.handle(IPC.ChatSend, (_e, input: ChatSendInput) => chatService.send(input))
   ipcMain.handle(IPC.ChatRetry, (_e, input: ChatRetryInput) => chatService.retry(input))
+  ipcMain.handle(IPC.ChatAttach, (_e, name: string, mime: string, data: Uint8Array) =>
+    chatService.attach(String(name), String(mime), new Uint8Array(data))
+  )
   ipcMain.handle(IPC.ChatStop, (_e, chatId: string) => chatService.stop(chatId))
   ipcMain.handle(IPC.ChatSetLeaf, (_e, chatId: string, leafId: number) =>
     chatService.setLeaf(chatId, leafId)

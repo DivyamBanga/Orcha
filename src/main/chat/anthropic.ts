@@ -1,9 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type {
+  BetaContentBlockParam,
   BetaMessageParam,
   BetaMessageStreamParams
 } from '@anthropic-ai/sdk/resources/beta/messages/messages'
-import { TurnAborted, type ChatAdapter, type TurnInput, type TurnResult } from './adapter'
+import {
+  fileText,
+  mediaHeader,
+  TurnAborted,
+  type ChatAdapter,
+  type FileLoader,
+  type HistoryMessage,
+  type TurnInput,
+  type TurnResult
+} from './adapter'
+import { readAttachment } from './attachments'
 
 // Claude through the relay (a guest's chats). The relay holds the real key
 // and meters every reply against the guest's Claude budget.
@@ -27,8 +38,11 @@ export function anthropicAdapter(
 
   return {
     async run(turn, emit, signal) {
-      const params = requestFor(turn)
-      const stream = client.beta.messages.stream(params, { signal })
+      const params = requestFor(turn, readAttachment)
+      const stream = client.beta.messages.stream(params, {
+        signal,
+        headers: mediaHeader(turn.history)
+      })
       let text = ''
       let thinking = ''
       let thinkingStarted = 0
@@ -95,11 +109,33 @@ export function anthropicAdapter(
   }
 }
 
-export function requestFor(turn: TurnInput): BetaMessageStreamParams {
+// Your message as content blocks: its files first (images, PDFs as documents,
+// text inline), then what you wrote. A message without files stays a string.
+function userContent(m: HistoryMessage, load: FileLoader): BetaMessageParam['content'] {
+  if (m.files.length === 0) return m.text
+  const blocks: BetaContentBlockParam[] = m.files.map((f) => {
+    const data = load(f)
+    if ('text' in data) return { type: 'text', text: fileText(f.name, data.text) }
+    return f.kind === 'image'
+      ? {
+          type: 'image',
+          source: { type: 'base64', media_type: f.mime as 'image/png', data: data.base64 }
+        }
+      : {
+          type: 'document',
+          title: f.name,
+          source: { type: 'base64', media_type: 'application/pdf', data: data.base64 }
+        }
+  })
+  if (m.text.trim()) blocks.push({ type: 'text', text: m.text })
+  return blocks
+}
+
+export function requestFor(turn: TurnInput, load: FileLoader): BetaMessageStreamParams {
   const { model } = turn
   const messages: BetaMessageParam[] = turn.history
     .filter((m) => m.text.trim() || m.files.length > 0)
-    .map((m) => ({ role: m.role, content: m.text }))
+    .map((m) => ({ role: m.role, content: m.role === 'user' ? userContent(m, load) : m.text }))
   const params: BetaMessageStreamParams = {
     model: model.id,
     max_tokens: 32_000,

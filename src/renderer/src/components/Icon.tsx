@@ -248,6 +248,23 @@ export function Globe(props: IconProps): React.JSX.Element {
   )
 }
 
+export function Paperclip(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M12.6 7.6l-4.9 4.9a3 3 0 0 1-4.2-4.2l5.3-5.3a2 2 0 0 1 2.8 2.8L6.4 11a1 1 0 0 1-1.4-1.4l4.6-4.6" />
+    </Stroke>
+  )
+}
+
+export function FileDoc(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M9.2 2.5H5a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 5 13.5h6a1.5 1.5 0 0 0 1.5-1.5V5.8z" />
+      <path d="M9.2 2.5v3.3h3.3M5.8 8.7h4.4M5.8 11h3" />
+    </Stroke>
+  )
+}
+
 // Extended thinking: a spark rather than a brain, which reads as decoration
 // at 14px.
 export function Spark(props: IconProps): React.JSX.Element {

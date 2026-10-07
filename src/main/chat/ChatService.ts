@@ -6,6 +6,7 @@ import { chats, messages, searchMessages } from './store'
 import { buildSystemPrompt } from './prompt'
 import { anthropicAdapter } from './anthropic'
 import { responsesAdapter } from './responses'
+import { hasAttachment, MAX_FILE_BYTES, saveAttachment } from './attachments'
 import {
   estimateCost,
   TurnAborted,
@@ -16,6 +17,7 @@ import {
 import type {
   CatalogModel,
   ChatDetail,
+  ChatFile,
   ChatMessage,
   ChatRetryInput,
   ChatSendInput,
@@ -28,6 +30,7 @@ type SendFn = (channel: string, payload: unknown) => void
 // How often streamed text is pushed to the window: often enough to read as
 // live, rare enough not to flood IPC with a message per token.
 const FLUSH_MS = 30
+const MAX_FILES = 20
 
 // Orcha's chat: one turn at a time per chat, streamed to the window and saved
 // as it finishes. Providers sit behind ChatAdapter (anthropic.ts,
@@ -78,6 +81,8 @@ export class ChatService {
   // and the reply streams in as ev:chat events.
   send(input: ChatSendInput): { chatId: string; userId: number; assistantId: number } {
     const model = this.chatModel(input.model)
+    const files = input.files ?? []
+    this.checkFiles(files, model)
     let chatId = input.chatId
     if (chatId) {
       this.continuing(chatId, model)
@@ -92,7 +97,8 @@ export class ChatService {
       chatId,
       parentId: input.parentId,
       role: 'user',
-      text: input.text
+      text: input.text,
+      files
     })
     return this.start(chatId, userId, model, input)
   }
@@ -103,7 +109,35 @@ export class ChatService {
     this.continuing(input.chatId, model)
     const user = messages.all(input.chatId).find((m) => m.id === input.userId)
     if (user?.role !== 'user') throw new Error('That message no longer exists.')
+    this.checkFiles(user.files, model)
     return this.start(input.chatId, user.id, model, { ...input, text: user.text })
+  }
+
+  // Stores a file for the next message (see attachments.ts).
+  attach(name: string, mime: string, data: Uint8Array): ChatFile {
+    return saveAttachment(name, mime, data)
+  }
+
+  // A message's files must still be stored, and the model must read them.
+  private checkFiles(files: ChatFile[], model: CatalogModel): void {
+    if (files.length > MAX_FILES) throw new Error(`Attach up to ${MAX_FILES} files at a time.`)
+    if (files.reduce((n, f) => n + f.bytes, 0) > MAX_FILE_BYTES) {
+      throw new Error('Those files add up to more than 30 MB; attach fewer at once.')
+    }
+    for (const f of files) {
+      if (!hasAttachment(f)) throw new Error(`${f.name} is no longer here; attach it again.`)
+      if (f.kind === 'image' && !model.vision) {
+        throw new Error(`${model.label} can't see images. Pick another model for this one.`)
+      }
+      if (f.kind === 'pdf' && !model.pdfPages) {
+        throw new Error(`${model.label} can't read PDFs. Pick another model for this one.`)
+      }
+      if (f.kind === 'pdf' && model.pdfPages && (f.pages ?? 0) > model.pdfPages) {
+        throw new Error(
+          `${f.name} has ${f.pages} pages; ${model.label} reads up to ${model.pdfPages}.`
+        )
+      }
+    }
   }
 
   private chatModel(id: string): CatalogModel {

@@ -1,7 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
-import { chatModels, pickModel, setDraft, useChatStore } from '../../chatStore'
-import { ArrowUp, Check, ChevronDown, Globe, Spark, Stop } from '../Icon'
+import {
+  addFiles,
+  chatModels,
+  pickModel,
+  removeFile,
+  setDraft,
+  useChatStore,
+  type PendingFile
+} from '../../chatStore'
+import { fileMeta } from '../../attach'
+import { ArrowUp, Check, ChevronDown, Close, FileDoc, Globe, Paperclip, Spark, Stop } from '../Icon'
 import type { CatalogModel } from '../../../../shared/types'
 
 type ChatModel = CatalogModel & { blocked: boolean }
@@ -115,6 +124,51 @@ function Toggle({
   )
 }
 
+const NO_FILES: PendingFile[] = []
+
+// A file waiting in the composer: an image thumbnail or a named chip, dimmed
+// with a spinner until it's saved.
+function Attachment({
+  pending,
+  onRemove
+}: {
+  pending: PendingFile
+  onRemove: () => void
+}): React.JSX.Element {
+  const ready = pending.file !== null
+  return (
+    <div className="attachment group/att relative">
+      {pending.image && pending.preview ? (
+        <img
+          src={pending.preview}
+          alt={pending.name}
+          className={`h-14 w-14 rounded-lg border border-edge object-cover transition-opacity duration-200 ${ready ? '' : 'opacity-50'}`}
+        />
+      ) : (
+        <div className="flex h-14 w-52 items-center gap-2.5 rounded-lg border border-edge bg-surface-2 px-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-3 text-zinc-400">
+            <FileDoc size={16} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[12.5px] text-zinc-200">{pending.name}</span>
+            <span className="block truncate text-[11px] text-zinc-500">
+              {pending.file ? fileMeta(pending.file) : 'Reading…'}
+            </span>
+          </span>
+        </div>
+      )}
+      {!ready && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="busy-ring" />
+        </span>
+      )}
+      <button onClick={onRemove} className="attachment-remove" title={`Remove ${pending.name}`}>
+        <Close size={10} />
+      </button>
+    </div>
+  )
+}
+
 // Where a message is written. Enter sends, Shift+Enter starts a new line.
 function Composer({
   route,
@@ -132,10 +186,12 @@ function Composer({
   onStop: () => void
 }): React.JSX.Element {
   const draft = useChatStore((s) => s.drafts[route]) ?? ''
+  const files = useChatStore((s) => s.attachments[route]) ?? NO_FILES
   const thinking = useChatStore((s) => s.thinking)
   const webSearch = useChatStore((s) => s.webSearch)
   const [sending, setSending] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const picker = useRef<HTMLInputElement>(null)
 
   // Grows with the text up to a cap, then scrolls.
   useLayoutEffect(() => {
@@ -149,7 +205,15 @@ function Composer({
     ref.current?.focus()
   }, [route])
 
-  const canSend = draft.trim() !== '' && model !== null && !model.blocked && !running && !sending
+  // Files alone are enough to send; ones still being saved hold it back.
+  const saving = files.some((f) => !f.file)
+  const canSend =
+    (draft.trim() !== '' || files.length > 0) &&
+    !saving &&
+    model !== null &&
+    !model.blocked &&
+    !running &&
+    !sending
   const send = (): void => {
     if (!canSend || !model) return
     const text = draft.trim()
@@ -175,11 +239,24 @@ function Composer({
         }
       }}
     >
+      {files.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-3 pt-3">
+          {files.map((f) => (
+            <Attachment key={f.id} pending={f} onRemove={() => removeFile(route, f.id)} />
+          ))}
+        </div>
+      )}
       <textarea
         ref={ref}
         value={draft}
         rows={1}
         onChange={(e) => setDraft(route, e.target.value)}
+        onPaste={(e) => {
+          const pasted = [...e.clipboardData.files]
+          if (pasted.length === 0) return
+          e.preventDefault()
+          addFiles(route, pasted)
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
@@ -192,6 +269,23 @@ function Composer({
         className="composer-input"
       />
       <div className="flex items-center gap-1 px-2 pb-2">
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            addFiles(route, [...(e.target.files ?? [])])
+            e.target.value = ''
+          }}
+        />
+        <button
+          onClick={() => picker.current?.click()}
+          className="btn btn-ghost btn-icon h-7 w-7 text-zinc-500"
+          title="Attach images, PDFs, text or Office files"
+        >
+          <Paperclip size={15} />
+        </button>
         <ModelPicker route={route} model={model} chatProvider={chatProvider} />
         <Toggle
           on={thinking}

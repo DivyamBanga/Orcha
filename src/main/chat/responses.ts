@@ -1,4 +1,14 @@
-import { TurnAborted, type ChatAdapter, type TurnInput, type TurnResult } from './adapter'
+import {
+  fileText,
+  mediaHeader,
+  TurnAborted,
+  type ChatAdapter,
+  type FileLoader,
+  type HistoryMessage,
+  type TurnInput,
+  type TurnResult
+} from './adapter'
+import { readAttachment } from './attachments'
 
 // GPT models on Azure through the relay (guests' chats, and the host's own),
 // over the Responses API. Nothing is stored server-side (store: false): every
@@ -40,7 +50,11 @@ export function responsesAdapter(
         model: null
       })
       try {
-        const response = await post(requestBody(turn), signal)
+        const response = await post(
+          requestBody(turn, readAttachment),
+          signal,
+          mediaHeader(turn.history)
+        )
         if (!response.ok || !response.body) {
           throw new Error(
             ((await response.text()) || `The relay answered ${response.status}.`).replace(
@@ -120,16 +134,33 @@ interface ResponsesUsage {
   input_tokens_details?: { cached_tokens?: number }
 }
 
+// Your message as Responses content: its files first (images and PDFs as
+// data URLs, text inline), then what you wrote.
+function userContent(m: HistoryMessage, load: FileLoader): Record<string, string>[] {
+  const files = m.files.map((f): Record<string, string> => {
+    const data = load(f)
+    if ('text' in data) return { type: 'input_text', text: fileText(f.name, data.text) }
+    return f.kind === 'image'
+      ? { type: 'input_image', image_url: `data:${f.mime};base64,${data.base64}` }
+      : {
+          type: 'input_file',
+          filename: f.name,
+          file_data: `data:application/pdf;base64,${data.base64}`
+        }
+  })
+  return m.text.trim() ? [...files, { type: 'input_text', text: m.text }] : files
+}
+
 // "model" leads the JSON: the relay reads it from the first bytes instead of
 // parsing a body that can carry megabytes of images.
-export function requestBody(turn: TurnInput): string {
+export function requestBody(turn: TurnInput, load: FileLoader): string {
   const input = [
     { role: 'developer', content: turn.system },
     ...turn.history
       .filter((m) => m.text.trim() || m.files.length > 0)
       .map((m) =>
         m.role === 'user'
-          ? { role: 'user', content: [{ type: 'input_text', text: m.text }] }
+          ? { role: 'user', content: userContent(m, load) }
           : { role: 'assistant', content: [{ type: 'output_text', text: m.text }] }
       )
   ]
