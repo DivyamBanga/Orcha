@@ -2,15 +2,14 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { join } from 'path'
 import { homedir } from 'os'
 import { attributionHeaders, relayConfig } from './guest'
+import { codexModels } from './catalog'
 import type { Project, Workspace } from '../shared/types'
 
-// Codex tabs (guest mode only): the real `codex` TUI in a terminal, pointed at
-// the host's relay by command-line config overrides, so nothing in the guest's
-// own ~/.codex/config.toml changes and a ChatGPT login there is never used or
-// sent. Behaviour verified against codex-cli 0.158.0.
+// Codex tabs (wherever there's a relay: a guest's, or the host's own): the
+// real `codex` TUI in a terminal, pointed at the relay by command-line config
+// overrides, so nothing in ~/.codex/config.toml changes and a ChatGPT login
+// there is never used or sent. Behaviour verified against codex-cli 0.158.0.
 
-export const CODEX_MODELS = ['gpt-6-sol', 'gpt-6-astra'] as const
-export const DEFAULT_CODEX_MODEL = 'gpt-6-sol'
 // Flags and config keys below exist from this version on.
 export const MIN_CODEX_VERSION = '0.158.0'
 
@@ -59,6 +58,7 @@ export function codexArgv(
 ): { file: string; args: string[] } {
   const relay = relayConfig()
   if (!relay) throw new Error('Codex tabs need Orcha to be paired with an invite first.')
+  const models = codexModels()
   const headers = Object.entries(attributionHeaders(project?.name ?? workspace.name, workspace.id))
     .map(([k, v]) => `${toml(k)}=${toml(v)}`)
     .join(',')
@@ -86,9 +86,7 @@ export function codexArgv(
     '-c',
     `projects={${toml(workspace.worktreePath)}={trust_level='trusted'}}`,
     '-m',
-    workspace.model && (CODEX_MODELS as readonly string[]).includes(workspace.model)
-      ? workspace.model
-      : DEFAULT_CODEX_MODEL,
+    workspace.model && models.ids.includes(workspace.model) ? workspace.model : models.fallback,
     // Full auto, matching how Claude tabs run (--dangerously-skip-permissions).
     '--dangerously-bypass-approvals-and-sandbox',
     '-C',

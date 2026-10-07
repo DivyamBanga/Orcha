@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useStore, useActiveWorkspace, useIsGuest } from '../store'
 import { useAnimatedNumber } from '../motion'
-import { modelName, poolFor, poolState, sessionCost, usd } from '../money'
+import { codexModel, modelName, poolFor, poolState, sessionCost, usd } from '../money'
 import ChatView from './ChatView'
 import TerminalView from './TerminalView'
 import SessionPopover from './SessionPopover'
 import { ArrowDown, ArrowUp, ChevronDown, Diamond } from './Icon'
-import type { Workspace } from '../../../shared/types'
+import type { Catalog, Workspace } from '../../../shared/types'
 
 function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
   const status = useStore((s) => s.gitStatus[workspaceId])
@@ -39,9 +39,11 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
   )
 }
 
-// What this tab runs, for a guest: "Claude · Sonnet 5" / "Codex · GPT-6 Sol".
-function agentLabel(workspace: Workspace): string {
-  if (workspace.agent === 'codex') return `Codex · ${modelName(workspace.model ?? 'gpt-6-sol')}`
+// What this tab runs: "Claude · Sonnet" / "Codex · GPT-6 Sol".
+function agentLabel(workspace: Workspace, catalog: Catalog | null): string {
+  if (workspace.agent === 'codex') {
+    return `Codex · ${codexModel(workspace.model, catalog)?.label ?? modelName(workspace.model ?? '')}`
+  }
   const model = workspace.model ?? 'sonnet'
   return `Claude · ${model[0].toUpperCase()}${model.slice(1)}`
 }
@@ -65,23 +67,26 @@ function TabCost({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
 // will run, and the quickest way to keep going.
 function BudgetBanner({ workspace }: { workspace: Workspace }): React.JSX.Element | null {
   const balance = useStore((s) => s.guestBalance)
-  const pool = poolFor(workspace.agent, workspace.model)
+  const catalog = useStore((s) => s.catalog)
+  const pool = poolFor(workspace.agent, workspace.model, catalog)
   const state = poolState(balance, pool)
   if (!balance || !state || state.spent < state.cap) return null
-  const open = (p: 'claude' | 'sol' | 'astra'): boolean => {
+  const open = (p: string): boolean => {
     const b = poolState(balance, p)
     return b !== null && b.spent < b.cap
   }
-  const alternative =
-    pool === 'astra' && open('sol')
-      ? { label: 'Switch this tab to Sol', agent: 'codex' as const, model: 'gpt-6-sol' }
-      : pool === 'sol' && open('astra')
-        ? { label: 'Switch this tab to Astra', agent: 'codex' as const, model: 'gpt-6-astra' }
-        : pool === 'claude' && open('sol')
-          ? { label: 'Switch this tab to Codex', agent: 'codex' as const, model: 'gpt-6-sol' }
-          : pool !== 'claude' && open('claude')
-            ? { label: 'Switch this tab to Claude', agent: 'claude' as const, model: null }
-            : null
+  // Another Codex model with money left, else Claude; a Claude tab moves to
+  // the first Codex model with money left.
+  const codexWithBudget = catalog?.models.find((m) => m.codex && m.pool !== pool && open(m.pool))
+  const alternative = codexWithBudget
+    ? {
+        label: `Switch this tab to ${pool === 'claude' ? 'Codex' : codexWithBudget.label}`,
+        agent: 'codex' as const,
+        model: codexWithBudget.id
+      }
+    : pool !== 'claude' && open('claude')
+      ? { label: 'Switch this tab to Claude', agent: 'claude' as const, model: null }
+      : null
   return (
     <div className="flex h-9 shrink-0 items-center gap-3 border-b border-red-400/15 bg-red-400/[0.05] px-4 text-[12.5px]">
       <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
@@ -119,6 +124,7 @@ function MainPane(): React.JSX.Element {
   const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
   const setUsage = useStore((s) => s.setUsage)
   const isGuest = useIsGuest()
+  const catalog = useStore((s) => s.catalog)
   const [gitBusy, setGitBusy] = useState(false)
   const [showSession, setShowSession] = useState(false)
   const workspaceId = workspace?.id
@@ -259,9 +265,9 @@ function MainPane(): React.JSX.Element {
             header itself, outside the animated wrapper. */}
         <div className="boot-item boot-d1 flex min-w-0 flex-1 items-center gap-2">
           <span className="truncate font-medium text-zinc-50">{workspace.name}</span>
-          {isGuest && (
+          {(isGuest || workspace.agent === 'codex') && (
             <span className="shrink-0 whitespace-nowrap text-[12px] text-zinc-500">
-              {agentLabel(workspace)}
+              {agentLabel(workspace, catalog)}
             </span>
           )}
           {isGuest && <TabCost workspaceId={workspace.id} />}

@@ -11,7 +11,8 @@ import { homedir } from 'os'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { lastActivityAgeSeconds, readRecentActivity } from '../claudeSessions'
-import { claudeRelayEnv, isGuest } from '../guest'
+import { claudeRelayEnv, isGuest, relayConfig } from '../guest'
+import { codexModels } from '../catalog'
 import { codexActivityAgeSeconds, codexRecentActivity } from '../codex'
 import { claudeSdkBinary } from '../platform'
 import { PROJECTS_ROOT, type ProjectService } from './ProjectService'
@@ -43,7 +44,7 @@ You are Orcha's Mission Control: the coordinator for the user's fleet of Claude 
 terminal sessions. Each project tab is a live Claude Code TUI running in that project's
 repo folder (full-auto permissions); parallel sessions on the same repo run in separate
 git worktrees. Some tabs may run OpenAI Codex instead (\`agent: "codex"\` in list_sessions,
-models gpt-6-sol / gpt-6-astra); you drive them exactly the same way.
+on a GPT model); you drive them exactly the same way.
 
 Your MCP tools (server "orcha"):
 - list_sessions: every open session with project, folder, git state, and whether it
@@ -180,7 +181,12 @@ export class OrchestratorService {
             project_name: z.string(),
             session_name: z.string(),
             initial_prompt: z.string().optional(),
-            model: z.enum(['opus', 'sonnet', 'haiku', 'gpt-6-sol', 'gpt-6-astra']).optional(),
+            model: z
+              .string()
+              .optional()
+              .describe(
+                `Claude: opus, sonnet or haiku. Codex: ${codexModels().ids.join(', ') || 'none available'}`
+              ),
             agent: z.enum(['claude', 'codex']).optional()
           },
           async (args) => {
@@ -194,10 +200,12 @@ export class OrchestratorService {
               })
             }
             const agent = args.agent ?? 'claude'
-            if (agent === 'codex' && !isGuest()) {
-              return this.text({
-                error: 'Codex sessions are only available on invited (guest) setups.'
-              })
+            if (agent === 'codex' && !relayConfig()) {
+              return this.text({ error: 'Codex sessions need a relay (an invite, or your own).' })
+            }
+            const codex = codexModels()
+            if (agent === 'codex' && args.model && !codex.ids.includes(args.model)) {
+              return this.text({ error: `Unknown Codex model. Valid: ${codex.ids.join(', ')}` })
             }
             const workspace = await this.workspaceManager.create(
               project.id,

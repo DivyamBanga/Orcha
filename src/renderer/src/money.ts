@@ -1,4 +1,11 @@
-import type { CreditPool, GuestBalance, GuestUsage, PoolBalance } from '../../shared/types'
+import type {
+  Catalog,
+  CatalogModel,
+  CreditPool,
+  GuestBalance,
+  GuestUsage,
+  PoolBalance
+} from '../../shared/types'
 
 // Money shown to a guest: always real dollars from the relay's ledger, two
 // decimals, never rounded in the guest's favour.
@@ -33,10 +40,20 @@ export function levelColors(level: PoolLevel): { text: string; fill: string } {
   return { text: 'text-zinc-300', fill: 'bg-zinc-300' }
 }
 
+// The Codex model a tab runs: its own if still on offer, else the default.
+export function codexModel(model: string | null, catalog: Catalog | null): CatalogModel | null {
+  const models = catalog?.models.filter((m) => m.codex) ?? []
+  return models.find((m) => m.id === model) ?? models.find((m) => m.default) ?? models[0] ?? null
+}
+
 // Which budget a tab draws from.
-export function poolFor(agent: 'claude' | 'codex', model: string | null): CreditPool {
+export function poolFor(
+  agent: 'claude' | 'codex',
+  model: string | null,
+  catalog: Catalog | null
+): CreditPool {
   if (agent === 'claude') return 'claude'
-  return model === 'gpt-6-astra' ? 'astra' : 'sol'
+  return codexModel(model, catalog)?.pool ?? 'sol'
 }
 
 export function poolState(balance: GuestBalance | null, pool: CreditPool): PoolBalance | null {
@@ -113,14 +130,14 @@ export function dailyByPool(
     out.push({
       date: key(ts),
       label: new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      byPool: { claude: 0, sol: 0, astra: 0 },
+      byPool: {},
       total: 0
     })
   }
   for (const h of usage?.hourly ?? []) {
     const at = index.get(key(h.hour))
     if (at === undefined) continue
-    out[at].byPool[h.pool] += h.cost
+    out[at].byPool[h.pool] = (out[at].byPool[h.pool] ?? 0) + h.cost
     out[at].total += h.cost
   }
   return out

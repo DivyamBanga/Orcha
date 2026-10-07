@@ -15,13 +15,15 @@ import {
   isGuest,
   leaveGuestMode,
   redeemInvite,
+  relayConfig,
   takePendingInvite
 } from './guest'
+import { catalog, refreshCatalog } from './catalog'
 import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import { installTool, refreshPath, toolsStatus } from './tools'
 import { isMac, logFilePath } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
-import type { Agent, CreditPool, Project, ToolName, WorkspaceAuth } from '../shared/types'
+import type { Agent, CreditPool, Identity, Project, ToolName, WorkspaceAuth } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { PtyManager } from './services/PtyManager'
 import type { GitService } from './services/GitService'
@@ -80,9 +82,10 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- projects ---------------------------------------------------------------
 
-  // Codex tabs are a guest-mode feature; anywhere else a request for one is
-  // quietly a Claude tab.
-  const agentFor = (agent?: Agent): Agent => (agent === 'codex' && isGuest() ? 'codex' : 'claude')
+  // Codex tabs need a relay (a guest's, or the host's own); without one a
+  // request for one is quietly a Claude tab.
+  const agentFor = (agent?: Agent): Agent =>
+    agent === 'codex' && relayConfig() ? 'codex' : 'claude'
 
   ipcMain.handle(
     IPC.ProjectsAdd,
@@ -320,6 +323,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     // A guest machine runs no phone server, and may have just installed tools.
     mobileService.stop()
     await refreshPath()
+    await refreshCatalog().catch(() => {})
     return status
   })
   ipcMain.handle(IPC.GuestLeave, () => leaveGuestMode())
@@ -331,6 +335,16 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     isMac ? null : (clipboard.readText().match(INVITE_LINK)?.[0] ?? null)
   )
   ipcMain.handle(IPC.GuestPendingInvite, () => takePendingInvite())
+
+  // Who this Orcha bills, and what it can run.
+  ipcMain.handle(
+    IPC.Identity,
+    (): Identity => ({
+      kind: isGuest() ? 'guest' : relayAdminStatus().configured ? 'host' : 'local',
+      codex: relayConfig() !== null
+    })
+  )
+  ipcMain.handle(IPC.Catalog, () => catalog())
 
   ipcMain.handle(IPC.ToolsStatus, () => toolsStatus())
   ipcMain.handle(IPC.ToolsInstall, (e, name: ToolName) =>

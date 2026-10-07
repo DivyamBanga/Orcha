@@ -1,4 +1,5 @@
 import * as db from './db'
+import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import type { CreditPool, GuestBalance, GuestStatus, GuestUsage } from '../shared/types'
 
 // Guest mode: this Orcha runs on someone else's credits, through the budget
@@ -231,7 +232,32 @@ export function takePendingInvite(): string | null {
   return link
 }
 
+// The relay this Orcha bills through, if any: a guest's host's relay, or —
+// on the host's own machine — their relay with a host token (chat and Codex
+// on their Azure credits; their Claude stays on their own login).
 export function relayConfig(): { relay: string; token: string } | null {
   const c = config()
-  return c ? { relay: c.relay, token: c.token } : null
+  return c ? { relay: c.relay, token: c.token } : hostRelay()
+}
+
+const HOST_KEY = 'host:relay'
+
+function hostRelay(): { relay: string; token: string } | null {
+  try {
+    const parsed = JSON.parse(db.appState.get(HOST_KEY) ?? '') as { relay?: string; token?: string }
+    return parsed.relay && parsed.token ? { relay: parsed.relay, token: parsed.token } : null
+  } catch {
+    return null
+  }
+}
+
+// On the host's machine (relay-admin.json present), mint the host token once,
+// and again if the relay moved. A guest never has one.
+export async function ensureHostRelay(): Promise<void> {
+  if (isGuest()) return
+  const admin = relayAdminStatus()
+  if (!admin.configured || !admin.url) return
+  if (hostRelay()?.relay === admin.url) return
+  const { token } = await relayAdmin.hostToken('Host')
+  db.appState.set(HOST_KEY, JSON.stringify({ relay: admin.url, token }))
 }

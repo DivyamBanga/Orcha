@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useStore, useIsGuest } from '../store'
+import { useStore, useIsGuest, useCodexAvailable } from '../store'
 import Modal from './Modal'
 import type { Agent } from '../../../shared/types'
 
@@ -18,6 +18,7 @@ function NewProjectModal(): React.JSX.Element {
   const setActive = useStore((s) => s.setActive)
   const setup = useStore((s) => s.setup)
   const isGuest = useIsGuest()
+  const codexAvailable = useCodexAvailable()
   // A guest may not have GitHub connected; the GitHub flows only show when it is.
   const github = setup?.gh ?? false
 
@@ -138,7 +139,7 @@ function NewProjectModal(): React.JSX.Element {
     <Modal open={show} onClose={close} dismissable={!working} width={440}>
       <div className="mb-4 text-[15px] font-semibold tracking-tight text-zinc-50">New project</div>
 
-      {isGuest && (
+      {codexAvailable && (
         <>
           <div className="field-label">Runs with</div>
           <div className="segmented mb-4">

@@ -15,13 +15,11 @@ import Modal from './Modal'
 import { Refresh } from './Icon'
 import type { CreditPool, GuestUsage, PoolBalance } from '../../../shared/types'
 
-// Neutral shades per budget for the stacked chart — budgets aren't session
-// state, so they get tone, not colour.
-const POOL_SHADE: Record<CreditPool, string> = {
-  claude: 'bg-zinc-300',
-  sol: 'bg-zinc-500',
-  astra: 'bg-zinc-700'
-}
+// Neutral shades per budget, in budget order, for the stacked chart — budgets
+// aren't session state, so they get tone, not colour.
+const SHADES = ['bg-zinc-300', 'bg-zinc-500', 'bg-zinc-700', 'bg-zinc-400', 'bg-zinc-600', 'bg-zinc-800']
+const POOL_ORDER: Record<CreditPool, number> = { claude: 0, sol: 1, astra: 2 }
+const shade = (pool: CreditPool): string => SHADES[(POOL_ORDER[pool] ?? 3) % SHADES.length]
 
 function PoolCard({
   pool,
@@ -44,7 +42,7 @@ function PoolCard({
     <div className="card p-4">
       <div className="flex items-baseline justify-between">
         <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-[3px] ${POOL_SHADE[pool.pool]}`} />
+          <span className={`h-2 w-2 rounded-[3px] ${shade(pool.pool)}`} />
           <span className="font-medium text-zinc-100">{pool.label}</span>
         </div>
         <div className="tnum">
@@ -77,7 +75,15 @@ function PoolCard({
   )
 }
 
-function DailyChart({ usage, now }: { usage: GuestUsage; now: number }): React.JSX.Element {
+function DailyChart({
+  usage,
+  now,
+  pools
+}: {
+  usage: GuestUsage
+  now: number
+  pools: CreditPool[]
+}): React.JSX.Element {
   const days = dailyByPool(usage, 14, now)
   const max = Math.max(...days.map((d) => d.total), 0.01)
   return (
@@ -89,11 +95,11 @@ function DailyChart({ usage, now }: { usage: GuestUsage; now: number }): React.J
             className="group relative flex h-full flex-1 flex-col justify-end"
             title={`${d.label}: ${usd(d.total)}`}
           >
-            {(['astra', 'sol', 'claude'] as CreditPool[]).map((p) =>
-              d.byPool[p] > 0 ? (
+            {[...pools].reverse().map((p) =>
+              (d.byPool[p] ?? 0) > 0 ? (
                 <div
                   key={p}
-                  className={`w-full ${POOL_SHADE[p]} opacity-80 transition-opacity duration-150 first:rounded-t-[2px] group-hover:opacity-100`}
+                  className={`w-full ${shade(p)} opacity-80 transition-opacity duration-150 first:rounded-t-[2px] group-hover:opacity-100`}
                   style={{ height: `${Math.max((d.byPool[p] / max) * 100, 2)}%` }}
                 />
               ) : null
@@ -264,15 +270,19 @@ function CreditsDashboard(): React.JSX.Element {
           <div className="mt-6 mb-2.5 flex items-center justify-between">
             <span className="eyebrow">Last 14 days</span>
             <span className="flex gap-3 text-[11px] text-zinc-500">
-              {(['claude', 'sol', 'astra'] as CreditPool[]).map((p) => (
+              {(balance?.pools ?? []).map(({ pool: p }) => (
                 <span key={p} className="flex items-center gap-1.5">
-                  <span className={`h-1.5 w-1.5 rounded-[2px] ${POOL_SHADE[p]}`} />
+                  <span className={`h-1.5 w-1.5 rounded-[2px] ${shade(p)}`} />
                   {balance?.pools.find((x) => x.pool === p)?.label ?? p}
                 </span>
               ))}
             </span>
           </div>
-          <DailyChart usage={usage} now={usageAt} />
+          <DailyChart
+            usage={usage}
+            now={usageAt}
+            pools={(balance?.pools ?? []).map((p) => p.pool)}
+          />
 
           {projectRows.length > 0 && (
             <>

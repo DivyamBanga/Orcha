@@ -12,7 +12,9 @@ import type {
   GuestStatus,
   GuestUsage,
   ToolsStatus,
-  Agent
+  Agent,
+  Identity,
+  Catalog
 } from '../../shared/types'
 
 // A small in-app message (budget warnings and the like). Not an OS toast:
@@ -82,6 +84,9 @@ interface OrchaStore {
   showCredits: boolean
   tools: ToolsStatus | null
   notices: Notice[]
+  // Who this Orcha bills, and the models on offer (null until loaded).
+  identity: Identity | null
+  catalog: Catalog | null
 
   checkSetup: () => Promise<void>
   load: () => Promise<void>
@@ -111,6 +116,7 @@ interface OrchaStore {
   loadGuestUsage: () => Promise<void>
   setShowCredits: (show: boolean) => void
   checkTools: () => Promise<ToolsStatus>
+  loadIdentity: () => Promise<void>
   pushNotice: (notice: Notice) => void
   dismissNotice: (id: string) => void
 }
@@ -145,6 +151,8 @@ export const useStore = create<OrchaStore>((set) => ({
   showCredits: false,
   tools: null,
   notices: [],
+  identity: null,
+  catalog: null,
 
   checkSetup: async () => {
     const setup = await window.orcha.setup.status()
@@ -310,6 +318,13 @@ export const useStore = create<OrchaStore>((set) => ({
     set({ guestUsage, guestUsageAt: Date.now() })
   },
   setShowCredits: (show) => set({ showCredits: show }),
+  loadIdentity: async () => {
+    const [identity, catalog] = await Promise.all([
+      window.orcha.identity(),
+      window.orcha.catalog()
+    ])
+    set({ identity, catalog })
+  },
   checkTools: async () => {
     const tools = await window.orcha.tools.status()
     set({ tools })
@@ -319,6 +334,11 @@ export const useStore = create<OrchaStore>((set) => ({
     set((s) => ({ notices: [...s.notices.filter((n) => n.id !== notice.id), notice] })),
   dismissNotice: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) }))
 }))
+
+// Whether Codex tabs are on offer (there's a relay to bill them to).
+export function useCodexAvailable(): boolean {
+  return useStore((s) => s.identity?.codex ?? false)
+}
 
 // Whether this app is running on a host's credits.
 export function useIsGuest(): boolean {

@@ -56,6 +56,8 @@ export const IPC = {
   GuestUsage: 'guest:usage',
   GuestClipboardInvite: 'guest:clipboardInvite',
   GuestPendingInvite: 'guest:pendingInvite',
+  Identity: 'identity:get',
+  Catalog: 'catalog:get',
   ToolsStatus: 'tools:status',
   ToolsInstall: 'tools:install',
   RelayAdminStatus: 'relayAdmin:status',
@@ -84,5 +86,6 @@ export const IPC = {
   EvShareStatus: 'ev:share:status',
   EvToolsProgress: 'ev:tools:progress',
   EvInviteLink: 'ev:inviteLink',
+  EvCatalog: 'ev:catalog',
   EvUpdate: 'ev:update'
 } as const

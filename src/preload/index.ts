@@ -19,7 +19,9 @@ import type {
   GuestUsage,
   ToolName,
   ToolsStatus,
-  UpdateState
+  UpdateState,
+  Identity,
+  Catalog
 } from '../shared/types'
 
 const api = {
@@ -112,6 +114,9 @@ const api = {
     // An invite that arrived as an orcha:// link and hasn't been shown yet.
     pendingInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestPendingInvite)
   },
+  identity: (): Promise<Identity> => ipcRenderer.invoke(IPC.Identity),
+  // The models on offer (from the relay; see EvCatalog for updates).
+  catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
   tools: {
     status: (): Promise<ToolsStatus> => ipcRenderer.invoke(IPC.ToolsStatus),
     install: (name: ToolName): Promise<void> => ipcRenderer.invoke(IPC.ToolsInstall, name)

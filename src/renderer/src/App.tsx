@@ -30,7 +30,12 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const s = useStore.getState()
     s.checkSetup()
-    Promise.all([s.load(), s.loadGuest(), window.orcha.ui.getState('onboarded')]).then(
+    Promise.all([
+      s.load(),
+      s.loadGuest(),
+      window.orcha.ui.getState('onboarded'),
+      s.loadIdentity().catch(() => {})
+    ]).then(
       async ([, , done]) => {
         setOnboarded(done === '1')
         // Awaited so the restored tab is set before the curtain parts — the

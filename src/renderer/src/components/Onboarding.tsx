@@ -124,6 +124,7 @@ function Welcome({
     try {
       await window.orcha.guest.redeem(link.trim())
       await loadGuest()
+      await useStore.getState().loadIdentity()
       onJoined()
     } catch (err) {
       setError(
@@ -280,6 +281,11 @@ function Tools({ onDone }: { onDone: () => void }): React.JSX.Element {
         })}
       </div>
       {error && <div className="mt-3 text-[12px] text-red-400">{error}</div>}
+
+      <p className="mt-4 text-[12px] leading-relaxed text-zinc-500">
+        Sessions run in full-auto mode: Claude and Codex edit files and run commands in the project
+        folders you open without asking first. Open folders you&apos;re happy for them to change.
+      </p>
 
       <div className="mt-6 flex items-center justify-between">
         {missing.length > 1 && !installing ? (

@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useStore } from '../store'
 import { levelColors, poolLevel, usd } from '../money'
 import type { AdminGuest, CreditPool } from '../../../shared/types'
 
-const POOLS: { pool: CreditPool; label: string; defaultCap: number }[] = [
-  { pool: 'claude', label: 'Claude', defaultCap: 200 },
-  { pool: 'sol', label: 'GPT-6 Sol', defaultCap: 50 },
-  { pool: 'astra', label: 'GPT-6 Astra', defaultCap: 100 }
-]
+// What a new invite starts with in each budget, before you change it.
+const DEFAULT_CAP = '50'
 
 const cleanError = (err: unknown): string =>
   (err instanceof Error ? err.message : String(err)).replace(
@@ -203,11 +201,10 @@ function InviteForm({
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [hostName, setHostName] = useState('')
-  const [caps, setCaps] = useState<Record<CreditPool, string>>({
-    claude: '200',
-    sol: '50',
-    astra: '100'
-  })
+  // Every budget the relay has (the catalog lists them all, Claude included).
+  const pools = useStore((s) => s.catalog?.pools ?? [])
+  const [caps, setCaps] = useState<Record<CreditPool, string>>({})
+  const capFor = (pool: CreditPool): string => caps[pool] ?? DEFAULT_CAP
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -225,7 +222,7 @@ function InviteForm({
     try {
       window.orcha.ui.saveState('hostName', hostName.trim()).catch(() => {})
       const numbers = Object.fromEntries(
-        POOLS.map((p) => [p.pool, Math.max(0, Number(caps[p.pool]) || 0)])
+        pools.map((p) => [p.id, Math.max(0, Number(capFor(p.id)) || 0)])
       ) as Record<CreditPool, number>
       const { guest, inviteUrl } = await window.orcha.relayAdmin.create(
         name.trim(),
@@ -264,17 +261,20 @@ function InviteForm({
         </div>
       </div>
       <label className="field-label">Budgets (one-time, top up anytime)</label>
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        {POOLS.map((p) => (
-          <div key={p.pool}>
+      <div
+        className="mb-3 grid gap-2"
+        style={{ gridTemplateColumns: `repeat(${Math.max(pools.length, 1)}, minmax(0, 1fr))` }}
+      >
+        {pools.map((p) => (
+          <div key={p.id}>
             <div className="mb-1 text-[11.5px] text-zinc-500">{p.label}</div>
             <div className="relative">
               <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500">
                 $
               </span>
               <input
-                value={caps[p.pool]}
-                onChange={(e) => setCaps((c) => ({ ...c, [p.pool]: e.target.value }))}
+                value={capFor(p.id)}
+                onChange={(e) => setCaps((c) => ({ ...c, [p.id]: e.target.value }))}
                 className="input tnum pl-5"
                 aria-label={`${p.label} budget in dollars`}
               />

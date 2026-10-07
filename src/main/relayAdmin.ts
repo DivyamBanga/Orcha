@@ -7,7 +7,8 @@ import type { AdminGuest, CreditPool, GuestUsage } from '../shared/types'
 // on the relay you deployed. `npm run setup` in relay/ writes the relay URL and
 // its admin token to this file; its presence is what makes Settings → Guests
 // appear. Same trust model as Claude Code's own ~/.claude/.credentials.json.
-const ADMIN_FILE = join(homedir(), '.orcha', 'relay-admin.json')
+// (ORCHA_ADMIN_FILE points a test instance at a local relay instead.)
+const ADMIN_FILE = process.env.ORCHA_ADMIN_FILE ?? join(homedir(), '.orcha', 'relay-admin.json')
 
 interface AdminConfig {
   url: string
@@ -72,5 +73,9 @@ export const relayAdmin = {
     call(`/admin/guests/${guestId}/${access}`, {}),
 
   usage: (guestId: string): Promise<{ usage: GuestUsage }> =>
-    call(`/admin/guests/${guestId}/usage?since=${Date.now() - 14 * 86_400_000}`)
+    call(`/admin/guests/${guestId}/usage?since=${Date.now() - 14 * 86_400_000}`),
+
+  // A relay token for this (the host's own) Orcha: chat and Codex on Azure,
+  // tracked but never capped. Asking again replaces the previous one.
+  hostToken: (hostName: string): Promise<{ token: string }> => call('/admin/host', { hostName })
 }

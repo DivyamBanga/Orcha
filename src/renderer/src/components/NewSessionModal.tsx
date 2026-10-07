@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useStore, useIsGuest } from '../store'
-import { poolFor, poolState } from '../money'
+import { useStore, useIsGuest, useCodexAvailable } from '../store'
+import { codexModel, poolFor, poolState } from '../money'
 import Modal from './Modal'
 import type { Agent } from '../../../shared/types'
 
@@ -13,6 +13,9 @@ function NewSessionModal(): React.JSX.Element {
   const createParallelSession = useStore((s) => s.createParallelSession)
   const balance = useStore((s) => s.guestBalance)
   const isGuest = useIsGuest()
+  const codexAvailable = useCodexAvailable()
+  const catalog = useStore((s) => s.catalog)
+  const codexDefault = codexModel(null, catalog)?.id ?? 'gpt-6-sol'
 
   const [projectId, setProjectId] = useState('')
   const [name, setName] = useState('')
@@ -29,16 +32,15 @@ function NewSessionModal(): React.JSX.Element {
   const selectedProject = projectId || lastShow || projects[0]?.id || ''
 
   const empty = (a: Agent, m: string): boolean => {
-    const p = poolState(balance, poolFor(a, m || null))
+    const p = poolState(balance, poolFor(a, m || null, catalog))
     return p !== null && p.spent >= p.cap
   }
 
   const modelChoices: [string, string][] =
     agent === 'codex'
-      ? [
-          ['', 'Sol'],
-          ['gpt-6-astra', 'Astra']
-        ]
+      ? (catalog?.models ?? [])
+          .filter((m) => m.codex)
+          .map((m): [string, string] => [m.id === codexDefault ? '' : m.id, m.label])
       : isGuest
         ? [
             ['', 'Sonnet'],
@@ -57,7 +59,7 @@ function NewSessionModal(): React.JSX.Element {
     setCreating(true)
     setError(null)
     try {
-      const chosen = agent === 'codex' ? model || 'gpt-6-sol' : model || null
+      const chosen = agent === 'codex' ? model || codexDefault : model || null
       await createParallelSession(selectedProject, name.trim(), chosen, effort || null, agent)
       setName('')
     } catch (err) {
@@ -108,7 +110,7 @@ function NewSessionModal(): React.JSX.Element {
         className="input mb-3"
       />
 
-      {isGuest && (
+      {codexAvailable && (
         <>
           <label className="field-label">Agent</label>
           <div className="segmented mb-3">

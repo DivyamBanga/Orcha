@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore, useIsGuest } from '../store'
-import { poolFor, poolState, sessionCost, usd } from '../money'
+import { useStore, useIsGuest, useCodexAvailable } from '../store'
+import { codexModel, poolFor, poolState, sessionCost, usd } from '../money'
 import type { Agent, Workspace, WorkspaceAuth } from '../../../shared/types'
 
 function formatTokens(n: number): string {
@@ -11,10 +11,6 @@ const CLAUDE_MODELS: [string, string][] = [
   ['sonnet', 'Sonnet'],
   ['opus', 'Opus'],
   ['haiku', 'Haiku']
-]
-const CODEX_MODELS: [string, string][] = [
-  ['gpt-6-sol', 'Sol'],
-  ['gpt-6-astra', 'Astra']
 ]
 
 function usePopoverDismiss(ref: React.RefObject<HTMLDivElement | null>, onClose: () => void): void {
@@ -43,6 +39,7 @@ function SessionPopover({
   onClose: () => void
 }): React.JSX.Element {
   const isGuest = useIsGuest()
+  const codex = useCodexAvailable()
   const ref = useRef<HTMLDivElement>(null)
   usePopoverDismiss(ref, onClose)
   return (
@@ -52,42 +49,56 @@ function SessionPopover({
       className="popover absolute right-4 top-12 z-40 w-[300px] p-3.5"
     >
       {isGuest ? (
-        <GuestSession workspace={workspace} onClose={onClose} />
+        <AgentPicker workspace={workspace} onClose={onClose} showCost />
       ) : (
-        <HostSession workspace={workspace} onClose={onClose} />
+        <>
+          {codex && <AgentPicker workspace={workspace} onClose={onClose} showCost={false} />}
+          {workspace.agent === 'claude' && (
+            <div className={codex ? 'mt-4 border-t border-edge pt-3.5' : ''}>
+              <HostSession workspace={workspace} onClose={onClose} />
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-// A guest picks what the tab runs — Claude Code or Codex, and which model —
-// and sees what it has cost. Models whose budget is used up can't be picked.
-function GuestSession({
+// What the tab runs — Claude Code or Codex, and which model. A guest also
+// sees what it has cost, and models whose budget is used up can't be picked.
+function AgentPicker({
   workspace,
-  onClose
+  onClose,
+  showCost
 }: {
   workspace: Workspace
   onClose: () => void
+  showCost: boolean
 }): React.JSX.Element {
   const balance = useStore((s) => s.guestBalance)
+  const catalog = useStore((s) => s.catalog)
+  const codexDefault = codexModel(null, catalog)?.id ?? 'gpt-6-sol'
+  const codexChoices: [string, string][] = (catalog?.models ?? [])
+    .filter((m) => m.codex)
+    .map((m) => [m.id, m.label])
   const load = useStore((s) => s.load)
   const cost = sessionCost(balance, workspace.id)
   const [agent, setAgent] = useState<Agent>(workspace.agent)
   const [model, setModel] = useState<string>(
-    workspace.model ?? (workspace.agent === 'codex' ? 'gpt-6-sol' : 'sonnet')
+    workspace.model ?? (workspace.agent === 'codex' ? codexDefault : 'sonnet')
   )
   const [saving, setSaving] = useState(false)
-  const models = agent === 'codex' ? CODEX_MODELS : CLAUDE_MODELS
+  const models = agent === 'codex' ? codexChoices : CLAUDE_MODELS
   const empty = (a: Agent, m: string): boolean => {
-    const p = poolState(balance, poolFor(a, m))
+    const p = poolState(balance, poolFor(a, m, catalog))
     return p !== null && p.spent >= p.cap
   }
-  const current = workspace.model ?? (workspace.agent === 'codex' ? 'gpt-6-sol' : 'sonnet')
+  const current = workspace.model ?? (workspace.agent === 'codex' ? codexDefault : 'sonnet')
   const changed = agent !== workspace.agent || model !== current
 
   const pickAgent = (next: Agent): void => {
     setAgent(next)
-    setModel(next === 'codex' ? 'gpt-6-sol' : 'sonnet')
+    setModel(next === 'codex' ? codexDefault : 'sonnet')
   }
 
   const apply = async (): Promise<void> => {
@@ -105,9 +116,11 @@ function GuestSession({
     <>
       <div className="mb-3 flex items-baseline justify-between">
         <span className="eyebrow">This tab</span>
-        <span className="tnum text-[12px] text-zinc-400">
-          {cost === null ? 'nothing spent yet' : `${usd(cost)} so far`}
-        </span>
+        {showCost && (
+          <span className="tnum text-[12px] text-zinc-400">
+            {cost === null ? 'nothing spent yet' : `${usd(cost)} so far`}
+          </span>
+        )}
       </div>
 
       <div className="field-label">Agent</div>

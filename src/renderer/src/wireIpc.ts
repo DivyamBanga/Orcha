@@ -192,6 +192,14 @@ export function wireIpc(): () => void {
   })
 
   const unsubUpdate = window.orcha.on(IPC.EvUpdate, (payload) => showUpdate(payload as UpdateState))
+  // A fresh model list from the relay (and maybe a new host token): who we
+  // are can change with it.
+  const unsubCatalog = window.orcha.on(IPC.EvCatalog, () => {
+    useStore
+      .getState()
+      .loadIdentity()
+      .catch(() => {})
+  })
   window.orcha.update
     .status()
     .then(showUpdate)
@@ -206,6 +214,7 @@ export function wireIpc(): () => void {
     unsubFocus()
     unsubShare()
     unsubUpdate()
+    unsubCatalog()
   }
 }
 

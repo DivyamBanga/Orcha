@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Workspace } from '../shared/types'
 
+vi.mock('./catalog', () => ({
+  codexModels: () => ({ ids: ['gpt-6-sol', 'gpt-6-astra'], fallback: 'gpt-6-sol' })
+}))
+
 vi.mock('./guest', () => ({
   relayConfig: () => ({ relay: 'https://relay.example', token: 'og_x' }),
   attributionHeaders: (project: string, session: string) => ({

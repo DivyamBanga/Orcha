@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useStore, useIsGuest } from '../store'
+import { codexModel as codexModelOf } from '../money'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import UsageGlance from './UsageGlance'
 import CreditsPanel from './CreditsPanel'
@@ -152,9 +153,11 @@ function SessionRow({
   const activity = useStore((s) => s.activity[workspace.id]) ?? 'off'
   const git = useStore((s) => s.gitStatus[workspace.id])
   const isParallel = workspace.kind === 'worktree'
-  // Codex tabs say which budget they draw from; Claude is the default.
-  const codexModel =
-    workspace.agent === 'codex' ? (workspace.model === 'gpt-6-astra' ? 'astra' : 'sol') : null
+  // Codex tabs say which model (and so which budget) they run on; Claude is
+  // the default and goes unmarked.
+  const codexModel = useStore((s) =>
+    workspace.agent === 'codex' ? codexModelOf(workspace.model, s.catalog) : null
+  )
 
   return (
     <div
@@ -177,9 +180,9 @@ function SessionRow({
         {codexModel && (
           <span
             className="shrink-0 rounded-[4px] border border-edge px-1 font-mono text-[9.5px] leading-[14px] text-zinc-500"
-            title={`Codex on GPT-6 ${codexModel === 'sol' ? 'Sol' : 'Astra'}`}
+            title={`Codex on ${codexModel.label}`}
           >
-            {codexModel}
+            {codexModel.pool}
           </span>
         )}
         {isParallel && (

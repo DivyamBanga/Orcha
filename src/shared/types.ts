@@ -198,8 +198,50 @@ export type PasteTarget =
 
 // ---- guest mode: running on someone else's credits through their relay ----
 
-// A budget on the relay. Each is one-time and topped up by the host.
-export type CreditPool = 'claude' | 'sol' | 'astra'
+// A budget on the relay ('claude', 'sol', 'astra', or any pool the relay adds
+// later). Each is one-time and topped up by the host.
+export type CreditPool = string
+
+// The models this Orcha can use, as the relay serves them (/v1/me/models).
+// Adding a model on the relay makes it show up here with no app release.
+export interface CatalogPool {
+  id: CreditPool
+  label: string
+  order: number
+  provider: 'anthropic' | 'azure'
+  // The host never bills Claude through the relay.
+  blocked: boolean
+}
+
+export interface CatalogModel {
+  id: string
+  label: string
+  description: string
+  pool: CreditPool
+  provider: 'anthropic' | 'azure'
+  chat: boolean
+  codex: boolean
+  thinking: 'toggle' | 'always' | 'budget' | 'reasoning'
+  webSearch: string | null
+  vision: boolean
+  pdfPages: number | null
+  default?: boolean
+  title?: boolean
+  rates: { in: number; out: number; cacheRead: number }
+}
+
+export interface Catalog {
+  pools: CatalogPool[]
+  models: CatalogModel[]
+}
+
+// Who this Orcha bills. 'guest': paired by invite, everything through the
+// host's relay. 'host': runs a relay (Claude on their own login; chat and Codex
+// on Azure through it). 'local': neither.
+export interface Identity {
+  kind: 'guest' | 'host' | 'local'
+  codex: boolean // Codex tabs available (there's a relay to bill)
+}
 
 export interface PoolBalance {
   pool: CreditPool

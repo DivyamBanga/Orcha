@@ -16,7 +16,8 @@ import { CodexService } from './services/CodexService'
 import { ClipboardService } from './services/ClipboardService'
 import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
-import { isGuest, queueInviteLink } from './guest'
+import { ensureHostRelay, isGuest, queueInviteLink } from './guest'
+import { refreshCatalog } from './catalog'
 import { refreshPath } from './tools'
 import { isMac, resolveShellEnv, startLogFile } from './platform'
 import { Updater } from './updater'
@@ -209,6 +210,17 @@ function createWindow(): void {
   const updater = new Updater(send)
   updater.busy = () => activityMonitor.anyWorking()
   updater.start()
+  // The model list from the relay (and, on the host's machine, the token that
+  // lets their own chat and Codex tabs use it).
+  const loadCatalog = (): void => {
+    ensureHostRelay()
+      .catch((err) => console.log('[relay] host token:', err instanceof Error ? err.message : err))
+      .then(() => refreshCatalog())
+      .then((fresh) => send(IPC.EvCatalog, fresh))
+      .catch((err) => console.log('[relay] catalog:', err instanceof Error ? err.message : err))
+  }
+  loadCatalog()
+  setInterval(loadCatalog, 6 * 60 * 60_000)
   // The phone companion opens a network port, so it only starts at launch on
   // a machine where it's already been set up; otherwise the first open of
   // Settings → Phone starts it (and a fresh install never meets a firewall
