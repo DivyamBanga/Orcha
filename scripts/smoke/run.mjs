@@ -496,7 +496,10 @@ async function chatCheck() {
   const md = await last(
     `return { table: !!m.querySelector('table'), code: !!m.querySelector('pre code'), maths: m.querySelectorAll('.katex').length }`
   )
-  check(md.table && md.code && md.maths >= 2, `chat draws Markdown, code and maths (${JSON.stringify(md)})`)
+  check(
+    md.table && md.code && md.maths >= 2,
+    `chat draws Markdown, code and maths (${JSON.stringify(md)})`
+  )
   await screenshot('chat-markdown')
 
   // Pasted, as from the clipboard: a big PNG and a one-page PDF.

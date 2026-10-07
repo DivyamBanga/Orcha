@@ -197,6 +197,8 @@ export function claudeMaxAdapter(
       const abort = new AbortController()
       const stop = (): void => abort.abort()
       signal.addEventListener('abort', stop)
+      // (Stopped while the session was being found.)
+      if (signal.aborted) abort.abort()
 
       let text = ''
       let thinking = ''
