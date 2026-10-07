@@ -97,7 +97,8 @@ export const IPC = {
   RelayAdminGuests: 'relayAdmin:guests',
   RelayAdminCreate: 'relayAdmin:create',
   RelayAdminInvite: 'relayAdmin:invite',
-  RelayAdminTopUp: 'relayAdmin:topUp',
+  RelayAdminBalance: 'relayAdmin:balance',
+  RelayAdminPause: 'relayAdmin:pause',
   RelayAdminAccess: 'relayAdmin:access',
 
   // updates, the Mac terminal paste path, support diagnostics

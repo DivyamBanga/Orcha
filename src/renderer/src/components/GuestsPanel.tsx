@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { levelColors, poolLevel, usd } from '../money'
-import type { AdminGuest, CreditPool } from '../../../shared/types'
+import type { AdminGuest, CreditPool, PoolBalance } from '../../../shared/types'
 
 // What a new invite starts with in each budget, before you change it.
 const DEFAULT_CAP = '50'
@@ -58,7 +58,8 @@ function GuestCard({
   now: number
   onChange: (next: AdminGuest) => void
 }): React.JSX.Element {
-  const [topUp, setTopUp] = useState<{ pool: CreditPool; amount: string } | null>(null)
+  // The balance being set: what's left to spend in one pool, in dollars.
+  const [balance, setBalance] = useState<{ pool: CreditPool; amount: string } | null>(null)
   const [invite, setInvite] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,15 +76,16 @@ function GuestCard({
     }
   }
 
-  const applyTopUp = (): Promise<void> | void => {
-    if (!topUp) return
-    const amount = Number(topUp.amount)
-    if (!Number.isFinite(amount) || amount === 0) return
+  const applyBalance = (): Promise<void> | void => {
+    if (!balance) return
+    const amount = Number(balance.amount)
+    if (!Number.isFinite(amount) || amount < 0) return
     return act(async () => {
-      onChange(await window.orcha.relayAdmin.topUp(guest.id, topUp.pool, amount))
-      setTopUp(null)
+      onChange(await window.orcha.relayAdmin.setBalance(guest.id, balance.pool, amount))
+      setBalance(null)
     })
   }
+  const left = (p: PoolBalance): string => String(Number(Math.max(0, p.cap - p.spent).toFixed(2)))
 
   const revoked = guest.status === 'revoked'
 
@@ -110,49 +112,77 @@ function GuestCard({
           return (
             <div key={p.pool}>
               <div className="tnum flex items-baseline justify-between text-[12px]">
-                <span className="text-zinc-400">{p.label}</span>
+                <span className="text-zinc-400">
+                  {p.label}
+                  {p.paused && <span className="ml-1.5 text-zinc-600">paused</span>}
+                </span>
                 <span className="flex items-center gap-2">
                   <span className={level === 'ok' ? 'text-zinc-300' : colors.text}>
                     {usd(p.spent)} <span className="text-zinc-600">of</span> {usd(p.cap)}
                   </span>
                   <button
-                    onClick={() => setTopUp({ pool: p.pool, amount: '25' })}
+                    onClick={() => setBalance({ pool: p.pool, amount: left(p) })}
                     className="btn btn-ghost btn-sm h-5 px-1.5 text-[11px] text-zinc-500"
                   >
-                    Top up
+                    Balance
+                  </button>
+                  <button
+                    onClick={() =>
+                      act(async () =>
+                        onChange(
+                          await window.orcha.relayAdmin.setPaused(guest.id, p.pool, !p.paused)
+                        )
+                      )
+                    }
+                    disabled={busy}
+                    className="btn btn-ghost btn-sm h-5 px-1.5 text-[11px] text-zinc-500"
+                    title={p.paused ? 'Let them spend from it again' : 'Hold it for now'}
+                  >
+                    {p.paused ? 'Resume' : 'Pause'}
                   </button>
                 </span>
               </div>
-              <div className="meter mt-1.5 h-1">
+              <div className={`meter mt-1.5 h-1 ${p.paused ? 'opacity-40' : ''}`}>
                 <div className={`meter-fill ${colors.fill}`} style={{ width: `${pct}%` }} />
               </div>
-              {topUp?.pool === p.pool && (
+              {balance?.pool === p.pool && (
                 <div className="fade-late mt-2 flex items-center gap-2">
-                  {[10, 25, 50].map((n) => (
+                  <span className="text-[12px] text-zinc-500">Left to spend</span>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[12px] text-zinc-500">
+                      $
+                    </span>
+                    <input
+                      autoFocus
+                      value={balance.amount}
+                      onChange={(e) => setBalance({ pool: p.pool, amount: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && applyBalance()}
+                      className="input tnum h-6 w-20 pl-4 pr-2 text-[12px]"
+                      aria-label="Balance left to spend, in dollars"
+                    />
+                  </div>
+                  {[10, 25].map((n) => (
                     <button
                       key={n}
-                      data-active={topUp.amount === String(n)}
-                      onClick={() => setTopUp({ pool: p.pool, amount: String(n) })}
+                      onClick={() =>
+                        setBalance({
+                          pool: p.pool,
+                          amount: String(Number(((Number(balance.amount) || 0) + n).toFixed(2)))
+                        })
+                      }
                       className="btn btn-secondary btn-sm"
                     >
                       +${n}
                     </button>
                   ))}
-                  <input
-                    value={topUp.amount}
-                    onChange={(e) => setTopUp({ pool: p.pool, amount: e.target.value })}
-                    onKeyDown={(e) => e.key === 'Enter' && applyTopUp()}
-                    className="input tnum h-6 w-16 px-2 text-[12px]"
-                    aria-label="Top-up amount in dollars"
-                  />
                   <button
-                    onClick={applyTopUp}
+                    onClick={applyBalance}
                     disabled={busy}
                     className="btn btn-primary btn-sm ml-auto"
                   >
-                    Add
+                    Set
                   </button>
-                  <button onClick={() => setTopUp(null)} className="btn btn-ghost btn-sm">
+                  <button onClick={() => setBalance(null)} className="btn btn-ghost btn-sm">
                     Cancel
                   </button>
                 </div>

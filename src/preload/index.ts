@@ -214,8 +214,10 @@ const api = {
       ipcRenderer.invoke(IPC.RelayAdminCreate, name, hostName, caps),
     invite: (guestId: string): Promise<{ inviteUrl: string }> =>
       ipcRenderer.invoke(IPC.RelayAdminInvite, guestId),
-    topUp: (guestId: string, pool: CreditPool, amount: number): Promise<AdminGuest> =>
-      ipcRenderer.invoke(IPC.RelayAdminTopUp, guestId, pool, amount),
+    setBalance: (guestId: string, pool: CreditPool, balance: number): Promise<AdminGuest> =>
+      ipcRenderer.invoke(IPC.RelayAdminBalance, guestId, pool, balance),
+    setPaused: (guestId: string, pool: CreditPool, paused: boolean): Promise<AdminGuest> =>
+      ipcRenderer.invoke(IPC.RelayAdminPause, guestId, pool, paused),
     access: (guestId: string, access: 'revoke' | 'restore'): Promise<AdminGuest> =>
       ipcRenderer.invoke(IPC.RelayAdminAccess, guestId, access)
   },

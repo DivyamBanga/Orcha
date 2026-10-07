@@ -380,6 +380,7 @@ export interface PoolBalance {
   label: string
   cap: number // USD granted so far, top-ups included
   spent: number // USD spent, lifetime
+  paused?: boolean // held by the host for now (relays from before this don't say)
 }
 
 // What the relay knows about this guest right now. `error` is set (and the

@@ -115,6 +115,9 @@ function blockReason(guest: GuestState, pool: Pool): string | null {
     return `Orcha: access to ${guest.hostName}'s credits was turned off.`
   }
   const state = guest.pools.find((p) => p.pool === pool)
+  if (state?.paused) {
+    return `Orcha: ${guest.hostName} paused your ${POOLS[pool].label} credits for now.`
+  }
   if (!state || state.cap <= 0) {
     return `Orcha: no ${POOLS[pool].label} budget on this invite.`
   }
@@ -433,7 +436,7 @@ async function admin(request: Request, env: Env, path: string, url: URL): Promis
   }
 
   const match = path.match(
-    /^\/admin\/guests\/([0-9a-f-]{36})\/(invite|topup|revoke|restore|usage|remove)$/
+    /^\/admin\/guests\/([0-9a-f-]{36})\/(invite|topup|balance|pause|resume|revoke|restore|usage|remove)$/
   )
   if (!match) return json({ error: 'Not found' }, 404)
   const [, guestId, action] = match
@@ -453,6 +456,18 @@ async function admin(request: Request, env: Env, path: string, url: URL): Promis
     const pool = String(body.pool) as Pool
     const amount = Number(body.amount)
     const guest = await stub.topUp(guestId, pool, amount)
+    authCache.clear()
+    return guest ? json(guest) : json({ error: 'Unknown guest or pool' }, 400)
+  }
+  // What's left to spend in a pool, set exactly ({ pool, balance }).
+  if (action === 'balance' && request.method === 'POST') {
+    const guest = await stub.setBalance(guestId, String(body.pool) as Pool, Number(body.balance))
+    authCache.clear()
+    return guest ? json(guest) : json({ error: 'Unknown guest or pool, or not a balance' }, 400)
+  }
+  // Holds one pool ({ pool }) without changing its balance; revoke holds them all.
+  if ((action === 'pause' || action === 'resume') && request.method === 'POST') {
+    const guest = await stub.setPaused(guestId, String(body.pool) as Pool, action === 'pause')
     authCache.clear()
     return guest ? json(guest) : json({ error: 'Unknown guest or pool' }, 400)
   }

@@ -47,6 +47,10 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     throw new Error("Couldn't reach your relay. Check your internet connection.")
   }
   const reply = (await response.json().catch(() => ({}))) as T & { error?: string }
+  // A route this Orcha knows but the deployed relay doesn't, yet.
+  if (response.status === 404 && reply.error === 'Not found') {
+    throw new Error('Your relay needs updating for this: run npm run deploy in relay/.')
+  }
   if (!response.ok) throw new Error(reply.error ?? `Relay answered ${response.status}`)
   return reply
 }
@@ -66,8 +70,13 @@ export const relayAdmin = {
   invite: (guestId: string): Promise<{ inviteUrl: string }> =>
     call(`/admin/guests/${guestId}/invite`, {}),
 
-  topUp: (guestId: string, pool: CreditPool, amount: number): Promise<AdminGuest> =>
-    call(`/admin/guests/${guestId}/topup`, { pool, amount }),
+  // What's left to spend in a pool, set exactly (up or down).
+  setBalance: (guestId: string, pool: CreditPool, balance: number): Promise<AdminGuest> =>
+    call(`/admin/guests/${guestId}/balance`, { pool, balance }),
+
+  // Holds one pool without changing its balance, or lets it be spent again.
+  setPaused: (guestId: string, pool: CreditPool, paused: boolean): Promise<AdminGuest> =>
+    call(`/admin/guests/${guestId}/${paused ? 'pause' : 'resume'}`, { pool }),
 
   setAccess: (guestId: string, access: 'revoke' | 'restore'): Promise<AdminGuest> =>
     call(`/admin/guests/${guestId}/${access}`, {}),

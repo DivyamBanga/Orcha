@@ -235,6 +235,31 @@ try {
   assert.equal((await message()).status, 200)
   console.log('top-up re-opens, revoke closes, restore re-opens')
 
+  // --- exact balance, pause and resume ---------------------------------------
+  const claudeSpent = await spent('claude')
+  let set = await admin(`/admin/guests/${guestId}/balance`, { pool: 'claude', balance: 0 })
+  close(set.pools.find((p) => p.pool === 'claude').cap, claudeSpent, 'a $0 balance caps at what was spent')
+  const empty = await message()
+  assert.equal(empty.status, 400)
+  assert.match((await empty.json()).error.message, /is used up/)
+  set = await admin(`/admin/guests/${guestId}/balance`, { pool: 'claude', balance: 2 })
+  close(set.pools.find((p) => p.pool === 'claude').cap, claudeSpent + 2, 'balance sets cap = spent + balance')
+  assert.equal((await message()).status, 200)
+  const bad = await call(`/admin/guests/${guestId}/balance`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${ADMIN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ pool: 'claude', balance: -1 })
+  })
+  assert.equal(bad.status, 400, 'a negative balance is refused')
+  const paused = await admin(`/admin/guests/${guestId}/pause`, { pool: 'claude' })
+  assert.equal(paused.pools.find((p) => p.pool === 'claude').paused, true)
+  const held = await message()
+  assert.equal(held.status, 400)
+  assert.match((await held.json()).error.message, /Div paused your Claude credits for now/)
+  await admin(`/admin/guests/${guestId}/resume`, { pool: 'claude' })
+  assert.equal((await message()).status, 200)
+  console.log('balance down closes, up re-opens; pause holds a pool, resume re-opens')
+
   // --- Codex / Azure ------------------------------------------------------------
   const solBefore = await spent('sol')
   const responses = await call('/openai/v1/responses', {

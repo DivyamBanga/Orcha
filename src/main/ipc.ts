@@ -470,8 +470,13 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
       relayAdmin.create(name, hostName, caps)
   )
   ipcMain.handle(IPC.RelayAdminInvite, (_e, guestId: string) => relayAdmin.invite(guestId))
-  ipcMain.handle(IPC.RelayAdminTopUp, (_e, guestId: string, pool: CreditPool, amount: number) =>
-    relayAdmin.topUp(guestId, pool, amount)
+  ipcMain.handle(
+    IPC.RelayAdminBalance,
+    (_e, guestId: string, pool: CreditPool, balance: number) =>
+      relayAdmin.setBalance(guestId, pool, balance)
+  )
+  ipcMain.handle(IPC.RelayAdminPause, (_e, guestId: string, pool: CreditPool, paused: boolean) =>
+    relayAdmin.setPaused(guestId, pool, paused)
   )
   ipcMain.handle(IPC.RelayAdminAccess, (_e, guestId: string, access: 'revoke' | 'restore') =>
     relayAdmin.setAccess(guestId, access)

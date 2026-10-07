@@ -15,6 +15,8 @@ export interface PoolState {
   label: string
   cap: number
   spent: number
+  // Held by the host for now: nothing is spent from it until they resume it.
+  paused: boolean
 }
 
 export interface GuestState {
@@ -120,6 +122,11 @@ export class Ledger extends DurableObject<LedgerEnv> {
     } catch {
       // already there
     }
+    try {
+      this.sql.exec('ALTER TABLE pools ADD COLUMN paused INTEGER NOT NULL DEFAULT 0')
+    } catch {
+      // already there
+    }
   }
 
   // Every pool the relay knows, whether or not this guest has a row for it yet
@@ -138,8 +145,8 @@ export class Ledger extends DurableObject<LedgerEnv> {
     if (!row) return null
     const stored = new Map(
       this.sql
-        .exec<{ pool: string; cap: number; spent: number }>(
-          'SELECT pool, cap, spent FROM pools WHERE guest_id = ?',
+        .exec<{ pool: string; cap: number; spent: number; paused: number }>(
+          'SELECT pool, cap, spent, paused FROM pools WHERE guest_id = ?',
           row.id
         )
         .toArray()
@@ -151,7 +158,8 @@ export class Ledger extends DurableObject<LedgerEnv> {
         pool,
         label: info.label,
         cap: stored.get(pool)?.cap ?? 0,
-        spent: stored.get(pool)?.spent ?? 0
+        spent: stored.get(pool)?.spent ?? 0,
+        paused: stored.get(pool)?.paused === 1
       }))
     return {
       id: row.id,
@@ -453,6 +461,38 @@ export class Ledger extends DurableObject<LedgerEnv> {
       amount
     )
     this.sql.exec('INSERT INTO topups VALUES (?, ?, ?, ?)', guestId, pool, amount, Date.now())
+    return this.guestRow('id', guestId)
+  }
+
+  // Sets what's left to spend in a pool, up or down: the cap becomes what's
+  // been spent plus that. Logged with the top-ups, as the change in cap.
+  setBalance(guestId: string, pool: Pool, balance: number): GuestState | null {
+    const guest = this.guestRow('id', guestId)
+    if (!(pool in POOLS) || !Number.isFinite(balance) || balance < 0 || !guest) return null
+    const before = guest.pools.find((p) => p.pool === pool)?.cap ?? 0
+    this.sql.exec(
+      `INSERT INTO pools (guest_id, pool, cap, spent) VALUES (?, ?, ?, 0)
+       ON CONFLICT (guest_id, pool) DO UPDATE SET cap = spent + ?`,
+      guestId,
+      pool,
+      balance,
+      balance
+    )
+    const after = this.guestRow('id', guestId)!
+    const cap = after.pools.find((p) => p.pool === pool)!.cap
+    this.sql.exec('INSERT INTO topups VALUES (?, ?, ?, ?)', guestId, pool, cap - before, Date.now())
+    return after
+  }
+
+  setPaused(guestId: string, pool: Pool, paused: boolean): GuestState | null {
+    if (!(pool in POOLS) || !this.guestRow('id', guestId)) return null
+    this.sql.exec(
+      `INSERT INTO pools (guest_id, pool, cap, spent, paused) VALUES (?, ?, 0, 0, ?)
+       ON CONFLICT (guest_id, pool) DO UPDATE SET paused = excluded.paused`,
+      guestId,
+      pool,
+      paused ? 1 : 0
+    )
     return this.guestRow('id', guestId)
   }
 
