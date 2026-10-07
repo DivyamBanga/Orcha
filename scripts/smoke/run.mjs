@@ -371,8 +371,9 @@ async function main() {
     )
     await waitFor(
       async () => {
+        // Booted = its prompt is up and it has gone quiet.
         const s = await session(codexTab.id)
-        return s.outputAgeMs !== null && s.outputAgeMs > 4000 && s.screen.length > 400
+        return s.outputAgeMs !== null && s.outputAgeMs > 4000 && flat(s.screen).includes('AskCodex')
       },
       90_000,
       'Codex booted'
