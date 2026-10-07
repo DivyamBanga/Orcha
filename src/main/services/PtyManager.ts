@@ -51,10 +51,10 @@ interface PtyEntry {
   // across chunks. Codex puts "Action Required" there when it needs you.
   title: string
   titleTail: string
-  // A guest's Claude session answers Claude Code's one-time "Do you trust this
-  // folder?" dialog itself — it pre-selects "No, exit", which would throw a
-  // newcomer straight out of the folder they just chose. Null = not watching.
-  trustTail: string | null
+  // A guest's Claude session answers Claude Code's one-time first-run screens
+  // itself (FIRST_RUN): which it has answered, and a tail of what's drawn
+  // since. Null = not watching (any more).
+  firstRun: { tail: string; done: Set<number>; busyUntil: number } | null
   // Mac/Linux: the agent printed EXIT_MARK on its way out and the tab is now
   // a plain shell (Windows reads PowerShell's prompt off the screen instead).
   agentExited: boolean
@@ -80,6 +80,26 @@ const REMOTE_URL = /https:\/\/claude\.ai\/code\/[A-Za-z0-9_-]{8,}/g
 // Printed by a Mac tab's launch script once the agent exits (an OSC sequence,
 // which xterm.js silently drops, so the user never sees it).
 const EXIT_MARK = '\x1b]7701;orcha-exit\x07'
+
+// Claude Code's one-time screens on a fresh machine, which a guest's session
+// answers itself. The text-style picker and the security notes only take
+// Enter; the folder-trust question and the bypass-permissions warning both
+// pre-select "No, exit", which would throw a newcomer straight out of the tab
+// (Orcha runs every session in full-auto mode, and onboarding says so).
+// Matched whitespace-free and loosely: ConPTY glues and even drops letters in
+// chrome text (seen live: "Enter to elect", "You'rresponsible").
+const FIRST_RUN: { screen: RegExp[]; keys: (tail: string) => string[] }[] = [
+  { screen: [/Choosethetextstyle/i, /Darkmode/i], keys: () => ['\r'] },
+  { screen: [/Securitynotes/i, /Entertocontinue/i], keys: () => ['\r'] },
+  {
+    screen: [/trustthisfolder/i, /Entertoc|Esctocancel/i],
+    keys: (tail) => (/❯Yes/.test(tail) ? ['\r'] : ['\x1b[B', '\r'])
+  },
+  {
+    screen: [/BypassPermissions/i, /Iaccept/i],
+    keys: (tail) => (/❯Yes/.test(tail) ? ['\r'] : ['\x1b[B', '\r'])
+  }
+]
 
 function claudeArgv(workspace: Workspace): string[] {
   const parts = ['claude', '--dangerously-skip-permissions']
@@ -288,13 +308,16 @@ export class PtyManager {
       busyMarker: workspace?.agent === 'codex' ? CODEX_BUSY_MARKER : BUSY_MARKER,
       title: '',
       titleTail: '',
-      trustTail: workspace?.agent === 'claude' && isGuest() ? '' : null,
+      firstRun:
+        workspace?.agent === 'claude' && isGuest()
+          ? { tail: '', done: new Set(), busyUntil: 0 }
+          : null,
       agentExited: false,
       exitTail: ''
     }
     this.ptys.set(workspaceId, entry)
-    // The trust dialog only ever shows at startup.
-    if (entry.trustTail !== null) setTimeout(() => (entry.trustTail = null), 90_000)
+    // These screens only ever show at startup.
+    if (entry.firstRun) setTimeout(() => (entry.firstRun = null), 120_000)
 
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
@@ -321,24 +344,33 @@ export class PtyManager {
         const closed = titles.length > 0 ? titles[titles.length - 1].index! : -1
         entry.titleTail = open > closed ? scan.slice(open).slice(0, 512) : ''
       }
-      if (entry.trustTail !== null) {
-        // Matched whitespace-free and loosely: ConPTY glues and even drops
-        // letters in chrome text ("Enter to elect" has been seen live).
-        entry.trustTail = (entry.trustTail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-400)
-        if (
-          /trustthisfolder/i.test(entry.trustTail) &&
-          /Entertoc|Esctocancel/i.test(entry.trustTail)
-        ) {
-          // "No, exit" is the pre-selected answer; step down to "Yes" first.
-          const yesSelected = /❯Yes/.test(entry.trustTail)
-          entry.trustTail = null
-          setTimeout(() => {
-            if (this.ptys.get(workspaceId) !== entry) return
-            if (!yesSelected) entry.proc.write('\x1b[B')
-            setTimeout(() => {
-              if (this.ptys.get(workspaceId) === entry) entry.proc.write('\r')
-            }, 200)
-          }, 400)
+      const firstRun = entry.firstRun
+      if (firstRun) {
+        firstRun.tail = (firstRun.tail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-1500)
+        const now = Date.now()
+        const index =
+          now < firstRun.busyUntil
+            ? -1
+            : FIRST_RUN.findIndex(
+                (step, i) => !firstRun.done.has(i) && step.screen.every((re) => re.test(firstRun.tail))
+              )
+        if (index !== -1) {
+          // Each screen is answered once, after it has finished drawing, and
+          // the next one is matched only on what's drawn after the answer —
+          // a stray extra Enter on the next dialog would pick "No, exit".
+          const keys = FIRST_RUN[index].keys(firstRun.tail)
+          firstRun.done.add(index)
+          firstRun.busyUntil = now + 500 + keys.length * 200
+          keys.forEach((key, i) =>
+            setTimeout(
+              () => {
+                if (this.ptys.get(workspaceId) !== entry) return
+                entry.proc.write(key)
+                if (i === keys.length - 1) firstRun.tail = ''
+              },
+              500 + i * 200
+            )
+          )
         }
       }
       entry.urlTail = (entry.urlTail + data.replace(ANSI, '')).slice(-512)

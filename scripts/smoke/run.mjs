@@ -170,15 +170,11 @@ function writeHostileShellFiles() {
     appendFileSync(join(HOME, f), `\n${hostile}`)
 }
 
-// Walks Claude Code's first-run screens, recording every one (these are what a
-// friend sees on a fresh Mac). Keys are only pressed on screens known to take
-// Enter; the folder-trust dialog is left to Orcha, which answers it itself.
+// Waits for Claude Code's prompt, recording every first-run screen on the way
+// (these are what a friend sees on a fresh Mac). The test presses nothing:
+// Orcha has to get through those screens on its own.
 async function claudeReady(id) {
   const seen = new Set()
-  const press = (keys) =>
-    evaluate(
-      `await window.orcha.pty.input(${JSON.stringify(id)}, ${JSON.stringify(keys)}); return true`
-    )
   return waitFor(
     async () => {
       const s = await session(id)
@@ -189,18 +185,6 @@ async function claudeReady(id) {
         seen.add(key)
         await screenshot(`claude-firstrun-${seen.size}`)
         writeFileSync(join(OUT, `claude-firstrun-${seen.size}.txt`), s?.screen ?? '')
-      }
-      if ((s?.outputAgeMs ?? 0) < 2500 || /trustthisfolder/i.test(screen)) return false
-      if (/BypassPermissionsmode/i.test(screen) && /Yes,Iaccept/i.test(screen)) {
-        log('first run: accepting the bypass-permissions warning')
-        await press('\x1b[B')
-        await sleep(300)
-        await press('\r')
-      } else if (
-        /textstyle|Pressentertocontinue|Entertocontinue|Entertoconfirm|securitynotes/i.test(screen)
-      ) {
-        log('first run: Enter on', key.slice(-80))
-        await press('\r')
       }
       return false
     },
@@ -239,10 +223,9 @@ async function main() {
       env.leakedEnv.length === 0,
       `no ANTHROPIC_*/provider switches imported from the shell (${env.leakedEnv})`
     )
-    check(
-      env.menu.includes('appMenu') && env.menu.includes('windowMenu'),
-      `Mac menu roles (${env.menu})`
-    )
+    // Electron reports roles in lower case.
+    const roles = env.menu.map((r) => String(r).toLowerCase())
+    check(roles.includes('appmenu') && roles.includes('windowmenu'), `Mac menu roles (${env.menu})`)
 
     // Invite by orcha:// link: shown, not redeemed until Join.
     execFileSync('open', [`orcha://join/${stack.code}?relay=${encodeURIComponent(stack.relay)}`])
