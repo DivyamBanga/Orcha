@@ -13,7 +13,7 @@ interface Node {
 export function pathTo<T extends Node>(messages: T[], leafId: number | null): T[] {
   const byId = new Map(messages.map((m) => [m.id, m]))
   const path: T[] = []
-  for (let at = leafId === null ? undefined : byId.get(leafId); at; ) {
+  for (let at = leafId === null ? undefined : byId.get(leafId); at;) {
     path.push(at)
     at = at.parentId === null ? undefined : byId.get(at.parentId)
   }
@@ -36,6 +36,8 @@ export function deepestLatest<T extends Node>(messages: T[], id: number): number
   for (;;) {
     const kids = messages.filter((m) => m.parentId === at)
     if (kids.length === 0) return at
-    at = kids.reduce((a, b) => (b.createdAt > a.createdAt || (b.createdAt === a.createdAt && b.id > a.id) ? b : a)).id
+    at = kids.reduce((a, b) =>
+      b.createdAt > a.createdAt || (b.createdAt === a.createdAt && b.id > a.id) ? b : a
+    ).id
   }
 }

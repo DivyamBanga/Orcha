@@ -168,6 +168,96 @@ export function Plus(props: IconProps): React.JSX.Element {
   )
 }
 
+export function ChevronLeft(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M9.5 4.5L6 8l3.5 3.5" />
+    </Stroke>
+  )
+}
+
+export function ChevronRight(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M6.5 4.5L10 8l-3.5 3.5" />
+    </Stroke>
+  )
+}
+
+export function Copy(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.6" />
+      <path d="M10.5 5.5V4.1a1.6 1.6 0 0 0-1.6-1.6H4.1a1.6 1.6 0 0 0-1.6 1.6v4.8a1.6 1.6 0 0 0 1.6 1.6h1.4" />
+    </Stroke>
+  )
+}
+
+export function Pencil(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M10.6 2.9l2.5 2.5L6 12.5l-3.2.7.7-3.2z" />
+    </Stroke>
+  )
+}
+
+export function Search(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <circle cx="7" cy="7" r="4.2" />
+      <path d="M10.2 10.2l3.3 3.3" />
+    </Stroke>
+  )
+}
+
+export function Stop(props: IconProps): React.JSX.Element {
+  return (
+    <Filled {...props}>
+      <rect x="4.5" y="4.5" width="7" height="7" rx="1.4" />
+    </Filled>
+  )
+}
+
+export function Star({ filled, ...props }: IconProps & { filled?: boolean }): React.JSX.Element {
+  const d = 'M8 2.4l1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 11.1l-3.4 1.8.7-3.8-2.8-2.7 3.8-.5z'
+  return filled ? (
+    <Filled {...props}>
+      <path d={d} />
+    </Filled>
+  ) : (
+    <Stroke {...props}>
+      <path d={d} />
+    </Stroke>
+  )
+}
+
+export function Bubble(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M3 4.6A2.1 2.1 0 0 1 5.1 2.5h5.8A2.1 2.1 0 0 1 13 4.6v3.8a2.1 2.1 0 0 1-2.1 2.1H7.2L4.5 13v-2.5h0A1.5 1.5 0 0 1 3 9z" />
+    </Stroke>
+  )
+}
+
+export function Globe(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.6 5.9 5.6 8s.8 3.9 2.4 5.5" />
+    </Stroke>
+  )
+}
+
+// Extended thinking: a spark rather than a brain, which reads as decoration
+// at 14px.
+export function Spark(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M8 2.5v2.2M8 11.3v2.2M2.5 8h2.2M11.3 8h2.2M4.1 4.1l1.5 1.5M10.4 10.4l1.5 1.5M4.1 11.9l1.5-1.5M10.4 5.6l1.5-1.5" />
+    </Stroke>
+  )
+}
+
 // Session state, as shape first and colour second, so a row still reads
 // correctly at the edge of vision. "working" is a rotating CSS ring (see
 // .state-ring) rather than an SVG so the rotation stays off the main thread.

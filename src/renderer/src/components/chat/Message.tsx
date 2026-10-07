@@ -1,0 +1,284 @@
+import { memo, useLayoutEffect, useRef, useState } from 'react'
+import Markdown from '../Markdown'
+import { usd } from '../../money'
+import { Check, ChevronLeft, ChevronRight, Copy, Pencil, Refresh, Spark } from '../Icon'
+import type { LiveReply } from '../../chatStore'
+import type { ChatMessage } from '../../../../shared/types'
+
+// Where a message sits among its alternatives (edits or retries): 0-based
+// index of how many. Callbacks take the message id so they can stay the same
+// function across renders, and a streaming reply only re-renders itself.
+export interface Branches {
+  index: number
+  count: number
+}
+
+type Go = (messageId: number, delta: -1 | 1) => void
+
+function BranchNav({
+  id,
+  branches,
+  go
+}: {
+  id: number
+  branches: Branches
+  go: Go
+}): React.JSX.Element | null {
+  if (branches.count < 2) return null
+  return (
+    <span className="tnum flex items-center text-[11.5px] text-zinc-500">
+      <button
+        onClick={() => go(id, -1)}
+        disabled={branches.index === 0}
+        className="btn btn-ghost btn-icon h-6 w-6"
+        title="Previous version"
+      >
+        <ChevronLeft size={13} />
+      </button>
+      {branches.index + 1}/{branches.count}
+      <button
+        onClick={() => go(id, 1)}
+        disabled={branches.index === branches.count - 1}
+        className="btn btn-ghost btn-icon h-6 w-6"
+        title="Next version"
+      >
+        <ChevronRight size={13} />
+      </button>
+    </span>
+  )
+}
+
+function CopyButton({ text }: { text: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text).catch(() => {})
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1400)
+      }}
+      className="btn btn-ghost btn-icon h-6 w-6 text-zinc-500"
+      title="Copy"
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  )
+}
+
+// ---- yours ----------------------------------------------------------------------
+
+export const UserMessage = memo(function UserMessage({
+  message,
+  branches,
+  onBranch,
+  onEdit
+}: {
+  message: ChatMessage
+  branches: Branches
+  onBranch: Go
+  onEdit: ((messageId: number, text: string) => void) | null
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(message.text)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`
+  }, [text, editing])
+
+  if (editing) {
+    const save = (): void => {
+      if (!text.trim()) return
+      setEditing(false)
+      onEdit?.(message.id, text.trim())
+    }
+    return (
+      <div className="msg-in my-5 flex justify-end">
+        <div className="w-full max-w-[85%] rounded-2xl border border-edge-bright bg-surface-1 p-2">
+          <textarea
+            ref={ref}
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                save()
+              } else if (e.key === 'Escape') {
+                setEditing(false)
+              }
+            }}
+            className="composer-input min-h-0 px-2 py-1"
+          />
+          <div className="flex justify-end gap-1.5 pt-1">
+            <button
+              onClick={() => {
+                setText(message.text)
+                setEditing(false)
+              }}
+              className="btn btn-ghost btn-sm"
+            >
+              Cancel
+            </button>
+            <button onClick={save} disabled={!text.trim()} className="btn btn-primary btn-sm">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div data-message={message.id} className="msg-in group my-5 flex flex-col items-end">
+      <div className="max-w-[85%] select-text whitespace-pre-wrap break-words rounded-2xl bg-surface-2 px-4 py-2.5 text-[14px] leading-relaxed text-zinc-100">
+        {message.text}
+      </div>
+      <div className="mt-1 flex h-6 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[button:focus-visible]:opacity-100">
+        <BranchNav id={message.id} branches={branches} go={onBranch} />
+        <CopyButton text={message.text} />
+        {onEdit && (
+          <button
+            onClick={() => {
+              setText(message.text)
+              setEditing(true)
+            }}
+            className="btn btn-ghost btn-icon h-6 w-6 text-zinc-500"
+            title="Edit"
+          >
+            <Pencil size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+})
+
+// ---- the reply ------------------------------------------------------------------
+
+function Thinking({
+  text,
+  ms,
+  live
+}: {
+  text: string
+  ms: number | null
+  live: boolean
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const seconds = ms !== null ? Math.max(1, Math.round(ms / 1000)) : null
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[12.5px] text-zinc-500 transition-colors duration-150 hover:text-zinc-300"
+      >
+        {live ? <span className="busy-ring" /> : <Spark size={12} />}
+        {live ? 'Thinking…' : seconds !== null ? `Thought for ${seconds}s` : 'Thoughts'}
+        <ChevronRight
+          size={11}
+          className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+        />
+      </button>
+      {open && (
+        <div className="fade-late mt-2 select-text whitespace-pre-wrap border-l border-edge-bright pl-3 text-[12.5px] leading-relaxed text-zinc-500">
+          {text}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export const AssistantMessage = memo(function AssistantMessage({
+  message,
+  live,
+  branches,
+  modelLabel,
+  last,
+  onBranch,
+  onRetry
+}: {
+  message: ChatMessage
+  live: LiveReply | undefined
+  branches: Branches
+  modelLabel: string | null
+  last: boolean
+  onBranch: Go
+  onRetry: ((messageId: number) => void) | null
+}): React.JSX.Element {
+  const streaming = message.status === 'streaming'
+  const text = streaming ? (live?.text ?? '') : message.text
+  const thinkingText = streaming ? (live?.thinking ?? '') : (message.parts?.thinking?.text ?? '')
+  const tools = streaming ? (live?.tools ?? []) : (message.parts?.tools ?? [])
+  const error = message.parts?.error
+
+  return (
+    <div data-message={message.id} className="msg-in group my-5">
+      {thinkingText && (
+        <Thinking
+          text={thinkingText}
+          ms={message.parts?.thinking?.ms ?? null}
+          live={streaming && !text}
+        />
+      )}
+      {tools.map((tool, i) => (
+        <div key={i} className="mb-2 flex items-center gap-2 text-[12.5px] text-zinc-500">
+          {streaming && i === tools.length - 1 && !text ? (
+            <span className="busy-ring" />
+          ) : (
+            <Check size={12} />
+          )}
+          {tool.label}
+        </div>
+      ))}
+      {text ? (
+        <Markdown text={text} className="text-[14px] text-zinc-200" />
+      ) : (
+        streaming &&
+        !thinkingText && (
+          <div className="flex h-7 items-center">
+            <span className="busy-ring" />
+          </div>
+        )
+      )}
+      {message.status === 'error' && (
+        <div className="mt-2 select-text rounded-lg border border-red-400/20 bg-red-400/[0.06] px-3 py-2 text-[12.5px] text-red-400">
+          {error ?? 'Something went wrong before the reply finished.'}
+        </div>
+      )}
+      {!streaming && (
+        <div
+          className={`mt-1.5 flex h-6 items-center gap-0.5 transition-opacity duration-150 group-hover:opacity-100 has-[button:focus-visible]:opacity-100 ${
+            last ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          {text && <CopyButton text={text} />}
+          {onRetry && (
+            <button
+              onClick={() => onRetry(message.id)}
+              className="btn btn-ghost btn-icon h-6 w-6 text-zinc-500"
+              title="Retry"
+            >
+              <Refresh size={13} />
+            </button>
+          )}
+          <BranchNav id={message.id} branches={branches} go={onBranch} />
+          {message.status === 'aborted' && (
+            <span className="ml-1 text-[11.5px] text-zinc-500">Stopped</span>
+          )}
+          <span className="ml-auto flex items-center gap-2 text-[11.5px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {modelLabel}
+            {message.costUsd !== null && message.costUsd > 0 && (
+              <span className="tnum" title="Roughly what this reply cost">
+                ≈ {usd(message.costUsd)}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+})

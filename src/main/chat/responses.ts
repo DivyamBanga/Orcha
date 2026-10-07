@@ -8,7 +8,11 @@ export function responsesAdapter(
   relay: { relay: string; token: string },
   headers: Record<string, string>
 ): ChatAdapter {
-  const post = (body: string, signal?: AbortSignal, extra: Record<string, string> = {}): Promise<Response> =>
+  const post = (
+    body: string,
+    signal?: AbortSignal,
+    extra: Record<string, string> = {}
+  ): Promise<Response> =>
     fetch(`${relay.relay}/openai/v1/responses`, {
       method: 'POST',
       headers: {
@@ -38,7 +42,12 @@ export function responsesAdapter(
       try {
         const response = await post(requestBody(turn), signal)
         if (!response.ok || !response.body) {
-          throw new Error(((await response.text()) || `The relay answered ${response.status}.`).replace(/^Orcha( relay)?: /, ''))
+          throw new Error(
+            ((await response.text()) || `The relay answered ${response.status}.`).replace(
+              /^Orcha( relay)?: /,
+              ''
+            )
+          )
         }
         for await (const event of sseEvents(response.body)) {
           const type = event.type as string
@@ -67,7 +76,8 @@ export function responsesAdapter(
             }
           } else if (type === 'response.failed' || type === 'error') {
             const r = event.response as { error?: { message?: string } } | undefined
-            failure = r?.error?.message ?? String(event.message ?? 'The model stopped with an error.')
+            failure =
+              r?.error?.message ?? String(event.message ?? 'The model stopped with an error.')
           }
         }
       } catch (err) {
@@ -134,7 +144,9 @@ export function requestBody(turn: TurnInput): string {
 }
 
 // Server-sent events from a fetch body, as parsed `data:` payloads.
-async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<Record<string, unknown>> {
+async function* sseEvents(
+  body: ReadableStream<Uint8Array>
+): AsyncGenerator<Record<string, unknown>> {
   const decoder = new TextDecoder()
   let buffer = ''
   for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {

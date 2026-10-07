@@ -60,7 +60,7 @@ export function anthropicAdapter(
         const final = await stream.finalMessage()
         if (final.stop_reason === 'refusal') {
           throw new Error(
-            "The model declined to answer this one. Try rephrasing it, or ask another model."
+            'The model declined to answer this one. Try rephrasing it, or ask another model.'
           )
         }
         const u = final.usage

@@ -23,6 +23,7 @@ import type {
   Identity,
   Catalog,
   ChatDetail,
+  ChatRetryInput,
   ChatSendInput,
   ChatSummary
 } from '../shared/types'
@@ -125,6 +126,8 @@ const api = {
     get: (chatId: string): Promise<ChatDetail | null> => ipcRenderer.invoke(IPC.ChatGet, chatId),
     send: (input: ChatSendInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
       ipcRenderer.invoke(IPC.ChatSend, input),
+    retry: (input: ChatRetryInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
+      ipcRenderer.invoke(IPC.ChatRetry, input),
     stop: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatStop, chatId),
     setLeaf: (chatId: string, leafId: number): Promise<void> =>
       ipcRenderer.invoke(IPC.ChatSetLeaf, chatId, leafId),

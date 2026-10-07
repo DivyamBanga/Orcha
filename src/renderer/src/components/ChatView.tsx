@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeHighlight from 'rehype-highlight'
 import { useStore } from '../store'
+import Markdown from './Markdown'
 import { Check, Close } from './Icon'
 import type { ChatItem } from '../../../shared/types'
 
@@ -74,11 +73,7 @@ function ToolRow({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): React
 }
 
 function AssistantMarkdown({ text }: { text: string }): React.JSX.Element {
-  return (
-    <div className="prose-chat select-text py-1.5 text-zinc-200">
-      <ReactMarkdown rehypePlugins={[rehypeHighlight]}>{text}</ReactMarkdown>
-    </div>
-  )
+  return <Markdown text={text} className="py-1.5 text-zinc-200" />
 }
 
 function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {

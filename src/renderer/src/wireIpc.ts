@@ -1,6 +1,13 @@
 import { IPC } from '../../shared/ipc'
 import { useStore } from './store'
-import type { ChatItem, GitStatus, SessionStatus, UpdateState } from '../../shared/types'
+import { loadChats, onChatEvent } from './chatStore'
+import type {
+  ChatItem,
+  ChatStreamEvent,
+  GitStatus,
+  SessionStatus,
+  UpdateState
+} from '../../shared/types'
 
 interface SessionMessageEvent {
   workspaceId: string
@@ -205,7 +212,17 @@ export function wireIpc(): () => void {
     .then(showUpdate)
     .catch(() => {})
 
+  // Chat replies as they stream, and changes to the chat list (titles, stars).
+  const unsubChat = window.orcha.on(IPC.EvChat, (payload) =>
+    onChatEvent(payload as ChatStreamEvent)
+  )
+  const unsubChats = window.orcha.on(IPC.EvChatsChanged, () => {
+    loadChats().catch(() => {})
+  })
+
   return () => {
+    unsubChat()
+    unsubChats()
     unsubMessage()
     unsubStatus()
     unsubGit()

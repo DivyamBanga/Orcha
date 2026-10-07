@@ -300,6 +300,15 @@ export interface ChatSendInput {
   webSearch?: boolean
 }
 
+// Answer a user message again (the new reply becomes a sibling of the old).
+export interface ChatRetryInput {
+  chatId: string
+  userId: number
+  model: string
+  thinking?: boolean
+  webSearch?: boolean
+}
+
 // Streamed from main while a reply is being written.
 export type ChatStreamEvent =
   | { chatId: string; messageId: number; kind: 'text' | 'thinking'; delta: string }

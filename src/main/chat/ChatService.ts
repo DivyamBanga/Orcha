@@ -17,6 +17,7 @@ import type {
   CatalogModel,
   ChatDetail,
   ChatMessage,
+  ChatRetryInput,
   ChatSendInput,
   ChatStreamEvent,
   ChatSummary
@@ -76,21 +77,10 @@ export class ChatService {
   // Saves the new message and starts the reply; returns at once with the ids,
   // and the reply streams in as ev:chat events.
   send(input: ChatSendInput): { chatId: string; userId: number; assistantId: number } {
-    const model = catalog().models.find((m) => m.id === input.model && m.chat)
-    if (!model) throw new Error('That model is not available.')
-    this.relayFor(model)
-
+    const model = this.chatModel(input.model)
     let chatId = input.chatId
     if (chatId) {
-      const chat = chats.get(chatId)
-      if (!chat) throw new Error('That chat no longer exists.')
-      if (this.running.has(chatId)) throw new Error('Wait for the reply to finish first.')
-      // Claude and GPT can't continue each other's conversations; switching
-      // across starts a new chat (the UI offers that), within is fine.
-      if (chat.provider !== model.provider) {
-        throw new Error('Start a new chat to switch between Claude and GPT models.')
-      }
-      if (chat.model !== model.id) chats.update(chatId, { model: model.id })
+      this.continuing(chatId, model)
     } else {
       chatId = chats.create({
         projectId: input.projectId ?? null,
@@ -98,13 +88,51 @@ export class ChatService {
         model: model.id
       })
     }
-
     const userId = messages.insert({
       chatId,
       parentId: input.parentId,
       role: 'user',
       text: input.text
     })
+    return this.start(chatId, userId, model, input)
+  }
+
+  // Answers a message again; the new reply sits beside the old one (‹2/2›).
+  retry(input: ChatRetryInput): { chatId: string; userId: number; assistantId: number } {
+    const model = this.chatModel(input.model)
+    this.continuing(input.chatId, model)
+    const user = messages.all(input.chatId).find((m) => m.id === input.userId)
+    if (user?.role !== 'user') throw new Error('That message no longer exists.')
+    return this.start(input.chatId, user.id, model, { ...input, text: user.text })
+  }
+
+  private chatModel(id: string): CatalogModel {
+    const model = catalog().models.find((m) => m.id === id && m.chat)
+    if (!model) throw new Error('That model is not available.')
+    this.relayFor(model)
+    return model
+  }
+
+  // Checks an existing chat can take another turn on this model.
+  private continuing(chatId: string, model: CatalogModel): void {
+    const chat = chats.get(chatId)
+    if (!chat) throw new Error('That chat no longer exists.')
+    if (this.running.has(chatId)) throw new Error('Wait for the reply to finish first.')
+    // Claude and GPT can't continue each other's conversations; switching
+    // across starts a new chat (the UI offers that), within is fine.
+    if (chat.provider !== model.provider) {
+      throw new Error('Start a new chat to switch between Claude and GPT models.')
+    }
+    if (chat.model !== model.id) chats.update(chatId, { model: model.id })
+  }
+
+  // Adds the empty reply under `userId` and starts writing it.
+  private start(
+    chatId: string,
+    userId: number,
+    model: CatalogModel,
+    input: { text: string; thinking?: boolean; webSearch?: boolean }
+  ): { chatId: string; userId: number; assistantId: number } {
     const assistantId = messages.insert({
       chatId,
       parentId: userId,
@@ -127,7 +155,7 @@ export class ChatService {
     assistantId: number,
     model: CatalogModel,
     adapter: ChatAdapter,
-    input: ChatSendInput
+    input: { text: string; thinking?: boolean; webSearch?: boolean }
   ): Promise<void> {
     const abort = new AbortController()
     this.running.set(chatId, abort)
@@ -162,7 +190,13 @@ export class ChatService {
       if (event.kind === 'tool') {
         tools.push({ kind: event.tool, label: event.label })
         flush()
-        this.emit({ chatId, messageId: assistantId, kind: 'tool', tool: event.tool, label: event.label })
+        this.emit({
+          chatId,
+          messageId: assistantId,
+          kind: 'tool',
+          tool: event.tool,
+          label: event.label
+        })
       } else {
         pending.push(event)
       }
@@ -212,16 +246,23 @@ export class ChatService {
     if (message) this.emit({ chatId, messageId: assistantId, kind: 'done', message })
     this.changed()
 
-    if (!chats.get(chatId)?.title && status === 'done') {
-      this.nameChat(chatId, input.text, model).catch(() => {})
+    // A first reply that was stopped or failed still names the chat, from its
+    // opening words rather than another model call.
+    if (!chats.get(chatId)?.title) {
+      this.nameChat(chatId, input.text, status === 'done' ? model : null).catch(() => {})
     }
   }
 
   // A short title from the first message, by the cheap model on the same
-  // provider; the opening words if that fails.
-  private async nameChat(chatId: string, firstMessage: string, chatModel: CatalogModel): Promise<void> {
+  // provider; the opening words if that fails (or with no model given).
+  private async nameChat(
+    chatId: string,
+    firstMessage: string,
+    chatModel: CatalogModel | null
+  ): Promise<void> {
     let title = ''
-    const titleModel = catalog().models.find((m) => m.title && m.provider === chatModel.provider)
+    const titleModel =
+      chatModel && catalog().models.find((m) => m.title && m.provider === chatModel.provider)
     if (titleModel) {
       try {
         title = await this.adapterFor(titleModel, chatId).complete(
@@ -233,7 +274,11 @@ export class ChatService {
         title = ''
       }
     }
-    title = title.replace(/^["'“]+|["'”.]+$/g, '').trim()
+    // One plain line, whatever came back.
+    title = (title.split('\n').find((line) => line.trim()) ?? '')
+      .replace(/^[#>*_\s-]+|[*_]+$/g, '')
+      .replace(/^["'“]+|["'”.]+$/g, '')
+      .trim()
     if (!title) title = firstMessage.trim().split(/\s+/).slice(0, 6).join(' ')
     chats.update(chatId, { title: title.slice(0, 80) })
     this.changed()

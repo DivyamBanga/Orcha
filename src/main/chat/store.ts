@@ -1,13 +1,7 @@
 import { randomUUID } from 'crypto'
 import { database } from '../db'
 import { pathTo } from '../../shared/chatTree'
-import type {
-  ChatDetail,
-  ChatFile,
-  ChatMessage,
-  ChatParts,
-  ChatSummary
-} from '../../shared/types'
+import type { ChatDetail, ChatFile, ChatMessage, ChatParts, ChatSummary } from '../../shared/types'
 
 // Chats and their messages (schema in db.ts).
 
@@ -73,7 +67,8 @@ function toMessage(r: MessageRow): ChatMessage {
     files: parse<ChatFile[]>(r.files, []),
     parts: parse<ChatParts | null>(r.parts, null),
     model: r.model,
-    status: (['streaming', 'done', 'aborted', 'error'] as const).find((s) => s === r.status) ?? 'done',
+    status:
+      (['streaming', 'done', 'aborted', 'error'] as const).find((s) => s === r.status) ?? 'done',
     costUsd: r.cost_usd,
     createdAt: r.created_at
   }
@@ -84,6 +79,7 @@ export const chats = {
     return (
       database().prepare('SELECT * FROM chats ORDER BY updated_at DESC').all() as ChatRow[]
     ).map((r) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { leafId: _leaf, systemPrompt: _system, ...summary } = toChat(r)
       return summary
     })
@@ -91,8 +87,7 @@ export const chats = {
 
   get(id: string): StoredChat | null {
     const row = database().prepare('SELECT * FROM chats WHERE id = ?').get(id) as
-      | ChatRow
-      | undefined
+      ChatRow | undefined
     return row ? toChat(row) : null
   },
 
@@ -144,6 +139,7 @@ export const chats = {
   detail(id: string): ChatDetail | null {
     const chat = chats.get(id)
     if (!chat) return null
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { systemPrompt: _system, ...rest } = chat
     return { chat: rest, messages: messages.all(id) }
   }
@@ -160,8 +156,7 @@ export const messages = {
 
   get(id: number): ChatMessage | null {
     const row = database().prepare('SELECT * FROM messages WHERE id = ?').get(id) as
-      | MessageRow
-      | undefined
+      MessageRow | undefined
     return row ? toMessage(row) : null
   },
 
@@ -226,7 +221,8 @@ export const messages = {
 }
 
 // Message text search for ⌘K: every word must appear (each as a prefix), best
-// matches first, with a snippet around the hit.
+// matches first, with a snippet around the hit. Hits are wrapped in \x02…\x03,
+// which (unlike brackets) never occur in what people and models write.
 export function searchMessages(
   query: string
 ): { chatId: string; messageId: number; snippet: string }[] {
@@ -236,14 +232,12 @@ export function searchMessages(
     .filter(Boolean)
   if (terms.length === 0) return []
   const match = terms.map((t) => `"${t}"*`).join(' AND ')
-  return (
-    database()
-      .prepare(
-        `SELECT m.id AS messageId, m.chat_id AS chatId,
-                snippet(messages_fts, 0, '[', ']', '…', 14) AS snippet
+  return database()
+    .prepare(
+      `SELECT m.id AS messageId, m.chat_id AS chatId,
+                snippet(messages_fts, 0, char(2), char(3), '…', 14) AS snippet
          FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid
          WHERE messages_fts MATCH ? ORDER BY rank LIMIT 40`
-      )
-      .all(match) as { chatId: string; messageId: number; snippet: string }[]
-  )
+    )
+    .all(match) as { chatId: string; messageId: number; snippet: string }[]
 }

@@ -25,6 +25,7 @@ import { isMac, logFilePath } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
 import type {
   Agent,
+  ChatRetryInput,
   ChatSendInput,
   CreditPool,
   Identity,
@@ -313,6 +314,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.ChatList, () => chatService.list())
   ipcMain.handle(IPC.ChatGet, (_e, chatId: string) => chatService.detail(chatId))
   ipcMain.handle(IPC.ChatSend, (_e, input: ChatSendInput) => chatService.send(input))
+  ipcMain.handle(IPC.ChatRetry, (_e, input: ChatRetryInput) => chatService.retry(input))
   ipcMain.handle(IPC.ChatStop, (_e, chatId: string) => chatService.stop(chatId))
   ipcMain.handle(IPC.ChatSetLeaf, (_e, chatId: string, leafId: number) =>
     chatService.setLeaf(chatId, leafId)

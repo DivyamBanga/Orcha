@@ -42,13 +42,18 @@ describe('Claude requests', () => {
       { role: 'assistant', content: 'hello' },
       { role: 'user', content: 'again' }
     ])
-    expect(p.system).toEqual([{ type: 'text', text: 'SYSTEM', cache_control: { type: 'ephemeral' } }])
+    expect(p.system).toEqual([
+      { type: 'text', text: 'SYSTEM', cache_control: { type: 'ephemeral' } }
+    ])
     expect(p.cache_control).toEqual({ type: 'ephemeral' })
     expect(p.tools).toBeUndefined()
   })
 
   it('maps the thinking toggle per model', () => {
-    expect(requestFor(turn({ thinking: true })).thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(requestFor(turn({ thinking: true })).thinking).toEqual({
+      type: 'adaptive',
+      display: 'summarized'
+    })
     expect(requestFor(turn({ thinking: false })).thinking).toEqual({ type: 'disabled' })
 
     const opus = requestFor(turn({ model: model({ id: 'claude-opus-5-5', thinking: 'always' }) }))
@@ -72,7 +77,13 @@ describe('Claude requests', () => {
 })
 
 describe('Azure (Responses) requests', () => {
-  const gpt = model({ id: 'gpt-6-sol', provider: 'azure', pool: 'sol', thinking: 'reasoning', webSearch: 'web_search' })
+  const gpt = model({
+    id: 'gpt-6-sol',
+    provider: 'azure',
+    pool: 'sol',
+    thinking: 'reasoning',
+    webSearch: 'web_search'
+  })
 
   it('puts "model" first so the relay never parses the body', () => {
     expect(requestBody(turn({ model: gpt }))).toMatch(/^\{"model":"gpt-6-sol",/)

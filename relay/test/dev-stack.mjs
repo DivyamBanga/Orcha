@@ -10,6 +10,8 @@
 // Markers in the latest user message change the reply:
 //   ORCHA_SLOW  streams for ~15 s, long enough for Orcha to see the session working
 //   ORCHA_ASK   ends on a question with numbered options, so the session reads as blocked
+//   ORCHA_MD    a reply using every kind of markdown chat renders (table, code, maths)
+//   ORCHA_THINK streams some thinking (a reasoning summary for GPT) before the reply
 //
 // Requests the fake upstream receives are appended to .wrangler/dev-upstream.log.
 import { spawn } from 'node:child_process'
@@ -27,6 +29,33 @@ const LOG = join(relayDir, '.wrangler', 'dev-upstream.log')
 const REPLY = 'Hello from the fake upstream. Nothing was billed for real.'
 const SLOW_REPLY = Array.from({ length: 25 }, (_, i) => `step${i + 1}`).join(' ') + ' done.'
 const ASK_REPLY = 'I can do this two ways.\n\n1. Alpha: the quick one\n2. Beta: the thorough one\n\nWhich one should I use?'
+const MD_REPLY = [
+  '## A quick tour',
+  '',
+  'Here is **bold**, *italic*, `inline code` and a [link](https://example.com).',
+  '',
+  '| Model | Speed | Cost |',
+  '| --- | --- | --- |',
+  '| Haiku | fast | low |',
+  '| Opus | careful | high |',
+  '',
+  '```ts',
+  'export function add(a: number, b: number): number {',
+  '  // the sum',
+  "  return a + b // 'ok'",
+  '}',
+  '```',
+  '',
+  'Euler: $e^{i\\pi} + 1 = 0$, and on its own line:',
+  '',
+  '$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$',
+  '',
+  '> A quote to finish.',
+  '',
+  '- [x] done',
+  '- [ ] not yet'
+].join('\n')
+const THINKING = 'The user wants a short answer. I will keep it brief and friendly.'
 
 const sse = (res, name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`)
 
@@ -41,9 +70,11 @@ function lastUserText(parsed) {
 
 function replyFor(parsed) {
   const text = lastUserText(parsed)
-  if (text.includes('ORCHA_SLOW')) return { reply: SLOW_REPLY, delay: 600 }
-  if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60 }
-  return { reply: REPLY, delay: 60 }
+  const thinking = text.includes('ORCHA_THINK') ? THINKING : null
+  if (text.includes('ORCHA_SLOW')) return { reply: SLOW_REPLY, delay: 600, thinking }
+  if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60, thinking }
+  if (text.includes('ORCHA_MD')) return { reply: MD_REPLY, delay: 15, thinking }
+  return { reply: REPLY, delay: 60, thinking }
 }
 
 const upstream = createServer(async (req, res) => {
@@ -56,7 +87,7 @@ const upstream = createServer(async (req, res) => {
     // not JSON
   }
   appendFileSync(LOG, `${new Date().toISOString()} ${req.method} ${req.url} model=${parsed.model ?? '-'} bytes=${body.length}\n`)
-  const { reply, delay } = replyFor(parsed)
+  const { reply, delay, thinking } = replyFor(parsed)
 
   if (req.url.startsWith('/v1/messages/count_tokens')) {
     res.writeHead(200, { 'content-type': 'application/json' })
@@ -85,12 +116,23 @@ const upstream = createServer(async (req, res) => {
       type: 'message_start',
       message: { id: 'msg_fake', type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage }
     })
-    sse(res, 'content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+    let index = 0
+    if (thinking) {
+      sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } })
+      for (const word of thinking.split(' ')) {
+        sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: word + ' ' } })
+        await new Promise((r) => setTimeout(r, 80))
+      }
+      sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: 'fake' } })
+      sse(res, 'content_block_stop', { type: 'content_block_stop', index })
+      index++
+    }
+    sse(res, 'content_block_start', { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
     for (const word of reply.split(' ')) {
-      sse(res, 'content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: word + ' ' } })
+      sse(res, 'content_block_delta', { type: 'content_block_delta', index, delta: { type: 'text_delta', text: word + ' ' } })
       await new Promise((r) => setTimeout(r, delay))
     }
-    sse(res, 'content_block_stop', { type: 'content_block_stop', index: 0 })
+    sse(res, 'content_block_stop', { type: 'content_block_stop', index })
     sse(res, 'message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 20 } })
     sse(res, 'message_stop', { type: 'message_stop' })
     return res.end()
@@ -119,6 +161,10 @@ const upstream = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/event-stream' })
     let seq = 0
     sse(res, 'response.created', { type: 'response.created', sequence_number: seq++, response: { ...base, status: 'in_progress', output: [], usage: null } })
+    for (const word of thinking ? thinking.split(' ') : []) {
+      sse(res, 'response.reasoning_summary_text.delta', { type: 'response.reasoning_summary_text.delta', sequence_number: seq++, item_id: 'rs_fake', output_index: 0, summary_index: 0, delta: word + ' ' })
+      await new Promise((r) => setTimeout(r, 80))
+    }
     sse(res, 'response.output_item.added', { type: 'response.output_item.added', sequence_number: seq++, output_index: 0, item: { ...item, status: 'in_progress', content: [] } })
     for (const word of reply.split(' ')) {
       sse(res, 'response.output_text.delta', { type: 'response.output_text.delta', sequence_number: seq++, item_id: 'msg_fake', output_index: 0, content_index: 0, delta: word + ' ' })

@@ -488,8 +488,9 @@ textarea {
    layer); its height snaps to the row, since animating height isn't composited. */
 .nav-indicator {
   position: absolute;
-  left: 0;
-  right: 0;
+  /* Inset by the list's padding, so it sits exactly on the row. */
+  left: 8px;
+  right: 8px;
   top: 0;
   border-radius: 7px;
   background: var(--color-surface-3);
@@ -603,6 +604,284 @@ textarea {
   color: var(--color-zinc-300);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+.prose-chat h4 {
+  font-weight: 600;
+  color: var(--color-zinc-100);
+  margin: 0.8em 0 0.3em;
+}
+.prose-chat strong {
+  font-weight: 600;
+  color: var(--color-zinc-100);
+}
+.prose-chat blockquote {
+  margin: 0.6em 0;
+  padding-left: 0.9em;
+  border-left: 2px solid var(--color-edge-bright);
+  color: var(--color-zinc-400);
+}
+.prose-chat hr {
+  margin: 1.2em 0;
+  border: 0;
+  border-top: 1px solid var(--color-edge);
+}
+.prose-chat table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.8em 0;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+.prose-chat th,
+.prose-chat td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-edge);
+  text-align: left;
+}
+.prose-chat th {
+  font-weight: 600;
+  color: var(--color-zinc-100);
+  border-bottom-color: var(--color-edge-bright);
+}
+.prose-chat li > input[type='checkbox'] {
+  margin-right: 0.45em;
+  vertical-align: -1px;
+}
+.prose-chat ul.contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.prose-chat .katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.prose-chat .katex {
+  font-size: 1.08em;
+}
+
+/* Code in a reply: a labelled block with a copy button. Syntax is told apart
+   by weight, shade and slant rather than hue, so colour stays reserved for
+   session state. */
+.code-block {
+  margin: 0.7em 0;
+  border: 1px solid var(--color-edge);
+  border-radius: 8px;
+  background: var(--color-surface-1);
+  overflow: hidden;
+}
+.code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--color-edge);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-zinc-500);
+}
+.code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--color-zinc-500);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.code-copy:hover {
+  background: color-mix(in srgb, var(--color-overlay) 6%, transparent);
+  color: var(--color-zinc-200);
+}
+.prose-chat .code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+.prose-chat .hljs-keyword,
+.prose-chat .hljs-built_in,
+.prose-chat .hljs-literal,
+.prose-chat .hljs-selector-tag,
+.prose-chat .hljs-section {
+  color: var(--color-zinc-50);
+  font-weight: 600;
+}
+.prose-chat .hljs-title,
+.prose-chat .hljs-type,
+.prose-chat .hljs-name {
+  color: var(--color-zinc-100);
+  font-weight: 500;
+}
+.prose-chat .hljs-string,
+.prose-chat .hljs-regexp,
+.prose-chat .hljs-symbol,
+.prose-chat .hljs-attr,
+.prose-chat .hljs-attribute {
+  color: var(--color-zinc-400);
+}
+.prose-chat .hljs-number,
+.prose-chat .hljs-variable,
+.prose-chat .hljs-params {
+  color: var(--color-zinc-300);
+}
+.prose-chat .hljs-comment,
+.prose-chat .hljs-quote,
+.prose-chat .hljs-meta {
+  color: var(--color-zinc-500);
+  font-style: italic;
+}
+.prose-chat .hljs-deletion {
+  text-decoration: line-through;
+  color: var(--color-zinc-500);
+}
+.prose-chat .hljs-addition {
+  color: var(--color-zinc-100);
+}
+
+/* ---- chat ------------------------------------------------------------------- */
+
+/* The message box: a raised card whose border firms up while you type. */
+.composer {
+  border-radius: 16px;
+  border: 1px solid var(--color-edge-bright);
+  background: var(--color-surface-1);
+  box-shadow: var(--shadow-lift);
+  cursor: text;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.composer:focus-within {
+  border-color: var(--color-edge-strong);
+  box-shadow:
+    var(--shadow-lift),
+    0 0 0 4px color-mix(in srgb, var(--color-overlay) 3%, transparent);
+}
+.composer-input {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  resize: none;
+  padding: 14px 16px 6px;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-zinc-100);
+}
+.composer-input::placeholder {
+  color: var(--color-zinc-600);
+}
+.composer-input:focus {
+  outline: none;
+}
+.composer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-zinc-500);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+.composer-toggle:hover {
+  color: var(--color-zinc-200);
+  background: color-mix(in srgb, var(--color-overlay) 5%, transparent);
+}
+.composer-toggle[data-on='true'] {
+  color: var(--color-zinc-100);
+  border-color: var(--color-edge-bright);
+  background: var(--color-surface-3);
+}
+.composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  background: var(--color-zinc-100);
+  color: var(--color-surface-0);
+  box-shadow: var(--shadow-primary);
+  transition:
+    background-color 140ms ease,
+    opacity 140ms ease,
+    transform 120ms var(--ease-snap);
+}
+.composer-send:hover:not(:disabled) {
+  background: var(--color-zinc-50);
+}
+.composer-send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.composer-send:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.composer-stop {
+  background: var(--color-surface-3);
+  color: var(--color-zinc-100);
+  box-shadow: inset 0 0 0 1px var(--color-edge-bright);
+}
+.composer-stop:hover:not(:disabled) {
+  background: var(--color-surface-3);
+  box-shadow: inset 0 0 0 1px var(--color-edge-strong);
+}
+
+/* The palette's field is the whole panel's focus; no ring of its own. */
+.palette-input:focus-visible {
+  outline: none;
+}
+.palette-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 13px;
+}
+.palette-item[data-selected='true'] {
+  background: color-mix(in srgb, var(--color-overlay) 7%, transparent);
+}
+
+/* A message arriving settles up into place. */
+.msg-in {
+  animation: orcha-msg-in 260ms var(--ease-out-expo) both;
+}
+@keyframes orcha-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* The message a search jumped to, briefly lit. */
+.msg-flash {
+  border-radius: 12px;
+  animation: orcha-msg-flash 1.6s ease-out;
+}
+@keyframes orcha-msg-flash {
+  from {
+    background: color-mix(in srgb, var(--color-overlay) 7%, transparent);
+  }
 }
 
 @keyframes orcha-turn {
@@ -888,7 +1167,9 @@ body.boot-cascade .boot-d7 {
   .overlay-panel,
   .popover,
   .switch-veil,
-  .toast {
+  .toast,
+  .msg-in,
+  .msg-flash {
     animation: none !important;
   }
   .switch-veil {

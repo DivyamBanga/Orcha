@@ -4,8 +4,9 @@ import { codexModel as codexModelOf } from '../money'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import UsageGlance from './UsageGlance'
 import CreditsPanel from './CreditsPanel'
-import { Branch, Diamond, Mark, More, Plus, SessionState, Settings } from './Icon'
-import type { Project, Workspace } from '../../../shared/types'
+import { chatRoute, deleteChat, NEW_CHAT, useChatStore } from '../chatStore'
+import { Branch, Bubble, Diamond, Mark, More, Plus, Search, SessionState, Settings } from './Icon'
+import type { ChatSummary, Project, Workspace } from '../../../shared/types'
 
 // The session-jump shortcut's modifier, as each platform writes it.
 const MOD = window.orcha.platform === 'darwin' ? '⌘' : '^'
@@ -21,6 +22,7 @@ function useSessionMenu(): {
   closeMenu: () => void
   openSessionMenu: (e: React.MouseEvent, workspace: Workspace) => void
   openProjectMenu: (e: React.MouseEvent, project: Project) => void
+  openChatMenu: (e: React.MouseEvent, chat: ChatSummary) => void
 } {
   const [menu, setMenu] = useState<MenuState | null>(null)
 
@@ -122,7 +124,53 @@ function useSessionMenu(): {
     setMenu({ x: e.clientX, y: e.clientY, items })
   }
 
-  return { menu, closeMenu: () => setMenu(null), openSessionMenu, openProjectMenu }
+  const openChatMenu = (e: React.MouseEvent, chat: ChatSummary): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    const items: MenuItem[] = [
+      {
+        label: chat.starred ? 'Unstar' : 'Star',
+        onClick: () => window.orcha.chat.star(chat.id, !chat.starred).catch(() => {})
+      },
+      {
+        label: 'Rename',
+        onClick: () => {
+          useStore.getState().setActive(chatRoute(chat.id))
+          useChatStore.setState({ renaming: chat.id })
+        }
+      },
+      {
+        label: 'Delete chat',
+        danger: true,
+        separatorAbove: true,
+        onClick: () => {
+          if (confirm(`Delete "${chat.title ?? 'New chat'}"? This can't be undone.`)) {
+            deleteChat(chat.id).catch((err) => alert(String(err)))
+          }
+        }
+      }
+    ]
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
+
+  return { menu, closeMenu: () => setMenu(null), openSessionMenu, openProjectMenu, openChatMenu }
+}
+
+function SectionLabel({
+  children,
+  action,
+  className = ''
+}: {
+  children: React.ReactNode
+  action?: React.ReactNode
+  className?: string
+}): React.JSX.Element {
+  return (
+    <div className={`relative mb-1 flex h-6 items-center justify-between px-2 ${className}`}>
+      <span className="eyebrow">{children}</span>
+      {action}
+    </div>
+  )
 }
 
 // Space is always reserved (opacity, not display) so rows never reflow on hover.
@@ -207,6 +255,48 @@ function SessionRow({
   )
 }
 
+function ChatRow({
+  chat,
+  onMenu
+}: {
+  chat: ChatSummary
+  onMenu: (e: React.MouseEvent, chat: ChatSummary) => void
+}): React.JSX.Element {
+  const route = chatRoute(chat.id)
+  const active = useStore((s) => s.activeId === route)
+  const unread = useStore((s) => s.unread[route]) ?? false
+  const setActive = useStore((s) => s.setActive)
+  const writing = useChatStore((s) => s.running[chat.id] !== undefined)
+  return (
+    <div
+      data-row={route}
+      onContextMenu={(e) => onMenu(e, chat)}
+      className={`group relative flex h-8 w-full items-center gap-1 rounded-[7px] pl-2 pr-1 transition-colors duration-150 ${
+        active ? 'text-zinc-50' : 'text-zinc-400 hover:bg-overlay/[0.035] hover:text-zinc-200'
+      }`}
+    >
+      <button
+        onClick={() => setActive(route)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <span className="flex w-3 shrink-0 items-center justify-center">
+          {writing ? (
+            <span className="state-ring" title="Writing a reply" />
+          ) : unread ? (
+            // A reply waiting to be read: the same amber as anything else
+            // that's waiting on you.
+            <span className="h-2 w-2 rounded-full bg-wait" title="New reply" />
+          ) : (
+            <Bubble size={12} className="text-zinc-600" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{chat.title ?? 'New chat'}</span>
+      </button>
+      <DotsButton onClick={(e) => onMenu(e, chat)} />
+    </div>
+  )
+}
+
 function Sidebar(): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const workspaces = useStore((s) => s.workspaces)
@@ -217,8 +307,12 @@ function Sidebar(): React.JSX.Element {
   const setActive = useStore((s) => s.setActive)
   const setShowNewProject = useStore((s) => s.setShowNewProject)
   const setShowSettings = useStore((s) => s.setShowSettings)
+  const setShowPalette = useStore((s) => s.setShowPalette)
   const isGuest = useIsGuest()
-  const { menu, closeMenu, openSessionMenu, openProjectMenu } = useSessionMenu()
+  const chats = useChatStore((s) => s.chats)
+  const { menu, closeMenu, openSessionMenu, openProjectMenu, openChatMenu } = useSessionMenu()
+  const starred = chats.filter((c) => c.starred)
+  const recent = chats.filter((c) => !c.starred && !c.projectId)
 
   // The selection highlight is one element that glides to the active row.
   // It's positioned straight on the DOM (no React state, so no re-render per
@@ -257,7 +351,7 @@ function Sidebar(): React.JSX.Element {
     const observer = new ResizeObserver(place)
     observer.observe(list)
     return () => observer.disconnect()
-  }, [activeId, projects, workspaces])
+  }, [activeId, projects, workspaces, chats])
 
   return (
     <aside className="flex w-[248px] shrink-0 flex-col border-r border-edge bg-surface-1">
@@ -292,48 +386,81 @@ function Sidebar(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Mission Control — pinned */}
-      <div className="px-2">
+      <div className="flex flex-col gap-1 px-2">
         <button
-          onClick={() => setActive('orchestrator')}
-          className={`boot-item boot-d3 flex h-9 w-full items-center gap-2.5 rounded-lg border px-3 text-left transition-colors duration-150 ${
-            activeId === 'orchestrator'
-              ? 'border-edge-bright bg-surface-3 text-zinc-50'
-              : 'border-edge bg-surface-0/40 text-zinc-300 hover:border-edge-bright hover:bg-surface-2'
+          onClick={() => setShowPalette(true)}
+          className="boot-item boot-d3 flex h-8 w-full items-center gap-2 rounded-lg border border-edge bg-surface-0/40 px-2.5 text-left text-zinc-500 transition-colors duration-150 hover:border-edge-bright hover:text-zinc-300"
+        >
+          <Search size={13} />
+          <span className="flex-1">Search</span>
+          <kbd className="font-mono text-[10px] text-zinc-600">{MOD}K</kbd>
+        </button>
+        <button
+          onClick={() => setActive(NEW_CHAT)}
+          className={`boot-item boot-d3 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150 ${
+            activeId === NEW_CHAT
+              ? 'bg-surface-3 text-zinc-50 shadow-[inset_0_0_0_1px_var(--color-edge)]'
+              : 'text-zinc-300 hover:bg-overlay/[0.035] hover:text-zinc-50'
           }`}
         >
-          {orchestratorBusy ? (
-            <span className="busy-ring" />
-          ) : mcUnread ? (
-            // Unread is the assistant waiting on you, so it borrows the same
-            // amber a session uses for exactly that.
-            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-wait bg-wait/25" />
-          ) : (
-            <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
-          )}
+          <Plus size={14} />
+          <span className="font-medium">New chat</span>
+        </button>
+        {/* Mission Control — pinned */}
+        <button
+          onClick={() => setActive('orchestrator')}
+          className={`boot-item boot-d3 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors duration-150 ${
+            activeId === 'orchestrator'
+              ? 'bg-surface-3 text-zinc-50 shadow-[inset_0_0_0_1px_var(--color-edge)]'
+              : 'text-zinc-300 hover:bg-overlay/[0.035] hover:text-zinc-50'
+          }`}
+        >
+          <span className="flex w-[14px] shrink-0 items-center justify-center">
+            {orchestratorBusy ? (
+              <span className="busy-ring" />
+            ) : mcUnread ? (
+              // Unread is the assistant waiting on you, so it borrows the same
+              // amber a session uses for exactly that.
+              <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-wait bg-wait/25" />
+            ) : (
+              <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
+            )}
+          </span>
           <span className="font-medium">Mission Control</span>
           <kbd className="ml-auto font-mono text-[10px] text-zinc-600">{MOD}0</kbd>
         </button>
       </div>
 
-      <div className="boot-item boot-d4 mt-4 mb-1 flex items-center justify-between px-4">
-        <span className="eyebrow">Projects</span>
-        <button
-          onClick={() => setShowNewProject(true)}
-          className="btn btn-ghost btn-icon h-5 w-5 text-zinc-500"
-          title="New project"
-        >
-          <Plus size={13} />
-        </button>
-      </div>
-
-      <div ref={listRef} className="relative flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={listRef} className="relative mt-2 flex-1 overflow-y-auto px-2 pb-2">
         <div ref={indicatorRef} className="nav-indicator" style={{ opacity: 0 }} />
+        {starred.length > 0 && (
+          <div className="boot-item boot-d4 mb-3">
+            <SectionLabel>Starred</SectionLabel>
+            <div className="flex flex-col gap-px">
+              {starred.map((chat) => (
+                <ChatRow key={chat.id} chat={chat} onMenu={openChatMenu} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        <SectionLabel
+          className="boot-item boot-d4"
+          action={
+            <button
+              onClick={() => setShowNewProject(true)}
+              className="btn btn-ghost btn-icon h-5 w-5 text-zinc-500"
+              title="New project"
+            >
+              <Plus size={13} />
+            </button>
+          }
+        >
+          Projects
+        </SectionLabel>
         {projects.length === 0 ? (
-          <div className="boot-item boot-d4 relative px-2 py-8 text-center leading-relaxed text-zinc-600">
-            No projects yet.
-            <br />
-            Create or open one below.
+          <div className="boot-item boot-d4 relative mb-3 px-2 py-1 text-[12px] text-zinc-600">
+            No projects yet
           </div>
         ) : (
           projects.map((project, i) => {
@@ -378,6 +505,17 @@ function Sidebar(): React.JSX.Element {
               </div>
             )
           })
+        )}
+
+        {recent.length > 0 && (
+          <div className="boot-item boot-d7">
+            <SectionLabel>Chats</SectionLabel>
+            <div className="flex flex-col gap-px">
+              {recent.map((chat) => (
+                <ChatRow key={chat.id} chat={chat} onMenu={openChatMenu} />
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

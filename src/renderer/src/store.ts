@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { reduceMessage } from './wireIpc'
+import { chatIdOf, NEW_CHAT, useChatStore } from './chatStore'
 import type {
   Project,
   Workspace,
@@ -43,7 +44,7 @@ interface OrchaStore {
   setup: { gh: boolean; claude: boolean } | null
   projects: Project[]
   workspaces: Workspace[]
-  activeId: string | null // workspace id or 'orchestrator'
+  activeId: string | null // workspace id, 'orchestrator', or a chat route (chatStore)
   openSessions: string[] // terminals kept mounted
   activity: Record<string, 'working' | 'waiting' | 'off'>
   gitStatus: Record<string, GitStatus>
@@ -73,6 +74,8 @@ interface OrchaStore {
   // Project id to preselect in the parallel-session dialog, or null = closed.
   showNewSession: string | null
   showSettings: boolean
+  // The ⌘K palette.
+  showPalette: boolean
 
   // Guest mode (running on a host's credits). null = not checked yet.
   guest: GuestStatus | null
@@ -107,6 +110,7 @@ interface OrchaStore {
   setShowNewProject: (show: boolean) => void
   setShowNewSession: (projectId: string | null) => void
   setShowSettings: (show: boolean) => void
+  setShowPalette: (show: boolean) => void
   setLinkModal: (modal: { kind: 'share' | 'phone'; workspaceId: string } | null) => void
   setUsage: (workspaceId: string, usage: SessionUsage | null) => void
   setShowUsageDashboard: (show: boolean) => void
@@ -144,6 +148,7 @@ export const useStore = create<OrchaStore>((set) => ({
   showNewProject: false,
   showNewSession: null,
   showSettings: false,
+  showPalette: false,
   guest: null,
   guestBalance: null,
   guestUsage: null,
@@ -189,16 +194,24 @@ export const useStore = create<OrchaStore>((set) => ({
     }
     // Only a tab that actually has a terminal restored (or Mission Control)
     // qualifies — a workspace outside openSessions would show a header over a
-    // dead pane.
-    if (rawActive && (rawActive === MC || useStore.getState().openSessions.includes(rawActive))) {
+    // dead pane. A chat qualifies while it still exists.
+    const chatId = chatIdOf(rawActive)
+    if (
+      rawActive &&
+      (rawActive === MC ||
+        rawActive === NEW_CHAT ||
+        (chatId && useChatStore.getState().chats.some((c) => c.id === chatId)) ||
+        useStore.getState().openSessions.includes(rawActive))
+    ) {
       set({ activeId: rawActive })
     }
   },
 
   setActive: (id) =>
     set((s) => {
+      // Only sessions have terminals to keep open.
       const openSessions =
-        id && id !== MC && !s.openSessions.includes(id)
+        id && id !== MC && !id.startsWith('chat:') && !s.openSessions.includes(id)
           ? [...s.openSessions, id]
           : s.openSessions
       if (openSessions !== s.openSessions) persistOpenSessions(openSessions)
@@ -297,6 +310,7 @@ export const useStore = create<OrchaStore>((set) => ({
   setShowNewProject: (show) => set({ showNewProject: show }),
   setShowNewSession: (projectId) => set({ showNewSession: projectId }),
   setShowSettings: (show) => set({ showSettings: show }),
+  setShowPalette: (show) => set({ showPalette: show }),
   setLinkModal: (modal) => set({ linkModal: modal }),
   setUsage: (workspaceId, usage) => set((s) => ({ usage: { ...s.usage, [workspaceId]: usage } })),
   setShowUsageDashboard: (show) => set({ showUsageDashboard: show }),

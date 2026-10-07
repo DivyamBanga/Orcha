@@ -10,8 +10,10 @@ import UsageDashboard from './components/UsageDashboard'
 import CreditsDashboard from './components/CreditsDashboard'
 import Notices from './components/Notices'
 import Onboarding from './components/Onboarding'
+import CommandPalette from './components/CommandPalette'
 import { wireIpc } from './wireIpc'
 import { useStore, useIsGuest } from './store'
+import { loadChats, NEW_CHAT } from './chatStore'
 import { poolLevel, usd } from './money'
 
 function App(): React.JSX.Element {
@@ -34,12 +36,15 @@ function App(): React.JSX.Element {
       s.load(),
       s.loadGuest(),
       window.orcha.ui.getState('onboarded'),
-      s.loadIdentity().catch(() => {})
+      s.loadIdentity().catch(() => {}),
+      loadChats().catch(() => {})
     ]).then(async ([, , done]) => {
       setOnboarded(done === '1')
       // Awaited so the restored tab is set before the curtain parts — the
-      // reveal should uncover it, not have it pop in mid-animation.
+      // reveal should uncover it, not have it pop in mid-animation. With
+      // nothing to restore, Orcha opens on a new chat.
       await s.restoreOpenSessions()
+      if (useStore.getState().activeId === null) s.setActive(NEW_CHAT)
       setLoaded(true)
     })
   }, [])
@@ -115,14 +120,19 @@ function App(): React.JSX.Element {
     }
   }, [])
 
-  // Ctrl+1..9 jumps to a session (0 = Mission Control); ⌘ on a Mac, where
-  // Ctrl belongs to the terminal.
+  // Ctrl+1..9 jumps to a session (0 = Mission Control) and Ctrl+K opens the
+  // palette; ⌘ on a Mac, where Ctrl belongs to the terminal. On Windows a
+  // terminal keeps its own Ctrl+K (cut to end of line).
   useEffect(() => {
     const mac = window.orcha.platform === 'darwin'
     const onKey = (e: KeyboardEvent): void => {
       if ((mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) || e.altKey) return
       const s = useStore.getState()
-      if (e.key === '0') {
+      if (e.key.toLowerCase() === 'k' && !e.shiftKey) {
+        if (!mac && (e.target as HTMLElement | null)?.closest?.('.xterm')) return
+        e.preventDefault()
+        s.setShowPalette(!s.showPalette)
+      } else if (e.key === '0') {
         e.preventDefault()
         s.setActive('orchestrator')
       } else if (/^[1-9]$/.test(e.key)) {
@@ -162,6 +172,7 @@ function App(): React.JSX.Element {
             <LinkModal />
             <SettingsModal />
             {isGuest ? <CreditsDashboard /> : <UsageDashboard />}
+            <CommandPalette />
             <Notices />
           </>
         ) : (

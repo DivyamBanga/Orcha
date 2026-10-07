@@ -63,6 +63,7 @@ export const IPC = {
   ChatList: 'chat:list',
   ChatGet: 'chat:get',
   ChatSend: 'chat:send',
+  ChatRetry: 'chat:retry',
   ChatStop: 'chat:stop',
   ChatSetLeaf: 'chat:setLeaf',
   ChatRename: 'chat:rename',

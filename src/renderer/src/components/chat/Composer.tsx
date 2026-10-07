@@ -1,0 +1,229 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useStore } from '../../store'
+import { chatModels, pickModel, setDraft, useChatStore } from '../../chatStore'
+import { ArrowUp, Check, ChevronDown, Globe, Spark, Stop } from '../Icon'
+import type { CatalogModel } from '../../../../shared/types'
+
+type ChatModel = CatalogModel & { blocked: boolean }
+
+const providerName = (provider: string): string => (provider === 'anthropic' ? 'Claude' : 'GPT')
+
+function ModelPicker({
+  route,
+  model,
+  chatProvider
+}: {
+  route: string
+  model: ChatModel | null
+  chatProvider: string | null
+}): React.JSX.Element {
+  const catalog = useStore((s) => s.catalog)
+  const identity = useStore((s) => s.identity)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const models = chatModels(catalog, identity)
+  const groups = ['anthropic', 'azure']
+    .map((provider) => ({ provider, models: models.filter((m) => m.provider === provider) }))
+    .filter((g) => g.models.length > 0)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        data-active={open}
+        className="btn btn-ghost btn-sm gap-1 text-zinc-400"
+        title="Choose a model"
+      >
+        {model?.label ?? 'Choose a model'}
+        <ChevronDown size={11} />
+      </button>
+      {open && (
+        <div
+          style={{ transformOrigin: 'bottom left' }}
+          className="popover absolute bottom-full left-0 z-20 mb-2 w-72 p-1"
+        >
+          {groups.map((group) => (
+            <div key={group.provider} className="py-0.5">
+              <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
+                <span className="eyebrow">{providerName(group.provider)}</span>
+                {chatProvider && chatProvider !== group.provider && (
+                  <span className="text-[11px] text-zinc-600">starts a new chat</span>
+                )}
+              </div>
+              {group.models.map((m) => (
+                <button
+                  key={m.id}
+                  disabled={m.blocked}
+                  onClick={() => {
+                    setOpen(false)
+                    pickModel(route, m, chatProvider)
+                  }}
+                  className="menu-item h-auto items-start py-1.5 disabled:cursor-default disabled:opacity-45"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-zinc-200">{m.label}</span>
+                    <span className="block text-[11.5px] leading-snug text-zinc-500">
+                      {m.blocked ? 'On your own plan, in the next update' : m.description}
+                    </span>
+                  </span>
+                  {m.id === model?.id && (
+                    <span className="mt-0.5 shrink-0 text-zinc-300">
+                      <Check size={13} />
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Toggle({
+  on,
+  onClick,
+  title,
+  children
+}: {
+  on: boolean
+  onClick: () => void
+  title: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <button onClick={onClick} data-on={on} className="composer-toggle" title={title}>
+      {children}
+    </button>
+  )
+}
+
+// Where a message is written. Enter sends, Shift+Enter starts a new line.
+function Composer({
+  route,
+  model,
+  chatProvider,
+  running,
+  onSend,
+  onStop
+}: {
+  route: string
+  model: ChatModel | null
+  chatProvider: string | null
+  running: boolean
+  onSend: (text: string, model: string) => Promise<void>
+  onStop: () => void
+}): React.JSX.Element {
+  const draft = useChatStore((s) => s.drafts[route]) ?? ''
+  const thinking = useChatStore((s) => s.thinking)
+  const webSearch = useChatStore((s) => s.webSearch)
+  const [sending, setSending] = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  // Grows with the text up to a cap, then scrolls.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 260)}px`
+  }, [draft])
+
+  useEffect(() => {
+    ref.current?.focus()
+  }, [route])
+
+  const canSend = draft.trim() !== '' && model !== null && !model.blocked && !running && !sending
+  const send = (): void => {
+    if (!canSend || !model) return
+    const text = draft.trim()
+    setSending(true)
+    setDraft(route, '')
+    onSend(text, model.id)
+      .catch(() => setDraft(route, text))
+      .finally(() => setSending(false))
+  }
+
+  const thinkingTitle =
+    model?.thinking === 'always'
+      ? 'Think longer before answering (this model always thinks some)'
+      : 'Think before answering'
+
+  return (
+    <div
+      className="composer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault()
+          ref.current?.focus()
+        }
+      }}
+    >
+      <textarea
+        ref={ref}
+        value={draft}
+        rows={1}
+        onChange={(e) => setDraft(route, e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault()
+            send()
+          }
+        }}
+        placeholder={
+          model ? `Ask ${providerName(model.provider)} anything` : 'Pick a model to start'
+        }
+        className="composer-input"
+      />
+      <div className="flex items-center gap-1 px-2 pb-2">
+        <ModelPicker route={route} model={model} chatProvider={chatProvider} />
+        <Toggle
+          on={thinking}
+          onClick={() => useChatStore.setState({ thinking: !thinking })}
+          title={thinkingTitle}
+        >
+          <Spark size={13} />
+          Think
+        </Toggle>
+        {model?.webSearch && (
+          <Toggle
+            on={webSearch}
+            onClick={() => useChatStore.setState({ webSearch: !webSearch })}
+            title="Let it search the web"
+          >
+            <Globe size={13} />
+            Search
+          </Toggle>
+        )}
+        <div className="flex-1" />
+        {running ? (
+          <button onClick={onStop} className="composer-send composer-stop" title="Stop">
+            <Stop size={14} />
+          </button>
+        ) : (
+          <button onClick={send} disabled={!canSend} className="composer-send" title="Send">
+            <ArrowUp size={15} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default Composer
