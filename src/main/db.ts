@@ -57,6 +57,55 @@ export function initDb(): void {
     }
   }
 
+  // Chats. Messages form a tree (parent_id) so edits and retries become
+  // branches; leaf_id is the branch on screen. Each chat freezes its system
+  // prompt when it starts. messages_fts indexes message text for search.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chats (
+      id            TEXT PRIMARY KEY,
+      project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      title         TEXT,
+      provider      TEXT NOT NULL,
+      model         TEXT NOT NULL,
+      system_prompt TEXT,
+      leaf_id       INTEGER,
+      starred       INTEGER NOT NULL DEFAULT 0,
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS chats_updated ON chats (updated_at);
+    CREATE TABLE IF NOT EXISTS messages (
+      id         INTEGER PRIMARY KEY,
+      chat_id    TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      parent_id  INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL,
+      text       TEXT NOT NULL DEFAULT '',
+      files      TEXT,
+      parts      TEXT,
+      model      TEXT,
+      status     TEXT NOT NULL DEFAULT 'done',
+      usage      TEXT,
+      cost_usd   REAL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS messages_chat ON messages (chat_id);
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+      text, content='messages', content_rowid='id', tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts (rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts (messages_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE OF text ON messages BEGIN
+      INSERT INTO messages_fts (messages_fts, rowid, text) VALUES ('delete', old.id, old.text);
+      INSERT INTO messages_fts (rowid, text) VALUES (new.id, new.text);
+    END;
+  `)
+  // A reply that was mid-stream when Orcha last closed never finished.
+  db.exec("UPDATE messages SET status = 'error' WHERE status = 'streaming'")
+
   // Terminal-first rework: retire pre-rework SDK-chat workspaces, then make
   // sure every project has a 'main' session rooted at the repo folder.
   const migrated = db.prepare("SELECT value FROM app_state WHERE key = 'terminal_rework'").get()
@@ -77,6 +126,11 @@ export function initDb(): void {
       ).run(randomUUID(), p.id, p.name, p.repo_path, Date.now())
     }
   }
+}
+
+// The open database, for modules that keep their own queries (chat/store.ts).
+export function database(): Database.Database {
+  return db
 }
 
 interface ProjectRow {

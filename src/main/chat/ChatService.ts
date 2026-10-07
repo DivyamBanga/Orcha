@@ -1,0 +1,272 @@
+import { IPC } from '../../shared/ipc'
+import { attributionHeaders, isGuest, relayConfig } from '../guest'
+import { catalog } from '../catalog'
+import * as db from '../db'
+import { chats, messages, searchMessages } from './store'
+import { buildSystemPrompt } from './prompt'
+import { anthropicAdapter } from './anthropic'
+import { responsesAdapter } from './responses'
+import {
+  estimateCost,
+  TurnAborted,
+  type ChatAdapter,
+  type StreamEvent,
+  type TurnResult
+} from './adapter'
+import type {
+  CatalogModel,
+  ChatDetail,
+  ChatMessage,
+  ChatSendInput,
+  ChatStreamEvent,
+  ChatSummary
+} from '../../shared/types'
+
+type SendFn = (channel: string, payload: unknown) => void
+
+// How often streamed text is pushed to the window: often enough to read as
+// live, rare enough not to flood IPC with a message per token.
+const FLUSH_MS = 30
+
+// Orcha's chat: one turn at a time per chat, streamed to the window and saved
+// as it finishes. Providers sit behind ChatAdapter (anthropic.ts,
+// responses.ts); this decides which one a chat uses and keeps the record.
+export class ChatService {
+  private running = new Map<string, AbortController>()
+
+  constructor(private push: SendFn) {}
+
+  list(): ChatSummary[] {
+    return chats.list()
+  }
+
+  detail(chatId: string): ChatDetail | null {
+    return chats.detail(chatId)
+  }
+
+  search(query: string): ReturnType<typeof searchMessages> {
+    return searchMessages(query)
+  }
+
+  rename(chatId: string, title: string): void {
+    chats.update(chatId, { title: title.trim().slice(0, 120) })
+    this.changed()
+  }
+
+  star(chatId: string, starred: boolean): void {
+    chats.update(chatId, { starred })
+    this.changed()
+  }
+
+  remove(chatId: string): void {
+    this.stop(chatId)
+    chats.remove(chatId)
+    this.changed()
+  }
+
+  // Which branch is on screen (after switching with ‹2/3›).
+  setLeaf(chatId: string, leafId: number): void {
+    chats.update(chatId, { leafId })
+  }
+
+  stop(chatId: string): void {
+    this.running.get(chatId)?.abort()
+  }
+
+  // Saves the new message and starts the reply; returns at once with the ids,
+  // and the reply streams in as ev:chat events.
+  send(input: ChatSendInput): { chatId: string; userId: number; assistantId: number } {
+    const model = catalog().models.find((m) => m.id === input.model && m.chat)
+    if (!model) throw new Error('That model is not available.')
+    this.relayFor(model)
+
+    let chatId = input.chatId
+    if (chatId) {
+      const chat = chats.get(chatId)
+      if (!chat) throw new Error('That chat no longer exists.')
+      if (this.running.has(chatId)) throw new Error('Wait for the reply to finish first.')
+      // Claude and GPT can't continue each other's conversations; switching
+      // across starts a new chat (the UI offers that), within is fine.
+      if (chat.provider !== model.provider) {
+        throw new Error('Start a new chat to switch between Claude and GPT models.')
+      }
+      if (chat.model !== model.id) chats.update(chatId, { model: model.id })
+    } else {
+      chatId = chats.create({
+        projectId: input.projectId ?? null,
+        provider: model.provider,
+        model: model.id
+      })
+    }
+
+    const userId = messages.insert({
+      chatId,
+      parentId: input.parentId,
+      role: 'user',
+      text: input.text
+    })
+    const assistantId = messages.insert({
+      chatId,
+      parentId: userId,
+      role: 'assistant',
+      text: '',
+      model: model.id,
+      status: 'streaming'
+    })
+    chats.update(chatId, { leafId: assistantId })
+    chats.touch(chatId)
+    this.changed()
+
+    void this.reply(chatId, userId, assistantId, model, this.adapterFor(model, chatId), input)
+    return { chatId, userId, assistantId }
+  }
+
+  private async reply(
+    chatId: string,
+    userId: number,
+    assistantId: number,
+    model: CatalogModel,
+    adapter: ChatAdapter,
+    input: ChatSendInput
+  ): Promise<void> {
+    const abort = new AbortController()
+    this.running.set(chatId, abort)
+
+    // Built once, when the chat starts, and kept (see prompt.ts).
+    const chat = chats.get(chatId)!
+    let system = chat.systemPrompt
+    if (!system) {
+      system = buildSystemPrompt({ now: new Date() })
+      chats.update(chatId, { systemPrompt: system })
+    }
+    const history = messages
+      .path(chatId, userId)
+      .filter((m) => m.role === 'user' || (m.status !== 'error' && m.text.trim()))
+      .map((m) => ({ role: m.role, text: m.text, files: m.files }))
+
+    // Deltas are gathered and pushed in small batches.
+    const pending: { kind: 'text' | 'thinking'; delta: string }[] = []
+    const flush = (): void => {
+      for (const kind of ['thinking', 'text'] as const) {
+        const delta = pending
+          .filter((p) => p.kind === kind)
+          .map((p) => p.delta)
+          .join('')
+        if (delta) this.emit({ chatId, messageId: assistantId, kind, delta })
+      }
+      pending.length = 0
+    }
+    const timer = setInterval(flush, FLUSH_MS)
+    const tools: { kind: 'search' | 'memory'; label: string }[] = []
+    const onEvent = (event: StreamEvent): void => {
+      if (event.kind === 'tool') {
+        tools.push({ kind: event.tool, label: event.label })
+        flush()
+        this.emit({ chatId, messageId: assistantId, kind: 'tool', tool: event.tool, label: event.label })
+      } else {
+        pending.push(event)
+      }
+    }
+
+    let result: TurnResult | null = null
+    let status: ChatMessage['status'] = 'done'
+    let error: string | null = null
+    try {
+      result = await adapter.run(
+        {
+          model,
+          system,
+          history,
+          thinking: input.thinking ?? false,
+          webSearch: input.webSearch ?? false
+        },
+        onEvent,
+        abort.signal
+      )
+    } catch (err) {
+      if (err instanceof TurnAborted) {
+        result = err.partial
+        status = 'aborted'
+      } else {
+        status = 'error'
+        error = err instanceof Error ? err.message : String(err)
+      }
+    } finally {
+      clearInterval(timer)
+      flush()
+      this.running.delete(chatId)
+    }
+
+    const parts = { ...(result?.parts ?? {}), ...(tools.length ? { tools } : {}) }
+    if (error) parts.error = error
+    messages.finish(assistantId, {
+      text: result?.text ?? '',
+      parts: Object.keys(parts).length ? parts : null,
+      status,
+      usage: result?.usage ?? null,
+      costUsd: estimateCost(model, result?.usage ?? null),
+      model: result?.model
+    })
+    chats.touch(chatId)
+    const message = messages.get(assistantId)
+    if (message) this.emit({ chatId, messageId: assistantId, kind: 'done', message })
+    this.changed()
+
+    if (!chats.get(chatId)?.title && status === 'done') {
+      this.nameChat(chatId, input.text, model).catch(() => {})
+    }
+  }
+
+  // A short title from the first message, by the cheap model on the same
+  // provider; the opening words if that fails.
+  private async nameChat(chatId: string, firstMessage: string, chatModel: CatalogModel): Promise<void> {
+    let title = ''
+    const titleModel = catalog().models.find((m) => m.title && m.provider === chatModel.provider)
+    if (titleModel) {
+      try {
+        title = await this.adapterFor(titleModel, chatId).complete(
+          titleModel.id,
+          'You name chats. Reply with a title of 2 to 6 words for a chat that starts with the message below: no quotes, no punctuation at the end.',
+          firstMessage.slice(0, 2000)
+        )
+      } catch {
+        title = ''
+      }
+    }
+    title = title.replace(/^["'“]+|["'”.]+$/g, '').trim()
+    if (!title) title = firstMessage.trim().split(/\s+/).slice(0, 6).join(' ')
+    chats.update(chatId, { title: title.slice(0, 80) })
+    this.changed()
+  }
+
+  // Every chat bills through a relay: a guest's host's, or the host's own
+  // (whose Claude never goes through it — that runs on their plan, and
+  // arrives with the next release).
+  private relayFor(model: CatalogModel): { relay: string; token: string } {
+    const relay = relayConfig()
+    if (!relay) throw new Error('Chat needs an invite, or your own relay set up.')
+    if (model.provider === 'anthropic' && !isGuest()) {
+      throw new Error('Claude in chat on your own plan is coming next; pick a GPT model for now.')
+    }
+    return relay
+  }
+
+  // Spend is attributed to the chat (and its project) on the relay.
+  private adapterFor(model: CatalogModel, chatId: string): ChatAdapter {
+    const relay = this.relayFor(model)
+    const chat = chats.get(chatId)
+    const project = chat?.projectId ? db.projects.get(chat.projectId)?.name : null
+    const headers = attributionHeaders(project ?? 'Chat', `chat:${chatId}`)
+    return model.provider === 'anthropic'
+      ? anthropicAdapter(relay, headers)
+      : responsesAdapter(relay, headers)
+  }
+
+  private emit(event: ChatStreamEvent): void {
+    this.push(IPC.EvChat, event)
+  }
+
+  private changed(): void {
+    this.push(IPC.EvChatsChanged, {})
+  }
+}

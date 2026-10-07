@@ -105,6 +105,17 @@ const upstream = createServer(async (req, res) => {
       content: [{ type: 'output_text', text: reply, annotations: [] }]
     }
     const base = { id: 'resp_fake', object: 'response', created_at: Math.floor(Date.now() / 1000), model }
+    const usage = {
+      input_tokens: 30000,
+      input_tokens_details: { cached_tokens: 25000, cache_write_tokens: 0 },
+      output_tokens: 400,
+      output_tokens_details: { reasoning_tokens: 300 },
+      total_tokens: 30400
+    }
+    if (!parsed.stream) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ...base, status: 'completed', output: [item], usage }))
+    }
     res.writeHead(200, { 'content-type': 'text/event-stream' })
     let seq = 0
     sse(res, 'response.created', { type: 'response.created', sequence_number: seq++, response: { ...base, status: 'in_progress', output: [], usage: null } })

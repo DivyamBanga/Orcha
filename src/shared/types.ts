@@ -235,6 +235,77 @@ export interface Catalog {
   models: CatalogModel[]
 }
 
+// ---- chat ----
+
+export interface ChatSummary {
+  id: string
+  projectId: string | null
+  title: string | null
+  provider: 'anthropic' | 'azure'
+  model: string
+  starred: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+// A file attached to a user message, stored once under its content hash.
+export interface ChatFile {
+  hash: string
+  name: string
+  mime: string
+  bytes: number
+}
+
+export interface ChatSource {
+  url: string
+  title: string
+}
+
+// Everything about a reply besides its text: the reasoning it showed, the
+// tools it used, the pages it cited, and what went wrong if anything did.
+export interface ChatParts {
+  thinking?: { text: string; ms: number }
+  tools?: { kind: 'search' | 'memory'; label: string }[]
+  sources?: ChatSource[]
+  error?: string
+}
+
+// One message in a chat. Messages form a tree (parentId): editing a message
+// or retrying a reply adds a sibling, which is how branches work.
+export interface ChatMessage {
+  id: number
+  parentId: number | null
+  role: 'user' | 'assistant'
+  text: string
+  files: ChatFile[]
+  parts: ChatParts | null
+  model: string | null
+  status: 'streaming' | 'done' | 'aborted' | 'error'
+  costUsd: number | null
+  createdAt: number
+}
+
+export interface ChatDetail {
+  chat: ChatSummary & { leafId: number | null }
+  messages: ChatMessage[]
+}
+
+export interface ChatSendInput {
+  chatId: string | null // null = start a new chat
+  projectId?: string | null
+  parentId: number | null // the message this one follows (null = first)
+  text: string
+  model: string
+  thinking?: boolean
+  webSearch?: boolean
+}
+
+// Streamed from main while a reply is being written.
+export type ChatStreamEvent =
+  | { chatId: string; messageId: number; kind: 'text' | 'thinking'; delta: string }
+  | { chatId: string; messageId: number; kind: 'tool'; tool: 'search' | 'memory'; label: string }
+  | { chatId: string; messageId: number; kind: 'done'; message: ChatMessage }
+
 // Who this Orcha bills. 'guest': paired by invite, everything through the
 // host's relay. 'host': runs a relay (Claude on their own login; chat and Codex
 // on Azure through it). 'local': neither.

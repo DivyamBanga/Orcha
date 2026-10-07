@@ -23,7 +23,15 @@ import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import { installTool, refreshPath, toolsStatus } from './tools'
 import { isMac, logFilePath } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
-import type { Agent, CreditPool, Identity, Project, ToolName, WorkspaceAuth } from '../shared/types'
+import type {
+  Agent,
+  ChatSendInput,
+  CreditPool,
+  Identity,
+  Project,
+  ToolName,
+  WorkspaceAuth
+} from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { PtyManager } from './services/PtyManager'
 import type { GitService } from './services/GitService'
@@ -34,6 +42,7 @@ import type { CodexService } from './services/CodexService'
 import type { ClipboardService } from './services/ClipboardService'
 import type { MobileService } from './services/MobileService'
 import type { Updater } from './updater'
+import type { ChatService } from './chat/ChatService'
 
 
 interface Services {
@@ -47,6 +56,7 @@ interface Services {
   clipboardService: ClipboardService
   mobileService: MobileService
   updater: Updater
+  chatService: ChatService
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
@@ -60,7 +70,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     codexService,
     clipboardService,
     mobileService,
-    updater
+    updater,
+    chatService
   } = services
 
   // --- setup / onboarding ---------------------------------------------------
@@ -296,6 +307,24 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   // The terminal's own "Paste" menu item on a Mac: a real paste into the
   // focused field, so it takes the same path as ⌘V.
   ipcMain.handle(IPC.AppPaste, () => mainWindow.webContents.paste())
+
+  // --- chat ------------------------------------------------------------------
+
+  ipcMain.handle(IPC.ChatList, () => chatService.list())
+  ipcMain.handle(IPC.ChatGet, (_e, chatId: string) => chatService.detail(chatId))
+  ipcMain.handle(IPC.ChatSend, (_e, input: ChatSendInput) => chatService.send(input))
+  ipcMain.handle(IPC.ChatStop, (_e, chatId: string) => chatService.stop(chatId))
+  ipcMain.handle(IPC.ChatSetLeaf, (_e, chatId: string, leafId: number) =>
+    chatService.setLeaf(chatId, leafId)
+  )
+  ipcMain.handle(IPC.ChatRename, (_e, chatId: string, title: string) =>
+    chatService.rename(chatId, title)
+  )
+  ipcMain.handle(IPC.ChatStar, (_e, chatId: string, starred: boolean) =>
+    chatService.star(chatId, starred)
+  )
+  ipcMain.handle(IPC.ChatDelete, (_e, chatId: string) => chatService.remove(chatId))
+  ipcMain.handle(IPC.ChatSearch, (_e, query: string) => chatService.search(query))
 
   // --- updates and support ---------------------------------------------------
 

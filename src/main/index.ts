@@ -22,6 +22,7 @@ import { refreshPath } from './tools'
 import { isMac, resolveShellEnv, startLogFile } from './platform'
 import { Updater } from './updater'
 import { registerSmoke } from './smoke'
+import { ChatService } from './chat/ChatService'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
@@ -292,7 +293,8 @@ function createWindow(): void {
     codexService,
     clipboardService,
     mobileService,
-    updater
+    updater,
+    chatService: new ChatService(send)
   })
 }
 

@@ -21,7 +21,10 @@ import type {
   ToolsStatus,
   UpdateState,
   Identity,
-  Catalog
+  Catalog,
+  ChatDetail,
+  ChatSendInput,
+  ChatSummary
 } from '../shared/types'
 
 const api = {
@@ -115,6 +118,24 @@ const api = {
     pendingInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestPendingInvite)
   },
   identity: (): Promise<Identity> => ipcRenderer.invoke(IPC.Identity),
+  // Chats: replies stream in as ev:chat events; ev:chats:changed means the
+  // list (titles, order, stars) changed.
+  chat: {
+    list: (): Promise<ChatSummary[]> => ipcRenderer.invoke(IPC.ChatList),
+    get: (chatId: string): Promise<ChatDetail | null> => ipcRenderer.invoke(IPC.ChatGet, chatId),
+    send: (input: ChatSendInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
+      ipcRenderer.invoke(IPC.ChatSend, input),
+    stop: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatStop, chatId),
+    setLeaf: (chatId: string, leafId: number): Promise<void> =>
+      ipcRenderer.invoke(IPC.ChatSetLeaf, chatId, leafId),
+    rename: (chatId: string, title: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.ChatRename, chatId, title),
+    star: (chatId: string, starred: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC.ChatStar, chatId, starred),
+    remove: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatDelete, chatId),
+    search: (query: string): Promise<{ chatId: string; messageId: number; snippet: string }[]> =>
+      ipcRenderer.invoke(IPC.ChatSearch, query)
+  },
   // The models on offer (from the relay; see EvCatalog for updates).
   catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
   tools: {

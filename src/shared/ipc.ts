@@ -58,6 +58,17 @@ export const IPC = {
   GuestPendingInvite: 'guest:pendingInvite',
   Identity: 'identity:get',
   Catalog: 'catalog:get',
+
+  // chat
+  ChatList: 'chat:list',
+  ChatGet: 'chat:get',
+  ChatSend: 'chat:send',
+  ChatStop: 'chat:stop',
+  ChatSetLeaf: 'chat:setLeaf',
+  ChatRename: 'chat:rename',
+  ChatStar: 'chat:star',
+  ChatDelete: 'chat:delete',
+  ChatSearch: 'chat:search',
   ToolsStatus: 'tools:status',
   ToolsInstall: 'tools:install',
   RelayAdminStatus: 'relayAdmin:status',
@@ -87,5 +98,7 @@ export const IPC = {
   EvToolsProgress: 'ev:tools:progress',
   EvInviteLink: 'ev:inviteLink',
   EvCatalog: 'ev:catalog',
+  EvChat: 'ev:chat',
+  EvChatsChanged: 'ev:chats:changed',
   EvUpdate: 'ev:update'
 } as const
