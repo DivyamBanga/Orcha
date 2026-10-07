@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { optionsFor, promptFor, zodShape } from './claudeMax'
-import { MEMORY_TOOL } from './memory'
-import type { FileLoader, TurnInput } from './adapter'
+import type { ClientTool, FileLoader, TurnInput } from './adapter'
 import type { CatalogModel } from '../../shared/types'
+
+// The memory tool's shape (memory.ts needs the database, so not imported).
+const MEMORY_TOOL: ClientTool = {
+  name: 'memory',
+  description: 'Save or remove a memory.',
+  schema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['remember', 'forget'] },
+      text: { type: 'string', description: 'For remember: one short sentence.' },
+      id: { type: 'integer', description: 'For forget: the number of the memory.' }
+    },
+    required: ['action']
+  }
+}
 
 const load: FileLoader = (f) =>
   f.kind === 'text' ? { text: `contents of ${f.name}` } : { base64: `B64${f.kind}` }
