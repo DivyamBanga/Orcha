@@ -352,7 +352,8 @@ export class PtyManager {
           now < firstRun.busyUntil
             ? -1
             : FIRST_RUN.findIndex(
-                (step, i) => !firstRun.done.has(i) && step.screen.every((re) => re.test(firstRun.tail))
+                (step, i) =>
+                  !firstRun.done.has(i) && step.screen.every((re) => re.test(firstRun.tail))
               )
         if (index !== -1) {
           // Each screen is answered once, after it has finished drawing, and

@@ -337,13 +337,10 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.GuestPendingInvite, () => takePendingInvite())
 
   // Who this Orcha bills, and what it can run.
-  ipcMain.handle(
-    IPC.Identity,
-    (): Identity => ({
-      kind: isGuest() ? 'guest' : relayAdminStatus().configured ? 'host' : 'local',
-      codex: relayConfig() !== null
-    })
-  )
+  ipcMain.handle(IPC.Identity, (): Identity => ({
+    kind: isGuest() ? 'guest' : relayAdminStatus().configured ? 'host' : 'local',
+    codex: relayConfig() !== null
+  }))
   ipcMain.handle(IPC.Catalog, () => catalog())
 
   ipcMain.handle(IPC.ToolsStatus, () => toolsStatus())

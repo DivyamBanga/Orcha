@@ -35,15 +35,13 @@ function App(): React.JSX.Element {
       s.loadGuest(),
       window.orcha.ui.getState('onboarded'),
       s.loadIdentity().catch(() => {})
-    ]).then(
-      async ([, , done]) => {
-        setOnboarded(done === '1')
-        // Awaited so the restored tab is set before the curtain parts — the
-        // reveal should uncover it, not have it pop in mid-animation.
-        await s.restoreOpenSessions()
-        setLoaded(true)
-      }
-    )
+    ]).then(async ([, , done]) => {
+      setOnboarded(done === '1')
+      // Awaited so the restored tab is set before the curtain parts — the
+      // reveal should uncover it, not have it pop in mid-animation.
+      await s.restoreOpenSessions()
+      setLoaded(true)
+    })
   }, [])
 
   // Usage — polled here (not per-workspace) so the sidebar's glance widget
@@ -167,7 +165,11 @@ function App(): React.JSX.Element {
             <Notices />
           </>
         ) : (
-          <Onboarding onDone={finishOnboarding} />
+          <>
+            {/* No top bars yet, so a strip of its own moves the window. */}
+            <div className="titlebar fixed inset-x-0 top-0 z-10 h-10" />
+            <Onboarding onDone={finishOnboarding} />
+          </>
         )}
       </div>
       <BootReveal ready={!checking} />

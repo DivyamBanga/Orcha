@@ -226,7 +226,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             }}
             placeholder={busy ? 'working — Enter queues your next message' : 'prompt this session'}
             rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-            className="flex-1 resize-none rounded-xl border border-edge-bright bg-surface-1 px-3.5 py-2.5 text-zinc-200 transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-600 hover:border-edge-strong focus:border-white/25 focus:shadow-[0_0_0_3px_rgba(255,255,255,0.04)] focus:outline-none"
+            className="flex-1 resize-none rounded-xl border border-edge-bright bg-surface-1 px-3.5 py-2.5 text-zinc-200 transition-[border-color,box-shadow] duration-150 placeholder:text-zinc-600 hover:border-edge-strong focus:border-overlay/25 focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-overlay)_4%,transparent)] focus:outline-none"
           />
           {busy ? (
             <button onClick={() => interrupt()} className="btn btn-secondary h-10 px-4">

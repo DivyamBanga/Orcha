@@ -17,7 +17,14 @@ import type { CreditPool, GuestUsage, PoolBalance } from '../../../shared/types'
 
 // Neutral shades per budget, in budget order, for the stacked chart — budgets
 // aren't session state, so they get tone, not colour.
-const SHADES = ['bg-zinc-300', 'bg-zinc-500', 'bg-zinc-700', 'bg-zinc-400', 'bg-zinc-600', 'bg-zinc-800']
+const SHADES = [
+  'bg-zinc-300',
+  'bg-zinc-500',
+  'bg-zinc-700',
+  'bg-zinc-400',
+  'bg-zinc-600',
+  'bg-zinc-800'
+]
 const POOL_ORDER: Record<CreditPool, number> = { claude: 0, sol: 1, astra: 2 }
 const shade = (pool: CreditPool): string => SHADES[(POOL_ORDER[pool] ?? 3) % SHADES.length]
 
@@ -86,6 +93,8 @@ function DailyChart({
 }): React.JSX.Element {
   const days = dailyByPool(usage, 14, now)
   const max = Math.max(...days.map((d) => d.total), 0.01)
+  // Stacked bottom-up in budget order.
+  const stacked = [...pools].reverse()
   return (
     <div>
       <div className="flex h-20 items-end gap-[3px]">
@@ -95,7 +104,7 @@ function DailyChart({
             className="group relative flex h-full flex-1 flex-col justify-end"
             title={`${d.label}: ${usd(d.total)}`}
           >
-            {[...pools].reverse().map((p) =>
+            {stacked.map((p) =>
               (d.byPool[p] ?? 0) > 0 ? (
                 <div
                   key={p}
@@ -104,7 +113,7 @@ function DailyChart({
                 />
               ) : null
             )}
-            {d.total === 0 && <div className="h-[2px] w-full rounded-full bg-white/[0.06]" />}
+            {d.total === 0 && <div className="h-[2px] w-full rounded-full bg-overlay/[0.06]" />}
           </div>
         ))}
       </div>

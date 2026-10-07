@@ -37,9 +37,128 @@
   --color-work: #34d399;
   --color-wait: #f59e0b;
 
+  /* What hover tints and hairline fills are mixed from: white over the dark
+     theme, near-black over the light one (bg-overlay/[0.04] and friends). */
+  --color-overlay: #fff;
+
   /* One easing family everywhere: things arrive fast and settle softly. */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-snap: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* A damped spring (~2% overshoot) for things that open: sheets, popovers,
+     the palette, the selection highlight. Sampled from the spring equation so
+     it needs no animation library and runs on the compositor like any easing. */
+  --ease-spring: linear(
+    0,
+    0.0419 3.6%,
+    0.1417 7.1%,
+    0.2693 10.7%,
+    0.4041 14.3%,
+    0.5328 17.9%,
+    0.6477 21.4%,
+    0.7454 25%,
+    0.825 28.6%,
+    0.8873 32.1%,
+    0.9341 35.7%,
+    0.9679 39.3%,
+    0.9911 42.9%,
+    1.006 46.4%,
+    1.0147 50%,
+    1.0188 53.6%,
+    1.0199 57.1%,
+    1.019 60.7%,
+    1.017 64.3%,
+    1.0145 67.9%,
+    1.0118 71.4%,
+    1.0092 75%,
+    1.007 78.6%,
+    1.005 82.1%,
+    1.0034 85.7%,
+    1.0022 89.3%,
+    1.0013 92.9%,
+    1.0006 96.4%,
+    1
+  );
+}
+
+/* ---- themes -------------------------------------------------------------------
+
+   Dark is the base. Light reuses every component unchanged: it flips the zinc
+   scale (50 <-> 950 and so on), so text-zinc-300 that reads "body text" on a
+   dark surface reads the same on a light one, and swaps the surfaces, hairlines
+   and shadows. State colours step one shade darker to keep their contrast on
+   white. Inside a light window, [data-theme='dark'] pins a region (the
+   terminals) back to the dark palette. */
+
+:root {
+  color-scheme: dark;
+  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-pop:
+    0 16px 40px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --shadow-panel:
+    0 28px 70px -18px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --backdrop: rgba(0, 0, 0, 0.58);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-surface-0: #fcfcfd;
+  --color-surface-1: #f5f5f7;
+  --color-surface-2: #eeeef1;
+  --color-surface-3: #e6e6ea;
+  --color-edge: rgba(9, 9, 11, 0.075);
+  --color-edge-bright: rgba(9, 9, 11, 0.12);
+  --color-edge-strong: rgba(9, 9, 11, 0.2);
+  --color-overlay: #09090b;
+  --color-work: #059669;
+  --color-wait: #d97706;
+  --color-red-400: oklch(57.7% 0.245 27.325);
+  --color-zinc-50: oklch(14.1% 0.005 285.823);
+  --color-zinc-100: oklch(21% 0.006 285.885);
+  --color-zinc-200: oklch(27.4% 0.006 286.033);
+  --color-zinc-300: oklch(37% 0.013 285.805);
+  --color-zinc-400: oklch(44.2% 0.017 285.786);
+  --color-zinc-500: oklch(55.2% 0.016 285.938);
+  --color-zinc-600: oklch(70.5% 0.015 286.067);
+  --color-zinc-700: oklch(87.1% 0.006 286.286);
+  --color-zinc-800: oklch(92% 0.004 286.32);
+  --color-zinc-900: oklch(96.7% 0.001 286.375);
+  --color-zinc-950: oklch(98.5% 0 0);
+  --shadow-lift: 0 1px 2px rgba(9, 9, 11, 0.08);
+  --shadow-pop:
+    0 16px 40px -12px rgba(9, 9, 11, 0.18), 0 0 0 1px rgba(9, 9, 11, 0.06);
+  --shadow-panel:
+    0 28px 70px -18px rgba(9, 9, 11, 0.25), 0 0 0 1px rgba(9, 9, 11, 0.06);
+  --shadow-primary: 0 1px 2px rgba(9, 9, 11, 0.2);
+  --backdrop: rgba(9, 9, 11, 0.28);
+}
+
+:root[data-theme='light'] [data-theme='dark'] {
+  color-scheme: dark;
+  --color-surface-0: #09090b;
+  --color-surface-1: #0e0e11;
+  --color-surface-2: #151518;
+  --color-surface-3: #1c1c20;
+  --color-edge: rgba(255, 255, 255, 0.065);
+  --color-edge-bright: rgba(255, 255, 255, 0.11);
+  --color-edge-strong: rgba(255, 255, 255, 0.18);
+  --color-overlay: #fff;
+  --color-work: #34d399;
+  --color-wait: #f59e0b;
+  --color-red-400: oklch(70.4% 0.191 22.216);
+  --color-zinc-50: oklch(98.5% 0 0);
+  --color-zinc-100: oklch(96.7% 0.001 286.375);
+  --color-zinc-200: oklch(92% 0.004 286.32);
+  --color-zinc-300: oklch(87.1% 0.006 286.286);
+  --color-zinc-400: oklch(70.5% 0.015 286.067);
+  --color-zinc-500: oklch(55.2% 0.016 285.938);
+  --color-zinc-600: oklch(44.2% 0.017 285.786);
+  --color-zinc-700: oklch(37% 0.013 285.805);
+  --color-zinc-800: oklch(27.4% 0.006 286.033);
+  --color-zinc-900: oklch(21% 0.006 285.885);
+  --color-zinc-950: oklch(14.1% 0.005 285.823);
 }
 
 html,
@@ -53,8 +172,28 @@ body {
   font-size: 13px;
   user-select: none;
   background: var(--color-surface-0);
+  color: var(--color-zinc-300);
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'ss01', 'cv11';
+}
+
+/* ---- window chrome --------------------------------------------------------
+
+   Orcha draws its own title bar: the top bars drag the window, and anything
+   clickable inside them stays clickable. A Mac's traffic lights sit inset over
+   the sidebar's top bar; on Windows the caption buttons are drawn over the
+   right end of the main one. */
+.titlebar {
+  -webkit-app-region: drag;
+}
+.titlebar :is(button, input, select, textarea, a, [role='button']) {
+  -webkit-app-region: no-drag;
+}
+.platform-darwin .titlebar-lead {
+  padding-left: 80px;
+}
+.platform-win32 .titlebar-trail {
+  padding-right: 150px;
 }
 
 /* Tabular figures wherever money or counts sit in a column or tick over. */
@@ -117,7 +256,7 @@ textarea {
     font-size: 12.5px;
     font-weight: 500;
     white-space: nowrap;
-    color: #d4d4d8;
+    color: var(--color-zinc-300);
     border: 1px solid transparent;
     transition:
       background-color 140ms ease,
@@ -134,14 +273,12 @@ textarea {
     cursor: default;
   }
   .btn-primary {
-    background: #ececef;
+    background: var(--color-zinc-100);
     color: var(--color-surface-0);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.7),
-      0 1px 2px rgba(0, 0, 0, 0.45);
+    box-shadow: var(--shadow-primary);
   }
   .btn-primary:hover:not(:disabled) {
-    background: #fff;
+    background: var(--color-zinc-50);
   }
   .btn-secondary {
     background: var(--color-surface-2);
@@ -150,18 +287,18 @@ textarea {
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-surface-3);
     border-color: var(--color-edge-strong);
-    color: #fafafa;
+    color: var(--color-zinc-50);
   }
   .btn-ghost {
-    color: #a1a1aa;
+    color: var(--color-zinc-400);
   }
   .btn-ghost:hover:not(:disabled),
   .btn-ghost[data-active='true'] {
-    background: rgba(255, 255, 255, 0.06);
-    color: #fafafa;
+    background: color-mix(in srgb, var(--color-overlay) 6%, transparent);
+    color: var(--color-zinc-50);
   }
   .btn-danger {
-    color: #f87171;
+    color: var(--color-red-400);
     border-color: rgba(248, 113, 113, 0.22);
   }
   .btn-danger:hover:not(:disabled) {
@@ -187,22 +324,22 @@ textarea {
     border-radius: 7px;
     border: 1px solid var(--color-edge-bright);
     background: var(--color-surface-0);
-    color: #e4e4e7;
+    color: var(--color-zinc-200);
     font-size: 13px;
     transition:
       border-color 140ms ease,
       box-shadow 140ms ease;
   }
   .input::placeholder {
-    color: #52525b;
+    color: var(--color-zinc-600);
   }
   .input:hover {
     border-color: var(--color-edge-strong);
   }
   .input:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.28);
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+    border-color: color-mix(in srgb, var(--color-overlay) 28%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-overlay) 5%, transparent);
   }
 
   /* A row of mutually exclusive choices; the active one lifts off the track. */
@@ -221,7 +358,7 @@ textarea {
     border-radius: 6px;
     font-size: 12px;
     font-weight: 500;
-    color: #71717a;
+    color: var(--color-zinc-500);
     white-space: nowrap;
     transition:
       background-color 140ms ease,
@@ -229,14 +366,14 @@ textarea {
       box-shadow 140ms ease;
   }
   .segmented > button:hover:not(:disabled) {
-    color: #d4d4d8;
+    color: var(--color-zinc-300);
   }
   .segmented > button[data-active='true'] {
     background: var(--color-surface-3);
-    color: #fafafa;
+    color: var(--color-zinc-50);
     box-shadow:
       inset 0 0 0 1px var(--color-edge-bright),
-      0 1px 2px rgba(0, 0, 0, 0.45);
+      var(--shadow-lift);
   }
   .segmented > button:disabled {
     opacity: 0.35;
@@ -256,7 +393,7 @@ textarea {
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #71717a;
+    color: var(--color-zinc-500);
   }
 
   .field-label {
@@ -264,7 +401,7 @@ textarea {
     margin-bottom: 6px;
     font-size: 12px;
     font-weight: 500;
-    color: #a1a1aa;
+    color: var(--color-zinc-400);
   }
 
   /* ---- overlays ---- */
@@ -276,7 +413,7 @@ textarea {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.58);
+    background: var(--backdrop);
     animation: orcha-fade-in 160ms ease-out both;
   }
   .overlay-backdrop[data-closing='true'] {
@@ -286,11 +423,8 @@ textarea {
     border-radius: 12px;
     border: 1px solid var(--color-edge-bright);
     background: var(--color-surface-1);
-    box-shadow:
-      0 28px 70px -18px rgba(0, 0, 0, 0.75),
-      0 0 0 1px rgba(0, 0, 0, 0.45),
-      inset 0 1px 0 rgba(255, 255, 255, 0.045);
-    animation: orcha-panel-in 240ms var(--ease-out-expo) both;
+    box-shadow: var(--shadow-panel);
+    animation: orcha-panel-in 380ms var(--ease-spring) both;
   }
   .overlay-backdrop[data-closing='true'] > .overlay-panel {
     animation: orcha-panel-out 140ms ease-in both;
@@ -300,11 +434,8 @@ textarea {
     border-radius: 10px;
     border: 1px solid var(--color-edge-bright);
     background: var(--color-surface-1);
-    box-shadow:
-      0 16px 40px -12px rgba(0, 0, 0, 0.7),
-      0 0 0 1px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.045);
-    animation: orcha-pop-in 170ms var(--ease-out-expo) both;
+    box-shadow: var(--shadow-pop);
+    animation: orcha-pop-in 320ms var(--ease-spring) both;
   }
 
   .menu-item {
@@ -316,16 +447,16 @@ textarea {
     padding: 0 10px;
     border-radius: 6px;
     font-size: 12.5px;
-    color: #d4d4d8;
+    color: var(--color-zinc-300);
     text-align: left;
     transition: background-color 90ms ease;
   }
   .menu-item:hover {
-    background: rgba(255, 255, 255, 0.065);
-    color: #fafafa;
+    background: color-mix(in srgb, var(--color-overlay) 6.5%, transparent);
+    color: var(--color-zinc-50);
   }
   .menu-item[data-danger='true'] {
-    color: #f87171;
+    color: var(--color-red-400);
   }
   .menu-item[data-danger='true']:hover {
     background: rgba(248, 113, 113, 0.09);
@@ -339,7 +470,7 @@ textarea {
     position: relative;
     height: 6px;
     border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.065);
+    background: color-mix(in srgb, var(--color-overlay) 6.5%, transparent);
     overflow: hidden;
   }
   .meter-fill {
@@ -353,7 +484,8 @@ textarea {
 }
 
 /* Sidebar selection: one highlight that glides to the active row rather than
-   each row lighting up on its own. Transform/height only, on its own layer. */
+   each row lighting up on its own. Only its position animates (on its own
+   layer); its height snaps to the row, since animating height isn't composited. */
 .nav-indicator {
   position: absolute;
   left: 0;
@@ -364,8 +496,7 @@ textarea {
   box-shadow: inset 0 0 0 1px var(--color-edge);
   pointer-events: none;
   transition:
-    transform 280ms var(--ease-out-expo),
-    height 280ms var(--ease-out-expo),
+    transform 420ms var(--ease-spring),
     opacity 160ms ease;
   will-change: transform;
 }
@@ -383,7 +514,7 @@ textarea {
 }
 
 .toast {
-  animation: orcha-toast-in 300ms var(--ease-out-expo) both;
+  animation: orcha-toast-in 420ms var(--ease-spring) both;
 }
 
 @keyframes orcha-fade-in {
@@ -464,12 +595,12 @@ textarea {
 .prose-chat h2,
 .prose-chat h3 {
   font-weight: 600;
-  color: #f4f4f5;
+  color: var(--color-zinc-100);
   margin: 0.8em 0 0.3em;
 }
 /* Underline carries "link" so colour doesn't have to. */
 .prose-chat a {
-  color: #d4d4d8;
+  color: var(--color-zinc-300);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -503,7 +634,7 @@ textarea {
   height: 10px;
   border-radius: 9999px;
   border: 1.5px solid var(--color-edge-bright);
-  border-top-color: #a1a1aa;
+  border-top-color: var(--color-zinc-400);
   animation: orcha-turn 0.9s linear infinite;
 }
 
@@ -532,10 +663,10 @@ textarea {
      splits into share it, so they are indistinguishable at the handoff. */
   --boot-line: linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0),
-    rgba(255, 255, 255, 0.85) 18%,
-    rgba(255, 255, 255, 0.85) 82%,
-    rgba(255, 255, 255, 0)
+    transparent,
+    color-mix(in srgb, var(--color-overlay) 85%, transparent) 18%,
+    color-mix(in srgb, var(--color-overlay) 85%, transparent) 82%,
+    transparent
   );
 }
 
@@ -553,11 +684,11 @@ textarea {
 }
 .boot-half-left {
   left: 0;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.07);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-overlay) 7%, transparent);
 }
 .boot-half-right {
   right: 0;
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.07);
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--color-overlay) 7%, transparent);
 }
 
 .boot-seam {
@@ -608,8 +739,8 @@ textarea {
   opacity: 0;
   background: radial-gradient(
     ellipse at center,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0) 70%
+    color-mix(in srgb, var(--color-overlay) 10%, transparent),
+    transparent 70%
   );
   will-change: opacity;
 }

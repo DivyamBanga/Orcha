@@ -159,19 +159,26 @@ function MainPane(): React.JSX.Element {
   // Terminals for every open session stay mounted below regardless of which
   // view is showing, so restored sessions boot and keep running unattended.
   // The veil above them (re-keyed per tab) is what fades on a switch — the
-  // terminals themselves never animate.
+  // terminals themselves never animate. Terminals stay dark in the light theme
+  // too (the Claude and Codex TUIs are drawn for a dark screen), and so does
+  // the veil while it's fading one in.
   const terminalHost = (
     <>
       {openSessions.map((id) => (
         <div
           key={id}
+          data-theme="dark"
           className="absolute inset-0"
           style={{ display: id === activeId ? 'block' : 'none' }}
         >
           <TerminalView workspaceId={id} visible={id === activeId} />
         </div>
       ))}
-      <div key={activeId ?? 'none'} className="switch-veil" />
+      <div
+        key={activeId ?? 'none'}
+        className="switch-veil"
+        data-theme={workspace ? 'dark' : undefined}
+      />
     </>
   )
 
@@ -179,7 +186,7 @@ function MainPane(): React.JSX.Element {
     return (
       <main className="flex min-w-0 flex-1 flex-col">
         {activeId === 'orchestrator' ? (
-          <header className="flex h-12 shrink-0 items-center border-b border-edge px-4">
+          <header className="titlebar titlebar-trail flex h-12 shrink-0 items-center border-b border-edge px-4">
             {/* Contents in a boot-item wrapper so the rise moves the words,
                 not the bar or its border. */}
             <div className="boot-item boot-d1 flex items-center gap-3">
@@ -188,7 +195,7 @@ function MainPane(): React.JSX.Element {
             </div>
           </header>
         ) : (
-          <header className="h-12 shrink-0 border-b border-edge" />
+          <header className="titlebar h-12 shrink-0 border-b border-edge" />
         )}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {activeId === 'orchestrator' ? (
@@ -259,7 +266,7 @@ function MainPane(): React.JSX.Element {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col">
-      <header className="relative flex h-12 shrink-0 items-center border-b border-edge px-4">
+      <header className="titlebar titlebar-trail relative flex h-12 shrink-0 items-center border-b border-edge px-4">
         {/* Contents in a boot-item wrapper so the rise moves the controls
             while the bar and its border stay put; the popover anchors to the
             header itself, outside the animated wrapper. */}

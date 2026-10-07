@@ -164,7 +164,7 @@ function SessionRow({
       data-row={workspace.id}
       onContextMenu={(e) => onMenu(e, workspace)}
       className={`group relative flex h-8 w-full items-center gap-1 rounded-[7px] pl-2 pr-1 transition-colors duration-150 ${
-        active ? 'text-zinc-50' : 'text-zinc-400 hover:bg-white/[0.035] hover:text-zinc-200'
+        active ? 'text-zinc-50' : 'text-zinc-400 hover:bg-overlay/[0.035] hover:text-zinc-200'
       }`}
     >
       <button
@@ -265,7 +265,7 @@ function Sidebar(): React.JSX.Element {
           nowrap so nothing collapses into a second row when the counts grow.
           Contents sit in a boot-item wrapper (not the bar itself) so the rise
           moves the text while the bar and its border stay put. */}
-      <div className="flex h-12 items-center px-3">
+      <div className="titlebar titlebar-lead flex h-12 items-center px-3">
         <div className="boot-item boot-d2 flex min-w-0 flex-1 items-center gap-2">
           <Mark size={14} className="shrink-0 text-zinc-100" />
           <span className="shrink-0 font-mono text-[14px] font-semibold tracking-tight text-zinc-100">

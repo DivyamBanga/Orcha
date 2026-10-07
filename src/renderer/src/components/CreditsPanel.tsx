@@ -33,7 +33,7 @@ function CreditsPanel(): React.JSX.Element | null {
   return (
     <button
       onClick={() => open(true)}
-      className={`fade-late group mb-1.5 flex w-full flex-col gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors duration-150 hover:bg-white/[0.04] ${
+      className={`fade-late group mb-1.5 flex w-full flex-col gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors duration-150 hover:bg-overlay/[0.04] ${
         balance.error ? 'opacity-60' : ''
       }`}
       title={balance.error ?? 'Your credits — click for details'}

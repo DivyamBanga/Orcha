@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, Menu, dialog, powerSaveBlocker } from 'electron'
+import { app, shell, BrowserWindow, Menu, dialog, nativeTheme, powerSaveBlocker } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -104,7 +104,20 @@ app.on('will-finish-launching', () => {
   })
 })
 
+// The window's own colours, matching the theme the renderer will paint.
+const surface = (): string => (nativeTheme.shouldUseDarkColors ? '#09090b' : '#fcfcfd')
+const captionColors = (): Electron.TitleBarOverlay => ({
+  color: surface(),
+  symbolColor: nativeTheme.shouldUseDarkColors ? '#a1a1aa' : '#52525b',
+  height: 47
+})
+
 function createWindow(): void {
+  // Light or dark per Settings → Appearance (default: follow the system). The
+  // renderer follows through prefers-color-scheme.
+  const theme = db.appState.get('ui:theme')
+  nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system'
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -112,8 +125,16 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0b0b0d',
+    backgroundColor: surface(),
     title: 'Orcha',
+    // Orcha draws its own title bar (.titlebar in main.css): the traffic
+    // lights inset over the sidebar on a Mac, the caption buttons over the
+    // main bar's right end on Windows.
+    ...(isMac
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 18 } }
+      : process.platform === 'win32'
+        ? { titleBarStyle: 'hidden' as const, titleBarOverlay: captionColors() }
+        : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -126,6 +147,12 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  nativeTheme.on('updated', () => {
+    if (mainWindow.isDestroyed()) return
+    mainWindow.setBackgroundColor(surface())
+    if (process.platform === 'win32') mainWindow.setTitleBarOverlay(captionColors())
   })
 
   mainWindow.on('close', (event) => {
