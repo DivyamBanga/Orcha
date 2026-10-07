@@ -404,6 +404,8 @@ async function main() {
       'Mission Control replied through the relay'
     )
 
+    await chatCheck()
+
     // Closing the window hides it; the Dock brings the same one back.
     await evaluate('window.close(); return true').catch(() => {})
     await sleep(2000)
@@ -454,6 +456,126 @@ async function main() {
     const logFile = join(HOME, 'Library', 'Logs', 'Orcha', 'main.log')
     if (existsSync(logFile)) writeFileSync(join(OUT, 'main.log'), readFileSync(logFile))
   }
+}
+
+// Chat, the way the friend uses it on this Mac: Markdown and maths, a pasted
+// image (shrunk in the renderer) and PDF, a React artifact running in its
+// sandbox (libraries from the CDN), ⌘K search, and both themes.
+async function chatCheck() {
+  const key = async (key, code, vk, modifiers = 0) => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await cdp('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode: vk, modifiers })
+    }
+  }
+  const replies = () => evaluate(`return document.querySelectorAll('[data-message]').length`)
+  const send = async (text) => {
+    const before = await replies()
+    await evaluate(`document.querySelector('.composer-input').focus(); return true`)
+    await cdp('Input.insertText', { text })
+    await key('Enter', 'Enter', 13)
+    await waitFor(
+      async () =>
+        (await replies()) >= before + 2 &&
+        (await evaluate(
+          `return !document.querySelector('.composer-stop') && !document.querySelector('[data-message] .busy-ring')`
+        )),
+      60_000,
+      `reply to ${text}`
+    )
+  }
+  const last = (js) =>
+    evaluate(`const m = [...document.querySelectorAll('[data-message]')].at(-1); ${js}`)
+
+  await clickButton('New chat')
+  await waitFor(
+    () => evaluate(`return Boolean(document.querySelector('.composer-input'))`),
+    15_000,
+    'new chat'
+  )
+  await send('ORCHA_MD show me')
+  const md = await last(
+    `return { table: !!m.querySelector('table'), code: !!m.querySelector('pre code'), maths: m.querySelectorAll('.katex').length }`
+  )
+  check(md.table && md.code && md.maths >= 2, `chat draws Markdown, code and maths (${JSON.stringify(md)})`)
+  await screenshot('chat-markdown')
+
+  // Pasted, as from the clipboard: a big PNG and a one-page PDF.
+  const pdf =
+    '%PDF-1.4\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n'
+  await evaluate(`
+    const c = new OffscreenCanvas(2400, 1600)
+    const g = c.getContext('2d')
+    g.fillStyle = '#c33'
+    g.fillRect(0, 0, 2400, 1600)
+    const png = await c.convertToBlob({ type: 'image/png' })
+    const dt = new DataTransfer()
+    dt.items.add(new File([png], 'big.png', { type: 'image/png' }))
+    dt.items.add(new File([${JSON.stringify(pdf)}], 'paper.pdf', { type: 'application/pdf' }))
+    document.querySelector('.composer-input').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    return true`)
+  await waitFor(
+    () =>
+      evaluate(
+        `return document.querySelectorAll('.attachment').length === 2 && !document.querySelector('.attachment .busy-ring')`
+      ),
+    20_000,
+    'files attached'
+  )
+  await send('ORCHA_FILES what are these?')
+  const saw = await last(`return m.textContent`)
+  check(
+    /image image\/webp/.test(saw) && /document paper\.pdf/.test(saw),
+    `pasted image (as WebP) and PDF reach the model (${saw.trim().slice(0, 80)})`
+  )
+
+  // A React artifact: the panel opens and the sandbox reports it drew.
+  await evaluate(
+    `window.__rendered = 0; window.addEventListener('message', (e) => { if (e.data?.type === 'rendered') window.__rendered++; if (e.data?.type === 'error') window.__artifactError = e.data.message }); return true`
+  )
+  await send('ORCHA_ARTIFACT react')
+  await waitFor(() => evaluate('return window.__rendered > 0'), 60_000, 'artifact drawn').catch(
+    () => {}
+  )
+  const artifact = await evaluate(
+    `return { panel: !!document.querySelector('.artifact-panel iframe'), rendered: window.__rendered, error: window.__artifactError ?? null }`
+  )
+  check(
+    artifact.panel && artifact.rendered > 0 && !artifact.error,
+    `React artifact runs in its sandbox (${JSON.stringify(artifact)})`
+  )
+  await sleep(1500)
+  // Each after the theme's colour transition has finished.
+  await cdp('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'light' }]
+  })
+  await sleep(1000)
+  await screenshot('chat-artifact-light')
+  await cdp('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: 'dark' }]
+  })
+  await sleep(1000)
+  await screenshot('chat-artifact-dark')
+  await cdp('Emulation.setEmulatedMedia', { features: [] })
+
+  // ⌘K finds a message by its words.
+  await key('k', 'KeyK', 75, 4)
+  await waitFor(
+    () => evaluate(`return Boolean(document.querySelector('.palette-input'))`),
+    5_000,
+    'palette open'
+  )
+  await cdp('Input.insertText', { text: 'careful' })
+  const hit = await waitFor(
+    () =>
+      evaluate(
+        `return [...document.querySelectorAll('.palette-item')].map((i) => i.textContent).find((t) => /careful/i.test(t)) ?? null`
+      ),
+    10_000,
+    'palette hit'
+  ).catch(() => null)
+  check(Boolean(hit), `⌘K finds a message (${hit?.slice(0, 60)})`)
+  await screenshot('chat-palette')
+  await key('Escape', 'Escape', 27)
 }
 
 // A local stand-in for GitHub Releases serving a "v99.0.0" build; clicking
