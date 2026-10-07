@@ -388,7 +388,11 @@ async function main() {
       90_000,
       'Codex reply'
     )
-    check((await spent('sol')) > 0, 'Sol spend recorded on the relay')
+    // Recorded once the relay has the whole reply, a moment after it's drawn.
+    check(
+      await waitFor(async () => (await spent('sol')) > 0, 20_000, 'Sol spend').catch(() => false),
+      'Sol spend recorded on the relay'
+    )
     await screenshot('codex-replied')
 
     // Mission Control answers (its bundled Claude binary starts from outside app.asar).
