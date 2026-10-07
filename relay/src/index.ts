@@ -216,7 +216,14 @@ function meteredResponse(
       }
       let body: Uint8Array | null
       try {
-        body = new Uint8Array(await new Response(whole).arrayBuffer())
+        // Collected through a native pipe: reading this copy in one go makes
+        // tee() hold the client's copy back until the reply has ended.
+        const sink = new IdentityTransformStream()
+        const [, bytes] = await Promise.all([
+          whole.pipeTo(sink.writable),
+          new Response(sink.readable).arrayBuffer()
+        ])
+        body = new Uint8Array(bytes)
       } catch {
         body = null // cut off: the client hung up or the connection dropped
       }
