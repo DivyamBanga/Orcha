@@ -420,6 +420,20 @@ async function main() {
     check(!orphans, `no agent processes left after quit${orphans ? `: ${orphans}` : ''}`)
 
     if (NEXT_ZIP) await updaterCheck()
+  } catch (err) {
+    // What every terminal showed when it went wrong.
+    try {
+      for (const s of (await state()).sessions) {
+        writeFileSync(
+          join(OUT, `failed-${s.agent}-${s.id.slice(0, 8)}.txt`),
+          JSON.stringify({ ...s, screen: undefined }) + '\n\n' + s.screen
+        )
+      }
+      await screenshot('failed')
+    } catch {
+      // the app is gone
+    }
+    throw err
   } finally {
     stack.stop()
     try {
