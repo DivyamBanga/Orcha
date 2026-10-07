@@ -29,6 +29,7 @@ import type {
   ChatSettings,
   Memory,
   ProjectInstructions,
+  ArtifactSnapshot,
   ChatSummary
 } from '../shared/types'
 
@@ -154,6 +155,8 @@ const api = {
       ipcRenderer.invoke(IPC.ChatExport, chatId, title),
     exportAll: (): Promise<{ folder: string; count: number } | null> =>
       ipcRenderer.invoke(IPC.ChatExportAll),
+    exportPdf: (chatId: string, title: string): Promise<string | null> =>
+      ipcRenderer.invoke(IPC.ChatExportPdf, chatId, title),
     removeAll: (): Promise<void> => ipcRenderer.invoke(IPC.ChatDeleteAll),
     stop: (chatId: string): Promise<void> => ipcRenderer.invoke(IPC.ChatStop, chatId),
     setLeaf: (chatId: string, leafId: number): Promise<void> =>
@@ -168,6 +171,17 @@ const api = {
   },
   // The models on offer (from the relay; see EvCatalog for updates).
   catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
+  // An artifact in a window of its own (the window reads it back by id).
+  artifact: {
+    popOut: (artifact: ArtifactSnapshot): Promise<void> =>
+      ipcRenderer.invoke(IPC.ArtifactPopOut, artifact),
+    snapshot: (id: string): Promise<ArtifactSnapshot | null> =>
+      ipcRenderer.invoke(IPC.ArtifactSnapshot, id)
+  },
+  // A chat laid out for print says when it has finished drawing.
+  print: {
+    ready: (): void => ipcRenderer.send(IPC.PrintReady)
+  },
   // What chats remember about you (Settings → Memory, and Undo in a chat).
   memory: {
     list: (): Promise<Memory[]> => ipcRenderer.invoke(IPC.MemoryList),

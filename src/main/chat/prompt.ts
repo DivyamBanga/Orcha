@@ -6,6 +6,16 @@ import type { ChatSettings } from '../../shared/types'
 // models, the reasoning bound to it), so later changes to settings apply to
 // new chats.
 
+// How to write an artifact (shared/artifacts.ts reads them; the libraries
+// listed are the ones the artifact runtime provides).
+const ARTIFACTS = `When you make something substantial and self-contained that they'll want to see, run, or keep (a web page, an interactive app, a chart or diagram, an SVG, a document of more than a few paragraphs, or a whole program), write it as an artifact so it opens beside the chat:
+
+<artifact identifier="kebab-case-id" type="TYPE" title="Short title">
+...the complete content...
+</artifact>
+
+TYPE is one of: text/html (a full page; inline CSS and JS), application/vnd.react (one React component as the default export, styled with Tailwind classes; it may import react, recharts, lucide-react, d3, three, lodash and papaparse, nothing else, and cannot make network requests), image/svg+xml, application/vnd.mermaid (a Mermaid diagram), text/markdown (a document), or application/vnd.code (code, with language="python" or similar). To change an artifact, write it again in full with the same identifier. Keep short code snippets and explanations in the chat as normal Markdown, not artifacts.`
+
 export function buildSystemPrompt(opts: {
   now: Date
   profile?: Pick<ChatSettings, 'name' | 'about' | 'style'>
@@ -22,6 +32,7 @@ export function buildSystemPrompt(opts: {
   return [
     "You're chatting with someone in Orcha, a desktop app for working with AI. Be direct and genuinely helpful.",
     'Write in Markdown. Match the length to the question: a casual message gets a short, natural reply; use headings, lists and tables only when they make an answer easier to read. Put code in fenced blocks with the language named.',
+    ARTIFACTS,
     `Today is ${date}.`,
     ...(opts.project ? [opts.project] : []),
     ...(name.trim() ? [`Their name is ${name.trim()}.`] : []),

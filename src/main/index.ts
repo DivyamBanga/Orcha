@@ -33,6 +33,7 @@ import { Updater } from './updater'
 import { registerSmoke } from './smoke'
 import { ChatService } from './chat/ChatService'
 import { serveAttachments } from './chat/attachments'
+import { serveArtifacts } from './chat/artifactRuntime'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
@@ -329,9 +330,11 @@ async function offerMoveToApplications(): Promise<boolean> {
   }
 }
 
-// Chat attachments (see chat/attachments.ts); must be declared before ready.
+// Chat attachments (chat/attachments.ts) and the page artifacts run in
+// (chat/artifactRuntime.ts); schemes must be declared before ready.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'orcha-file', privileges: { standard: true, secure: true } }
+  { scheme: 'orcha-file', privileges: { standard: true, secure: true } },
+  { scheme: 'orcha-artifact', privileges: { standard: true, secure: true } }
 ])
 
 app.whenReady().then(async () => {
@@ -343,6 +346,7 @@ app.whenReady().then(async () => {
   buildMenu()
   initDb()
   serveAttachments()
+  serveArtifacts()
   if (isMac && app.isPackaged) app.setAsDefaultProtocolClient('orcha')
 
   app.on('browser-window-created', (_, window) => {

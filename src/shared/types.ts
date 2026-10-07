@@ -329,6 +329,14 @@ export interface ChatSettings {
   memory: boolean // chats remember things across chats
 }
 
+// An artifact as it stands, for a window of its own.
+export interface ArtifactSnapshot {
+  title: string
+  type: string
+  language: string | null
+  content: string
+}
+
 // A project's instructions for its chats: the repo's CLAUDE.md (path set) for
 // a project with a folder here, otherwise kept by Orcha (path null).
 export interface ProjectInstructions {

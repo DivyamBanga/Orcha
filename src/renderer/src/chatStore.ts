@@ -51,6 +51,8 @@ interface ChatStore {
   attachments: Record<string, PendingFile[]>
   // The project a new chat is being started in (null: none).
   newChatProject: string | null
+  // The artifact open beside each chat, and which version (null: the latest).
+  panel: Record<string, { identifier: string; version: number | null } | null>
 }
 
 // A file on its way into the composer: a preview straight away, the stored
@@ -75,8 +77,17 @@ export const useChatStore = create<ChatStore>(() => ({
   focusMessage: null,
   renaming: null,
   attachments: {},
-  newChatProject: null
+  newChatProject: null,
+  panel: {}
 }))
+
+export function openArtifact(chatId: string, identifier: string, version: number | null): void {
+  useChatStore.setState((s) => ({ panel: { ...s.panel, [chatId]: { identifier, version } } }))
+}
+
+export function closeArtifact(chatId: string): void {
+  useChatStore.setState((s) => ({ panel: { ...s.panel, [chatId]: null } }))
+}
 
 // Opens the new-chat screen, in a project or not.
 export function startChat(projectId: string | null = null): void {

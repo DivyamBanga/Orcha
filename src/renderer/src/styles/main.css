@@ -1005,6 +1005,137 @@ textarea {
   background: var(--color-surface-2);
 }
 
+/* Artifacts: the card in a reply, the panel beside the chat (it springs in
+   from the right), the sandboxed page, and full screen. */
+.artifact-card {
+  display: flex;
+  width: 100%;
+  max-width: 420px;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-edge-bright);
+  background: var(--color-surface-1);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 120ms var(--ease-snap);
+}
+.artifact-card:hover,
+.artifact-card[data-active='true'] {
+  border-color: var(--color-edge-strong);
+  background: var(--color-surface-2);
+}
+.artifact-card:active {
+  transform: scale(0.99);
+}
+.artifact-card-icon {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--color-surface-3);
+  color: var(--color-zinc-400);
+}
+.artifact-panel {
+  display: flex;
+  width: 52%;
+  min-width: 380px;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--color-edge);
+  background: var(--color-surface-0);
+  animation: orcha-panel-slide 420ms var(--ease-spring) both;
+}
+@keyframes orcha-panel-slide {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+.artifact-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.artifact-full {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--color-surface-0);
+  animation: orcha-fade-in 160ms ease-out both;
+}
+.artifact-full-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--color-surface-3);
+  color: var(--color-zinc-200);
+  box-shadow: var(--shadow-pop);
+}
+
+/* A chat laid out for print (Export as PDF): the page grows to fit and
+   prints black on white whatever the app's theme. */
+html.print-view,
+html.print-view body,
+html.print-view #root {
+  height: auto;
+  overflow: visible;
+  background: #fff;
+}
+.print-page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 8px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-zinc-200);
+  user-select: text;
+}
+.print-page h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-zinc-50);
+}
+.print-date {
+  margin: 4px 0 24px;
+  color: var(--color-zinc-500);
+}
+.print-turn {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-edge);
+  break-inside: avoid-page;
+}
+.print-who {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-zinc-500);
+}
+.print-files {
+  margin-bottom: 4px;
+  font-style: italic;
+  color: var(--color-zinc-500);
+}
+.print-page .code-copy {
+  display: none;
+}
+
 /* Project home: a row in its lists, and the knowledge drop area. */
 .project-row {
   display: flex;
@@ -1346,7 +1477,9 @@ body.boot-cascade .boot-d7 {
   .msg-in,
   .msg-flash,
   .attachment,
-  .drop-veil {
+  .drop-veil,
+  .artifact-panel,
+  .artifact-full {
     animation: none !important;
   }
   .switch-veil {

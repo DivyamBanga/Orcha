@@ -143,7 +143,39 @@ function replyFor(parsed) {
   if (text.includes('ORCHA_ASK')) return { reply: ASK_REPLY, delay: 60, thinking }
   if (text.includes('ORCHA_MD')) return { reply: MD_REPLY, delay: 15, thinking }
   if (text.includes('ORCHA_CITE')) return { reply: CITED.map((c) => c.text).join(''), delay: 20, thinking, cite: true }
+  if (text.includes('ORCHA_ARTIFACT')) {
+    const kind = Object.keys(ARTIFACTS).find((k) => text.includes(`ORCHA_ARTIFACT ${k}`)) ?? 'html'
+    return { reply: `Here it is.\n\n${ARTIFACTS[kind]}\n\nOpen it beside the chat.`, delay: 8, thinking }
+  }
   return { reply: REPLY, delay: 60, thinking }
+}
+
+// ORCHA_ARTIFACT <kind>: a reply carrying an artifact of that kind ("v2"
+// rewrites the html one; "broken" throws when it runs).
+const ARTIFACTS = {
+  html: '<artifact identifier="hello-page" type="text/html" title="Hello page">\n<!doctype html>\n<html><body style="font-family:sans-serif"><h1>Hello from an artifact</h1><p id="p">version 1</p></body></html>\n</artifact>',
+  v2: '<artifact identifier="hello-page" type="text/html" title="Hello page">\n<!doctype html>\n<html><body style="font-family:sans-serif"><h1>Hello again</h1><p id="p">version 2</p></body></html>\n</artifact>',
+  react: [
+    '<artifact identifier="sales-chart" type="application/vnd.react" title="Sales chart">',
+    "import { useState } from 'react'",
+    "import { LineChart, Line, XAxis, YAxis } from 'recharts'",
+    "import { TrendingUp } from 'lucide-react'",
+    'const data = [{ m: "Jan", v: 4 }, { m: "Feb", v: 7 }, { m: "Mar", v: 5 }, { m: "Apr", v: 9 }]',
+    'export default function Sales() {',
+    '  const [n, setN] = useState(0)',
+    '  return (',
+    '    <div className="p-6">',
+    '      <h2 className="flex items-center gap-2 text-xl font-semibold"><TrendingUp size={20} /> Sales</h2>',
+    '      <LineChart width={360} height={180} data={data}><XAxis dataKey="m" /><YAxis /><Line dataKey="v" stroke="#2563eb" /></LineChart>',
+    '      <button className="mt-3 rounded bg-blue-600 px-3 py-1 text-white" onClick={() => setN(n + 1)}>Clicked {n}</button>',
+    '    </div>',
+    '  )',
+    '}',
+    '</artifact>'
+  ].join('\n'),
+  mermaid: '<artifact identifier="flow" type="application/vnd.mermaid" title="Flow">\ngraph TD\n  A[Ask] --> B[Answer]\n  B --> C[Artifact]\n</artifact>',
+  svg: '<artifact identifier="dot" type="image/svg+xml" title="Dot">\n<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><circle cx="60" cy="60" r="48" fill="tomato"/></svg>\n</artifact>',
+  broken: '<artifact identifier="oops" type="application/vnd.react" title="Broken app">\nexport default function Oops() {\n  throw new Error("Boom from the artifact")\n}\n</artifact>'
 }
 
 // ORCHA_CITE: a web search, then two sentences each citing a result.

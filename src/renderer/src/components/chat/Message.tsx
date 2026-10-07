@@ -1,7 +1,9 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Markdown from '../Markdown'
 import { usd } from '../../money'
 import { fileMeta, imageUrl } from '../../attach'
+import { ArtifactCard } from './Artifact'
+import { artifactsAsCode, splitArtifacts } from '../../../../shared/artifacts'
 import {
   Bookmark,
   Check,
@@ -335,7 +337,10 @@ export const AssistantMessage = memo(function AssistantMessage({
   modelLabel,
   last,
   onBranch,
-  onRetry
+  onRetry,
+  artifactNumbers,
+  activeArtifact,
+  onOpenArtifact
 }: {
   message: ChatMessage
   live: LiveReply | undefined
@@ -344,9 +349,14 @@ export const AssistantMessage = memo(function AssistantMessage({
   last: boolean
   onBranch: Go
   onRetry: ((messageId: number) => void) | null
+  // Each artifact in this reply's version number, in order.
+  artifactNumbers?: number[]
+  activeArtifact: string | null // "identifier#version" open beside the chat
+  onOpenArtifact: (identifier: string, version: number) => void
 }): React.JSX.Element {
   const streaming = message.status === 'streaming'
   const text = streaming ? (live?.text ?? '') : message.text
+  const segments = useMemo(() => splitArtifacts(text), [text])
   const thinkingText = streaming ? (live?.thinking ?? '') : (message.parts?.thinking?.text ?? '')
   const tools = streaming ? (live?.tools ?? []) : (message.parts?.tools ?? [])
   const error = message.parts?.error
@@ -376,16 +386,33 @@ export const AssistantMessage = memo(function AssistantMessage({
           </div>
         )
       )}
-      {text ? (
-        <Markdown text={text} className="chat-text text-zinc-200" />
-      ) : (
-        streaming &&
-        !thinkingText && (
-          <div className="flex h-7 items-center">
-            <span className="busy-ring" />
-          </div>
-        )
-      )}
+      {text
+        ? (() => {
+            let n = 0
+            return segments.map((s, i) => {
+              if (s.kind === 'text') {
+                return s.text.trim() ? (
+                  <Markdown key={i} text={s.text} className="chat-text text-zinc-200" />
+                ) : null
+              }
+              const version = artifactNumbers?.[n++] ?? 1
+              return (
+                <ArtifactCard
+                  key={i}
+                  artifact={s.artifact}
+                  version={version}
+                  active={activeArtifact === `${s.artifact.identifier}#${version}`}
+                  onOpen={() => onOpenArtifact(s.artifact.identifier, version)}
+                />
+              )
+            })
+          })()
+        : streaming &&
+          !thinkingText && (
+            <div className="flex h-7 items-center">
+              <span className="busy-ring" />
+            </div>
+          )}
       {!streaming && message.parts?.sources?.length ? (
         <Sources sources={message.parts.sources} />
       ) : null}
@@ -400,7 +427,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             last ? 'opacity-100' : 'opacity-0'
           }`}
         >
-          {text && <CopyButton text={text.replace(CITE_MARK, '')} />}
+          {text && <CopyButton text={artifactsAsCode(text).replace(CITE_MARK, '')} />}
           {onRetry && (
             <button
               onClick={() => onRetry(message.id)}

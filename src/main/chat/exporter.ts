@@ -2,10 +2,12 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { catalog } from '../catalog'
 import { pathTo } from '../../shared/chatTree'
+import { artifactsAsCode } from '../../shared/artifacts'
 import { chats, messages } from './store'
 
 // Chats as Markdown files: the branch on screen, top to bottom, with who said
-// each part and the names of any attached files.
+// each part and the names of any attached files. Artifacts become titled code
+// blocks, and web citations become footnotes.
 
 function chatMarkdown(chatId: string): { title: string; text: string } | null {
   const chat = chats.get(chatId)
@@ -14,11 +16,24 @@ function chatMarkdown(chatId: string): { title: string; text: string } | null {
     catalog().models.find((m) => m.id === id)?.label ?? id ?? 'Assistant'
   const title = chat.title ?? 'New chat'
   const lines = [`# ${title}`, '', `_${new Date(chat.createdAt).toLocaleString('en-US')}_`, '']
+  const notes: string[] = []
   for (const m of pathTo(messages.all(chatId), chat.leafId)) {
     lines.push(m.role === 'user' ? '## You' : `## ${label(m.model)}`, '')
     if (m.files.length) lines.push(`_Attached: ${m.files.map((f) => f.name).join(', ')}_`, '')
-    if (m.text.trim()) lines.push(m.text.trim(), '')
+    let text = m.role === 'assistant' ? artifactsAsCode(m.text) : m.text
+    // " [2](<url> "cite")" → "[^7]", with the source listed at the end.
+    const numbered = new Map<string, number>()
+    text = text.replace(/ ?\[(\d+)\]\(<([^>]*)> "cite"\)/g, (_, n: string, url: string) => {
+      if (!numbered.has(n)) {
+        const source = m.parts?.sources?.[Number(n) - 1]
+        notes.push(`[^${notes.length + 1}]: [${source?.title ?? url}](${url})`)
+        numbered.set(n, notes.length)
+      }
+      return `[^${numbered.get(n)}]`
+    })
+    if (text.trim()) lines.push(text.trim(), '')
   }
+  if (notes.length) lines.push('---', '', ...notes, '')
   return { title, text: lines.join('\n') }
 }
 

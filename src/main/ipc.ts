@@ -26,8 +26,10 @@ import { PROJECTS_ROOT } from './services/ProjectService'
 import { exportAllChats, exportChat, fileName } from './chat/exporter'
 import { chatSettings, saveChatSettings } from './chat/settings'
 import { knowledge, projectInstructions, setProjectInstructions } from './chat/projects'
+import { artifactSnapshot, chatToPdf, popOutArtifact } from './chat/windows'
 import type {
   Agent,
+  ArtifactSnapshot,
   ChatFile,
   ChatRetryInput,
   ChatSettings,
@@ -367,6 +369,17 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     exportChat(chatId, filePath)
     return filePath
   })
+  ipcMain.handle(IPC.ChatExportPdf, async (_e, chatId: string, title: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: join(app.getPath('documents'), `${fileName(title)}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (canceled || !filePath) return null
+    await chatToPdf(chatId, filePath)
+    return filePath
+  })
+  ipcMain.handle(IPC.ArtifactPopOut, (_e, artifact: ArtifactSnapshot) => popOutArtifact(artifact))
+  ipcMain.handle(IPC.ArtifactSnapshot, (_e, id: string) => artifactSnapshot(id))
   ipcMain.handle(IPC.ChatExportAll, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose a folder for your chats',

@@ -3,6 +3,8 @@ import { useStore } from '../../store'
 import {
   addFiles,
   chatIdOf,
+  closeArtifact,
+  openArtifact,
   chatModels,
   defaultModel,
   deleteChat,
@@ -18,6 +20,8 @@ import Composer from './Composer'
 import { AssistantMessage, UserMessage, type Branches } from './Message'
 import { ArrowDown, Close, More, Star } from '../Icon'
 import ContextMenu from '../ContextMenu'
+import { ArtifactPanel } from './Artifact'
+import { indexArtifacts } from '../../artifactVersions'
 
 function greeting(hour: number): string {
   if (hour < 5) return 'Up late'
@@ -203,6 +207,10 @@ function ChatHeader({ chatId }: { chatId: string }): React.JSX.Element {
               onClick: () => window.orcha.chat.exportOne(chatId, title).catch(() => {})
             },
             {
+              label: 'Export as PDF',
+              onClick: () => window.orcha.chat.exportPdf(chatId, title).catch(() => {})
+            },
+            {
               label: 'Delete chat',
               danger: true,
               separatorAbove: true,
@@ -333,59 +341,131 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
     return sendMessage(chatId, last?.id ?? null, text, id)
   }
 
+  // Artifacts: the finished replies' are indexed once per change to the
+  // chat; a reply still streaming adds its own on top, each frame.
+  const panel = useChatStore((s) => s.panel[chatId] ?? null)
+  const finished = useMemo(
+    () =>
+      indexArtifacts(
+        path
+          .filter((m) => m.role === 'assistant' && m.status !== 'streaming')
+          .map((m) => ({ id: m.id, text: m.text }))
+      ),
+    [path]
+  )
+  const streamingReply = path.find((m) => m.status === 'streaming')
+  const liveText = streamingReply ? (live[streamingReply.id]?.text ?? '') : ''
+  const artifacts = streamingReply
+    ? indexArtifacts([
+        ...path
+          .filter((m) => m.role === 'assistant' && m.status !== 'streaming')
+          .map((m) => ({ id: m.id, text: m.text })),
+        { id: streamingReply.id, text: liveText }
+      ])
+    : finished
+  const versions = panel ? (artifacts.versions.get(panel.identifier) ?? []) : []
+  const versionIndex = panel
+    ? Math.min(
+        panel.version === null ? versions.length - 1 : panel.version - 1,
+        versions.length - 1
+      )
+    : -1
+  const activeArtifact = panel && versions.length ? `${panel.identifier}#${versionIndex + 1}` : null
+  const onOpenArtifact = useCallback(
+    (identifier: string, version: number) => openArtifact(chatId, identifier, version),
+    [chatId]
+  )
+  // A reply that starts writing an artifact opens it beside the chat.
+  const writingId = streamingReply
+    ? [...artifacts.versions.values()]
+        .flat()
+        .find((v) => v.messageId === streamingReply.id && !v.complete)?.identifier
+    : undefined
+  useEffect(() => {
+    if (writingId) openArtifact(chatId, writingId, null)
+  }, [chatId, writingId])
+  const fix = (message: string): void => {
+    const artifact = versions[versionIndex]
+    if (!artifact || !modelId || running) return
+    pinned.current = true
+    sendMessage(
+      chatId,
+      last?.id ?? null,
+      `The artifact "${artifact.title}" shows this error:\n\n${message}\n\nPlease fix it.`,
+      modelId
+    ).catch(() => {})
+  }
+
   return (
-    <DropZone route={route} className="flex min-h-0 flex-1 flex-col">
-      <div className="relative min-h-0 flex-1">
-        <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto">
-          <div className="mx-auto w-full max-w-[720px] px-6 pb-6 pt-4">
-            {path.map((m) =>
-              m.role === 'user' ? (
-                <UserMessage
-                  key={m.id}
-                  message={m}
-                  branches={branches.get(m.id)!}
-                  onBranch={onBranch}
-                  onEdit={running ? null : onEdit}
-                />
-              ) : (
-                <AssistantMessage
-                  key={m.id}
-                  message={m}
-                  live={m.status === 'streaming' ? live[m.id] : undefined}
-                  branches={branches.get(m.id)!}
-                  modelLabel={label(m.model)}
-                  last={m === last}
-                  onBranch={onBranch}
-                  onRetry={running ? null : onRetry}
-                />
-              )
-            )}
+    <div className="flex min-h-0 flex-1">
+      <DropZone route={route} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div ref={scroller} onScroll={onScroll} className="h-full overflow-y-auto">
+            <div className="mx-auto w-full max-w-[720px] px-6 pb-6 pt-4">
+              {path.map((m) =>
+                m.role === 'user' ? (
+                  <UserMessage
+                    key={m.id}
+                    message={m}
+                    branches={branches.get(m.id)!}
+                    onBranch={onBranch}
+                    onEdit={running ? null : onEdit}
+                  />
+                ) : (
+                  <AssistantMessage
+                    key={m.id}
+                    message={m}
+                    live={m.status === 'streaming' ? live[m.id] : undefined}
+                    branches={branches.get(m.id)!}
+                    modelLabel={label(m.model)}
+                    last={m === last}
+                    onBranch={onBranch}
+                    onRetry={running ? null : onRetry}
+                    artifactNumbers={artifacts.numbers.get(m.id)}
+                    activeArtifact={activeArtifact}
+                    onOpenArtifact={onOpenArtifact}
+                  />
+                )
+              )}
+            </div>
           </div>
+          {!atBottom && (
+            <button
+              onClick={() => {
+                pinned.current = true
+                scroller.current?.scrollTo({
+                  top: scroller.current.scrollHeight,
+                  behavior: 'smooth'
+                })
+              }}
+              className="popover absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full text-zinc-400 hover:text-zinc-100"
+              title="Jump to the latest"
+            >
+              <ArrowDown size={14} />
+            </button>
+          )}
         </div>
-        {!atBottom && (
-          <button
-            onClick={() => {
-              pinned.current = true
-              scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
-            }}
-            className="popover absolute bottom-3 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full text-zinc-400 hover:text-zinc-100"
-            title="Jump to the latest"
-          >
-            <ArrowDown size={14} />
-          </button>
-        )}
-      </div>
-      <div className="mx-auto w-full max-w-[720px] px-6 pb-5">
-        <Composer
-          route={route}
-          model={model}
-          chatProvider={detail?.chat.provider ?? null}
-          running={running}
-          onSend={send}
-          onStop={() => window.orcha.chat.stop(chatId).catch(() => {})}
+        <div className="mx-auto w-full max-w-[720px] px-6 pb-5">
+          <Composer
+            route={route}
+            model={model}
+            chatProvider={detail?.chat.provider ?? null}
+            running={running}
+            onSend={send}
+            onStop={() => window.orcha.chat.stop(chatId).catch(() => {})}
+          />
+        </div>
+      </DropZone>
+      {versions.length > 0 && (
+        <ArtifactPanel
+          versions={versions}
+          index={versionIndex}
+          onVersion={(i) => openArtifact(chatId, panel!.identifier, i + 1)}
+          onClose={() => closeArtifact(chatId)}
+          onFix={fix}
         />
-      </div>
-    </DropZone>
+      )}
+    </div>
   )
 }
 

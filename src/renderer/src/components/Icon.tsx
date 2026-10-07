@@ -248,6 +248,30 @@ export function Globe(props: IconProps): React.JSX.Element {
   )
 }
 
+export function Download(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M8 2.8v7.4M4.9 7.3L8 10.4l3.1-3.1M3 12.9h10" />
+    </Stroke>
+  )
+}
+
+export function Expand(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M9.5 2.8h3.7v3.7M6.5 13.2H2.8V9.5M13.2 2.8L9.3 6.7M2.8 13.2l3.9-3.9" />
+    </Stroke>
+  )
+}
+
+export function PopOut(props: IconProps): React.JSX.Element {
+  return (
+    <Stroke {...props}>
+      <path d="M9.6 2.8h3.6v3.6M13.2 2.8L7.8 8.2M11.6 9.4v2.6a1.2 1.2 0 0 1-1.2 1.2H4a1.2 1.2 0 0 1-1.2-1.2V5.6A1.2 1.2 0 0 1 4 4.4h2.6" />
+    </Stroke>
+  )
+}
+
 export function Folder(props: IconProps): React.JSX.Element {
   return (
     <Stroke {...props}>
