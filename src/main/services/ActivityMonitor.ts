@@ -227,12 +227,15 @@ export class ActivityMonitor {
               codex &&
               kind !== 'exited' &&
               /action\s*required/i.test(this.ptyManager.title(workspace.id))
-            if (codexAsk || codexFlag) kind = 'blocked'
+            // Claude's transcript likewise: a reply that streamed in word by
+            // word never has its options on screen together to be spotted.
+            const claudeAsk =
+              !codex && kind !== 'exited' ? pendingQuestion(workspace.worktreePath) : null
+            if (codexAsk || codexFlag || claudeAsk) kind = 'blocked'
             if (kind === 'blocked') {
               // The transcript has the ask verbatim; the screen-scraped text
               // is the fallback for sessions without a local transcript (ssh).
-              const ask =
-                (codex ? codexAsk : pendingQuestion(workspace.worktreePath)) ?? screen.question
+              const ask = (codex ? codexAsk : claudeAsk) ?? screen.question
               this.pendingNotify.set(workspace.id, {
                 at: now,
                 kind,

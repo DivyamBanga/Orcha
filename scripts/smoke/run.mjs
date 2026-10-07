@@ -423,12 +423,17 @@ async function main() {
   } catch (err) {
     // What every terminal showed when it went wrong.
     try {
-      for (const s of (await state()).sessions) {
+      const last = await state()
+      for (const s of last.sessions) {
         writeFileSync(
           join(OUT, `failed-${s.agent}-${s.id.slice(0, 8)}.txt`),
           JSON.stringify({ ...s, screen: undefined }) + '\n\n' + s.screen
         )
       }
+      writeFileSync(
+        join(OUT, 'failed-activity.json'),
+        JSON.stringify({ pings: last.pings, transitions: last.transitions }, null, 2)
+      )
       await screenshot('failed')
     } catch {
       // the app is gone
