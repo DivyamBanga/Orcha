@@ -7,11 +7,25 @@ import type { ToolName } from '../../../shared/types'
 
 type Step = 'welcome' | 'own' | 'tools'
 
-const TOOLS: { name: ToolName; label: string; detail: string }[] = [
-  { name: 'claude', label: 'Claude Code', detail: 'Runs your Claude sessions' },
-  { name: 'codex', label: 'Codex', detail: 'Runs your GPT-6 sessions' },
-  { name: 'git', label: 'Git', detail: 'Tracks your project changes' }
-]
+const isMac = window.orcha.platform === 'darwin'
+
+// On a Mac, git comes with Apple's developer tools, whose installer is a
+// system dialog that takes a while — so it goes first, while you're watching.
+const TOOLS: { name: ToolName; label: string; detail: string }[] = isMac
+  ? [
+      {
+        name: 'git',
+        label: 'Apple developer tools',
+        detail: "Includes Git. Apple's installer opens; it takes a few minutes"
+      },
+      { name: 'claude', label: 'Claude Code', detail: 'Runs your Claude sessions' },
+      { name: 'codex', label: 'Codex', detail: 'Runs your GPT-6 sessions' }
+    ]
+  : [
+      { name: 'claude', label: 'Claude Code', detail: 'Runs your Claude sessions' },
+      { name: 'codex', label: 'Codex', detail: 'Runs your GPT-6 sessions' },
+      { name: 'git', label: 'Git', detail: 'Tracks your project changes' }
+    ]
 
 function StatusDot({ ok }: { ok: boolean }): React.JSX.Element {
   return (
@@ -60,22 +74,39 @@ function Welcome({
 }): React.JSX.Element {
   const loadGuest = useStore((s) => s.loadGuest)
   const [link, setLink] = useState('')
-  const [clipboardLink, setClipboardLink] = useState<string | null>(null)
+  const [foundLink, setFoundLink] = useState<string | null>(null)
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const fromClipboard = clipboardLink !== null && link === clipboardLink
+  const prefilled = foundLink !== null && link === foundLink
 
-  // Someone who just copied their invite link shouldn't have to paste it.
+  // Someone who just copied their invite link shouldn't have to paste it. A
+  // Mac never reads the clipboard on its own; there the invite page's "Open in
+  // Orcha" button hands the link over instead (shown here, joined on click).
   useEffect(() => {
     let alive = true
+    const found = (invite: string | null): void => {
+      if (!alive || !invite) return
+      setFoundLink(invite)
+      setLink((current) => (isMac ? invite : current || invite))
+    }
+    const fromLink = (): void => {
+      window.orcha.guest
+        .pendingInvite()
+        .then(found)
+        .catch(() => {})
+    }
+    if (isMac) {
+      fromLink()
+      const off = window.orcha.on(IPC.EvInviteLink, fromLink)
+      return () => {
+        alive = false
+        off()
+      }
+    }
     const check = (): void => {
       window.orcha.guest
         .clipboardInvite()
-        .then((found) => {
-          if (!alive || !found) return
-          setClipboardLink(found)
-          setLink((current) => current || found)
-        })
+        .then(found)
         .catch(() => {})
     }
     check()
@@ -136,8 +167,12 @@ function Welcome({
         </div>
         {error ? (
           <div className="mt-2.5 text-[12px] leading-relaxed text-red-400">{error}</div>
-        ) : fromClipboard ? (
-          <div className="fade-late mt-2.5 text-[12px] text-zinc-500">Found on your clipboard.</div>
+        ) : prefilled ? (
+          <div className="fade-late mt-2.5 text-[12px] text-zinc-500">
+            {isMac
+              ? `From your invite page (${new URL(link).host}). Click Join to accept.`
+              : 'Found on your clipboard.'}
+          </div>
         ) : null}
       </div>
 
@@ -197,8 +232,9 @@ function Tools({ onDone }: { onDone: () => void }): React.JSX.Element {
       </div>
       <h1 className="text-[22px] font-semibold tracking-tight text-zinc-50">One last check</h1>
       <p className="mt-1.5 text-[13.5px] leading-relaxed text-zinc-500">
-        Orcha drives these tools on your computer. Anything missing installs with one click, no
-        admin needed.
+        {isMac
+          ? 'Orcha drives these tools on your computer. Anything missing installs with one click.'
+          : 'Orcha drives these tools on your computer. Anything missing installs with one click, no admin needed.'}
       </p>
 
       <div className="card mt-6 divide-y divide-edge">

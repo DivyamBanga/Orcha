@@ -1,6 +1,6 @@
 import { IPC } from '../../shared/ipc'
 import { useStore } from './store'
-import type { ChatItem, GitStatus, SessionStatus } from '../../shared/types'
+import type { ChatItem, GitStatus, SessionStatus, UpdateState } from '../../shared/types'
 
 interface SessionMessageEvent {
   workspaceId: string
@@ -191,6 +191,12 @@ export function wireIpc(): () => void {
     })
   })
 
+  const unsubUpdate = window.orcha.on(IPC.EvUpdate, (payload) => showUpdate(payload as UpdateState))
+  window.orcha.update
+    .status()
+    .then(showUpdate)
+    .catch(() => {})
+
   return () => {
     unsubMessage()
     unsubStatus()
@@ -199,5 +205,50 @@ export function wireIpc(): () => void {
     unsubActivity()
     unsubFocus()
     unsubShare()
+    unsubUpdate()
+  }
+}
+
+// A newer Orcha on GitHub, as a notice that installs it on click. Installing
+// restarts Orcha, so it's never automatic.
+function showUpdate(update: UpdateState): void {
+  const s = useStore.getState()
+  const id = 'update'
+  const install = (): void => {
+    window.orcha.update.install().catch((err: unknown) =>
+      s.pushNotice({
+        id,
+        tone: 'warn',
+        sticky: true,
+        text: String(err instanceof Error ? err.message : err).replace(
+          /^Error invoking remote method '[^']+': (Error: )?/,
+          ''
+        ),
+        action: { label: 'Try again', run: install }
+      })
+    )
+  }
+  if (update.phase === 'available') {
+    s.pushNotice({
+      id,
+      tone: 'neutral',
+      sticky: true,
+      text: `Orcha ${update.version} is ready. Updating restarts Orcha; your sessions pick up where they left off.`,
+      action: { label: 'Update now', run: install }
+    })
+  } else if (update.phase === 'downloading') {
+    s.pushNotice({
+      id,
+      tone: 'neutral',
+      sticky: true,
+      text: `Downloading Orcha ${update.version}…`
+    })
+  } else if (update.phase === 'manual') {
+    s.pushNotice({
+      id,
+      tone: 'neutral',
+      sticky: true,
+      text: `Orcha ${update.version} opened in a new window. Drag Orcha onto Applications and choose Replace, then reopen it.`
+    })
   }
 }

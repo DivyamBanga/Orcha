@@ -43,6 +43,13 @@ function GuestSettings({ onClose }: { onClose: () => void }): React.JSX.Element 
   const guest = useStore((s) => s.guest)
   const openCredits = useStore((s) => s.setShowCredits)
   const [leaving, setLeaving] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Something to paste to the host when Orcha misbehaves on this computer.
+  const copyDiagnostics = async (): Promise<void> => {
+    await window.orcha.clipboard.copy(await window.orcha.app.diagnostics())
+    setCopied(true)
+  }
 
   const leave = async (): Promise<void> => {
     if (
@@ -96,6 +103,12 @@ function GuestSettings({ onClose }: { onClose: () => void }): React.JSX.Element 
             Unpair this computer
           </button>
         </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-[12px] text-zinc-500">
+        Something not working?
+        <button onClick={copyDiagnostics} className="btn btn-ghost btn-sm -ml-1.5 text-zinc-400">
+          {copied ? `Copied, send it to ${guest?.hostName ?? 'your host'}` : 'Copy diagnostics'}
+        </button>
       </div>
     </section>
   )

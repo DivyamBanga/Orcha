@@ -21,6 +21,10 @@ export interface Notice {
   id: string
   text: string
   tone: 'neutral' | 'warn' | 'danger'
+  // A button on the notice; without one, clicking it opens Credits.
+  action?: { label: string; run: () => void }
+  // Stays until dismissed even when it isn't 'danger'.
+  sticky?: boolean
 }
 
 const MC = 'orchestrator'

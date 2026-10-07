@@ -58,6 +58,15 @@ export class ClipboardService {
 
   copy(text: string): void {
     clipboard.writeText(text)
+    // A Mac runs no background poll (see start's caller), so the history
+    // learns from Orcha's own copies instead.
+    if (process.platform === 'darwin') this.record(this.snapshot([], text))
+  }
+
+  // The Mac paste path: an image or long text that arrived in a paste event,
+  // saved as a file for the session to reference.
+  async saveBlob(workspaceId: string, data: Uint8Array, extension: string): Promise<string> {
+    return this.pathFor(workspaceId, this.save(extension, Buffer.from(data)))
   }
 
   // What Ctrl+V should insert into `workspaceId`'s terminal. Text pastes as
@@ -135,8 +144,10 @@ export class ClipboardService {
     const signature = `${formats.join('|')}\u0000${text}`
     if (signature === this.signature) return
     this.signature = signature
+    this.record(this.snapshot(formats, text))
+  }
 
-    const clip = this.snapshot(formats, text)
+  private record(clip: StoredClip | null): void {
     if (!clip) return
     const duplicate = (c: StoredClip): boolean =>
       clip.text !== null ? c.text === clip.text : c.path === clip.path

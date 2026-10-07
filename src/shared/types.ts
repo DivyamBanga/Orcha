@@ -253,6 +253,16 @@ export interface ToolState {
 
 export type ToolsStatus = Record<ToolName, ToolState>
 
+// ---- updates ----
+
+// 'manual': the new version's disk image was opened for the person to drag in
+// (Orcha couldn't replace itself where it's installed).
+export interface UpdateState {
+  phase: 'idle' | 'available' | 'downloading' | 'restarting' | 'manual'
+  version: string | null
+  error: string | null
+}
+
 // ---- the host side: managing guests on your own relay ----
 
 export interface AdminGuest {

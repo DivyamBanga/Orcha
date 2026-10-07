@@ -55,6 +55,7 @@ export const IPC = {
   GuestBalance: 'guest:balance',
   GuestUsage: 'guest:usage',
   GuestClipboardInvite: 'guest:clipboardInvite',
+  GuestPendingInvite: 'guest:pendingInvite',
   ToolsStatus: 'tools:status',
   ToolsInstall: 'tools:install',
   RelayAdminStatus: 'relayAdmin:status',
@@ -63,6 +64,13 @@ export const IPC = {
   RelayAdminInvite: 'relayAdmin:invite',
   RelayAdminTopUp: 'relayAdmin:topUp',
   RelayAdminAccess: 'relayAdmin:access',
+
+  // updates, the Mac terminal paste path, support diagnostics
+  UpdateStatus: 'update:status',
+  UpdateInstall: 'update:install',
+  ClipboardSaveBlob: 'clipboard:saveBlob',
+  AppPaste: 'app:paste',
+  AppDiagnostics: 'app:diagnostics',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',
@@ -74,5 +82,7 @@ export const IPC = {
   EvGitStatus: 'ev:git:status',
   EvWorkspacesChanged: 'ev:workspaces:changed',
   EvShareStatus: 'ev:share:status',
-  EvToolsProgress: 'ev:tools:progress'
+  EvToolsProgress: 'ev:tools:progress',
+  EvInviteLink: 'ev:inviteLink',
+  EvUpdate: 'ev:update'
 } as const

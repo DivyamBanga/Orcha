@@ -9,11 +9,15 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # Sibling projects with their own node_modules (the phone app alone is
+  # 1.5 GB); none of it is used at runtime.
+  - '!{mobile,relay,video,scripts,.github}{,/**/*}'
 asarUnpack:
   - resources/**
-  # The Agent SDK spawns its bundled cli.js with node; node-pty ships prebuilt
-  # binaries plus winpty helper exes. Neither can run from inside app.asar.
+  # The Agent SDK spawns its bundled Claude binary; node-pty ships prebuilt
+  # binaries plus helper executables. None can run from inside app.asar.
   - node_modules/@anthropic-ai/claude-agent-sdk/**
+  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
   - node_modules/node-pty/**
   - node_modules/better-sqlite3/**
 win:
@@ -23,4 +27,32 @@ nsis:
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+# Apple Silicon only, and not signed with a paid Apple ID: the afterSign hook
+# gives the finished app an ad-hoc signature, which is what lets macOS offer
+# "Open Anyway" instead of calling it damaged. Stable file names so the
+# releases/latest/download/... links never change.
+mac:
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  artifactName: Orcha-mac-${arch}.${ext}
+  category: public.app-category.developer-tools
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  minimumSystemVersion: '12.0'
+  protocols:
+    - name: Orcha invite
+      schemes:
+        - orcha
+  extendInfo:
+    NSDesktopFolderUsageDescription: Orcha opens projects you keep on your Desktop.
+    NSDocumentsFolderUsageDescription: Orcha opens projects you keep in Documents.
+    NSDownloadsFolderUsageDescription: Orcha opens projects you keep in Downloads.
+    NSLocalNetworkUsageDescription: Orcha's phone companion connects over your local network.
+dmg:
+  artifactName: Orcha-mac-${arch}.${ext}
+afterSign: scripts/mac-adhoc-sign.cjs
 npmRebuild: false

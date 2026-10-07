@@ -6,6 +6,9 @@ import CreditsPanel from './CreditsPanel'
 import { Branch, Diamond, Mark, More, Plus, SessionState, Settings } from './Icon'
 import type { Project, Workspace } from '../../../shared/types'
 
+// The session-jump shortcut's modifier, as each platform writes it.
+const MOD = window.orcha.platform === 'darwin' ? '⌘' : '^'
+
 interface MenuState {
   x: number
   y: number
@@ -191,7 +194,8 @@ function SessionRow({
         )}
         {index < 9 && (
           <kbd className="font-mono text-[10px] text-zinc-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            ^{index + 1}
+            {MOD}
+            {index + 1}
           </kbd>
         )}
       </button>
@@ -305,7 +309,7 @@ function Sidebar(): React.JSX.Element {
             <span className="h-2.5 w-2.5 rounded-full border-[1.5px] border-zinc-600" />
           )}
           <span className="font-medium">Mission Control</span>
-          <kbd className="ml-auto font-mono text-[10px] text-zinc-600">^0</kbd>
+          <kbd className="ml-auto font-mono text-[10px] text-zinc-600">{MOD}0</kbd>
         </button>
       </div>
 

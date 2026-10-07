@@ -15,7 +15,10 @@
   // SQLite-backed Durable Objects are the only kind the free plan allows.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ledger"] }],
   "observability": { "enabled": true },
-  "vars": { "DOWNLOAD_URL": "https://github.com/DivyamBanga/Orcha/releases/latest" }
+  "vars": {
+    "DOWNLOAD_URL": "https://github.com/DivyamBanga/Orcha/releases/latest",
+    "MAC_DOWNLOAD_URL": "https://github.com/DivyamBanga/Orcha/releases/latest/download/Orcha-mac-arm64.dmg"
+  }
   // Secrets (never in this file): ADMIN_TOKEN, ANTHROPIC_API_KEY,
   // AZURE_API_KEY, AZURE_ENDPOINT. Set with `npx wrangler secret put <NAME>`.
 }

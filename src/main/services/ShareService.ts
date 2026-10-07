@@ -1,7 +1,8 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { execFileAsync } from '../exec'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
 import { randomBytes } from 'crypto'
@@ -12,8 +13,8 @@ import type { PtyManager } from './PtyManager'
 
 type SendFn = (channel: string, payload: unknown) => void
 
-const CLOUDFLARED_URL =
-  'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+const CLOUDFLARED_RELEASES = 'https://github.com/cloudflare/cloudflared/releases/latest/download'
+const isMac = process.platform === 'darwin'
 const TUNNEL_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/
 
 interface Share {
@@ -220,13 +221,25 @@ export class ShareService {
     if (spawnSync('cloudflared', ['--version'], { windowsHide: true }).status === 0) {
       return 'cloudflared'
     }
-    const local = join(homedir(), '.orcha', 'bin', 'cloudflared.exe')
+    const local = join(homedir(), '.orcha', 'bin', isMac ? 'cloudflared' : 'cloudflared.exe')
     if (existsSync(local)) return local
     this.send(IPC.EvShareStatus, { workspaceId, phase: 'downloading' })
-    const res = await fetch(CLOUDFLARED_URL)
+    // The Mac build ships as a tarball holding the one binary.
+    const asset = isMac
+      ? `cloudflared-darwin-${process.arch === 'arm64' ? 'arm64' : 'amd64'}.tgz`
+      : 'cloudflared-windows-amd64.exe'
+    const res = await fetch(`${CLOUDFLARED_RELEASES}/${asset}`)
     if (!res.ok) throw new Error(`Couldn't download cloudflared (HTTP ${res.status})`)
     mkdirSync(dirname(local), { recursive: true })
-    writeFileSync(local, Buffer.from(await res.arrayBuffer()))
+    if (isMac) {
+      const archive = `${local}.tgz`
+      writeFileSync(archive, Buffer.from(await res.arrayBuffer()))
+      await execFileAsync('/usr/bin/tar', ['-xzf', archive, '-C', dirname(local)])
+      rmSync(archive, { force: true })
+      chmodSync(local, 0o755)
+    } else {
+      writeFileSync(local, Buffer.from(await res.arrayBuffer()))
+    }
     return local
   }
 }
@@ -245,7 +258,7 @@ function viewerHtml(token: string, name: string): string {
   * { box-sizing: border-box; }
   body { margin: 0; height: 100dvh; display: flex; flex-direction: column;
          background: #0b0b0d; color: #d4d4d8;
-         font: 13px 'Cascadia Code', Consolas, monospace; }
+         font: 13px 'Cascadia Code', Consolas, Menlo, monospace; }
   header { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
            border-bottom: 1px solid #27272a; flex-shrink: 0; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399;
@@ -275,7 +288,7 @@ function viewerHtml(token: string, name: string): string {
   const boot = ${boot};
   const term = new Terminal({
     cols: 120, rows: 30, disableStdin: true, scrollback: 5000,
-    fontSize: 13, fontFamily: "'Cascadia Code', Consolas, monospace",
+    fontSize: 13, fontFamily: "'Cascadia Code', Consolas, Menlo, monospace",
     theme: { background: '#0b0b0d', foreground: '#d4d4d8', cursor: '#d4d4d8' }
   });
   term.open(document.getElementById('term'));

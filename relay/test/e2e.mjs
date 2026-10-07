@@ -122,7 +122,9 @@ try {
   wrangler = spawn(
     'npx',
     ['wrangler', 'dev', '--port', String(RELAY_PORT), '--ip', '127.0.0.1', '--persist-to', state],
-    { cwd: relayDir, shell: true, windowsHide: true }
+    // npx is a .cmd on Windows (needs a shell); elsewhere it gets its own process group so
+    // the whole tree can be killed at the end.
+    { cwd: relayDir, shell: process.platform === 'win32', detached: process.platform !== 'win32', windowsHide: true }
   )
   let log = ''
   wrangler.stdout.on("data", (d) => { log += d; if (String(d).includes("DBG")) process.stdout.write(String(d)) })
@@ -145,6 +147,18 @@ try {
   assert.equal(created.inviteUrl, `${RELAY}/join/${created.invite}`)
   const landing = await call(`/join/${created.invite}`).then((r) => r.text())
   assert.ok(landing.includes('Div invited you') && landing.includes('releases/latest'), 'landing page')
+  const macLanding = await call(`/join/${created.invite}`, {
+    headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15' }
+  }).then((r) => r.text())
+  assert.ok(macLanding.includes('Orcha-mac-arm64.dmg'), 'mac landing links the disk image')
+  assert.ok(
+    macLanding.includes(`orcha://join/${created.invite}?relay=${encodeURIComponent(RELAY)}`),
+    'mac landing has the Open in Orcha link'
+  )
+  const phoneLanding = await call(`/join/${created.invite}`, {
+    headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile/15E148' }
+  }).then((r) => r.text())
+  assert.ok(phoneLanding.includes('on your computer') && !phoneLanding.includes('.dmg'), 'phone landing')
   const redeemed = await call('/v1/redeem', {
     method: 'POST',
     body: JSON.stringify({ code: created.invite.toLowerCase() })
@@ -299,8 +313,16 @@ try {
 } finally {
   upstream.close()
   if (wrangler) {
-    // npx under a shell: kill the whole tree or workerd outlives the test.
-    spawn('taskkill', ['/pid', String(wrangler.pid), '/t', '/f'], { windowsHide: true })
+    // Kill the whole tree or workerd outlives the test.
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(wrangler.pid), '/t', '/f'], { windowsHide: true })
+    } else {
+      try {
+        process.kill(-wrangler.pid, 'SIGTERM')
+      } catch {
+        // already gone
+      }
+    }
   }
   rmSync(join(relayDir, '.dev.vars'), { force: true })
 }

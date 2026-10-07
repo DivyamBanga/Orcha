@@ -179,7 +179,10 @@ export function attributionHeaders(project: string, session: string): Record<str
 // behind Mission Control) so it talks to the relay. ANTHROPIC_AUTH_TOKEN wins
 // over any claude.ai login on the machine and, unlike ANTHROPIC_API_KEY, never
 // asks the "use this key?" question. Project/session ride along as headers so
-// the relay can break spend down per project and per tab.
+// the relay can break spend down per project and per tab. Every inherited
+// ANTHROPIC_* setting and provider switch (CLAUDE_CODE_USE_BEDROCK/VERTEX/…)
+// is dropped first: any of them would send the session somewhere other than
+// the relay.
 export function claudeRelayEnv(
   base: Record<string, string>,
   project: string,
@@ -187,14 +190,45 @@ export function claudeRelayEnv(
 ): Record<string, string> {
   const c = config()
   if (!c) return base
-  const env = { ...base }
-  delete env.ANTHROPIC_API_KEY
+  const env = Object.fromEntries(
+    Object.entries(base).filter(([k]) => !/^(ANTHROPIC_|CLAUDE_CODE_USE_)/.test(k))
+  )
   env.ANTHROPIC_BASE_URL = `${c.relay}/anthropic`
   env.ANTHROPIC_AUTH_TOKEN = c.token
   env.ANTHROPIC_CUSTOM_HEADERS = Object.entries(attributionHeaders(project, session))
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
   return env
+}
+
+// orcha://join/<code>?relay=<origin> (the invite page's "Open in Orcha"
+// button) as the invite link it stands for, or null if it isn't one.
+export function inviteFromDeepLink(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (u.protocol !== 'orcha:' || u.hostname !== 'join') return null
+    const link = `${u.searchParams.get('relay') ?? ''}/join${u.pathname}`
+    return link.match(INVITE_LINK)?.[0] === link ? link : null
+  } catch {
+    return null
+  }
+}
+
+// An invite that arrived as an orcha:// link (possibly before the window
+// existed), waiting for the welcome screen to show it. Never redeemed on its
+// own: any web page can open an orcha:// link, so the person confirms it.
+let pendingInvite: string | null = null
+
+export function queueInviteLink(url: string): string | null {
+  const link = inviteFromDeepLink(url)
+  if (link) pendingInvite = link
+  return link
+}
+
+export function takePendingInvite(): string | null {
+  const link = isGuest() ? null : pendingInvite
+  pendingInvite = null
+  return link
 }
 
 export function relayConfig(): { relay: string; token: string } | null {

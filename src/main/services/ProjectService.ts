@@ -9,7 +9,12 @@ import type { WorkspaceManager } from './WorkspaceManager'
 import { verifyRemotePath } from '../ssh'
 
 
-export const PROJECTS_ROOT = join(homedir(), 'Desktop', 'Projects')
+// A Mac keeps it out of Desktop: that folder is permission-gated, and with
+// iCloud's Desktop sync on it would upload every repo (which corrupts git).
+export const PROJECTS_ROOT =
+  process.platform === 'darwin'
+    ? join(homedir(), 'Projects')
+    : join(homedir(), 'Desktop', 'Projects')
 
 export class ProjectService {
   constructor(private workspaceManager: WorkspaceManager) {}
@@ -85,7 +90,7 @@ export class ProjectService {
   }
 
   // Create a new GitHub repo (with README so the clone has a commit), clone it
-  // under Desktop\Projects, and register it.
+  // under PROJECTS_ROOT, and register it.
   async createRepo(name: string, isPrivate: boolean, agent: Agent = 'claude'): Promise<Project> {
     mkdirSync(PROJECTS_ROOT, { recursive: true })
     const target = join(PROJECTS_ROOT, name)

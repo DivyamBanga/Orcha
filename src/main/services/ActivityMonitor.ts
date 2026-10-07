@@ -79,7 +79,7 @@ const QUESTION = /[A-Za-z][^.?!\n]{8,140}\?/g
 // Decide what a settled screen means from its visible tail. ConPTY repaints
 // are cursor-addressed fragments, so this reads the tail as text soup rather
 // than trusting line structure.
-function classifyScreen(raw: string): { kind: PingKind; question: string | null } {
+export function classifyScreen(raw: string): { kind: PingKind; question: string | null } {
   const tail = raw.replace(OSC, '').replace(BOX, ' ').replace(CTRL, ' ').slice(-1200)
   const flat = tail.replace(/\s+/g, '')
   if (SHELL_PROMPT.test(tail.trimEnd()) || FLAT_SHELL_PROMPT.test(flat)) {
@@ -121,6 +121,7 @@ export class ActivityMonitor {
   // Sessions that looked done and are serving out the confirmation window,
   // with the ping already classified and worded at transition time.
   private pendingNotify = new Map<string, { at: number; kind: PingKind; body: string }>()
+  private shown = new Set<Notification>()
   private timer: NodeJS.Timeout | null = null
 
   onNotificationClick: ((workspaceId: string) => void) | null = null
@@ -150,6 +151,11 @@ export class ActivityMonitor {
     return this.states.get(workspaceId) ?? 'off'
   }
 
+  anyWorking(): boolean {
+    for (const state of this.states.values()) if (state === 'working') return true
+    return false
+  }
+
   private poll(): void {
     const now = Date.now()
     for (const workspace of db.workspaces.listActive()) {
@@ -162,6 +168,10 @@ export class ActivityMonitor {
         // Already mid-turn: output flow keeps it alive; silence means done.
         const outputAge = this.ptyManager.outputAgeMs(workspace.id) ?? Infinity
         next = outputAge < OUTPUT_IDLE_MS ? 'working' : 'waiting'
+        // A finished turn starts counting flow from zero, or a single repaint
+        // after it (Claude Code redraws its footer a few seconds later) would
+        // count as sustained output and flip the session straight back.
+        if (next === 'waiting') this.flowStreak.set(workspace.id, 0)
       } else {
         // Idle: enter working on sustained output flow (Claude animating its
         // spinner) that is not just the echo of the user typing, or right away
@@ -207,6 +217,8 @@ export class ActivityMonitor {
             const codex = workspace.agent === 'codex'
             const screen = classifyScreen(this.ptyManager.screenText(workspace.id))
             let { kind } = screen
+            // On a Mac the launch script reports the agent's exit itself.
+            if (this.ptyManager.agentExited(workspace.id)) kind = 'exited'
             // Codex says it needs you in its window title ("Action Required"),
             // and a turn that ends on a question waits on you just the same.
             const codexAsk =
@@ -243,8 +255,19 @@ export class ActivityMonitor {
         }
       }
 
-      // A resumed (or closed) session cancels any pending ping.
-      if (next !== 'waiting') this.pendingNotify.delete(workspace.id)
+      // A resumed (or closed) session cancels any pending ping. Resumed means a
+      // new turn: input since the ping was queued, or the busy marker drawn
+      // again. Output alone isn't enough — Claude Code redraws its footer a few
+      // seconds after a turn ends, which would otherwise swallow every ping.
+      const queued = this.pendingNotify.get(workspace.id)
+      if (queued && next !== 'waiting') {
+        const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
+        const inputAge = this.ptyManager.inputAgeMs(workspace.id)
+        const newTurn =
+          (markerAge !== null && now - markerAge > queued.at) ||
+          (inputAge !== null && now - inputAge > queued.at)
+        if (next === 'off' || newTurn) this.pendingNotify.delete(workspace.id)
+      }
 
       // Still idle after the confirmation window: fire once, but only if you're
       // not already looking at the window.
@@ -292,7 +315,15 @@ export class ActivityMonitor {
           : `${label} is done`
     // Only being blocked chimes; results and deaths arrive as silent toasts.
     const notification = new Notification({ title, body, silent: kind !== 'blocked' })
-    notification.on('click', () => this.onNotificationClick?.(workspaceId))
+    // Held until dismissed: a collected Notification stops delivering clicks
+    // (macOS keeps toasts in Notification Center long after they appear).
+    this.shown.add(notification)
+    if (this.shown.size > 50) this.shown.delete(this.shown.values().next().value!)
+    notification.on('click', () => {
+      this.shown.delete(notification)
+      this.onNotificationClick?.(workspaceId)
+    })
+    notification.on('close', () => this.shown.delete(notification))
     notification.show()
     console.log('[notify]', kind, '|', title, '|', body)
   }

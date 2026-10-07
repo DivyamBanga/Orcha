@@ -217,7 +217,8 @@ function NewProjectModal(): React.JSX.Element {
             Private repository
           </label>
           <div className="mb-5 text-[12px] leading-relaxed text-zinc-500">
-            Creates the repo on GitHub, clones it to Desktop\Projects\
+            Creates the repo on GitHub, clones it to{' '}
+            {window.orcha.platform === 'darwin' ? '~/Projects/' : 'Desktop\\Projects\\'}
             {name.trim() || '<name>'}, and starts {agentName} in it.
           </div>
           <div className="flex justify-end gap-2">

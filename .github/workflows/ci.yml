@@ -1,0 +1,148 @@
+# Builds Orcha for Mac and Windows, and tests the Mac build end to end on real
+# Macs (GitHub's runners; free for a public repo). A v* tag also assembles a
+# DRAFT release with both installers — published by hand once the smoke
+# screenshots look right.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - name: Relay
+        working-directory: relay
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+          npm run test:e2e
+
+  build-mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Native modules: better-sqlite3 is rebuilt for Electron's ABI; node-pty
+      # ships an N-API prebuild for darwin-arm64 that Electron loads as is.
+      - run: npm ci --ignore-scripts
+      - run: npx electron-rebuild --force --only better-sqlite3
+      - run: npx electron-vite build
+      - name: Package
+        run: npx electron-builder --mac --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: bash scripts/verify-mac-bundle.sh dist/mac-arm64/Orcha.app
+      # The same build stamped 99.0.0, for the smoke test's update check.
+      - name: Package update payload
+        run: npx electron-builder --mac zip --arm64 --publish never -c.extraMetadata.version=99.0.0 -c.directories.output=dist-next
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: |
+            dist/Orcha-mac-arm64.dmg
+            dist/Orcha-mac-arm64.zip
+            dist-next/Orcha-mac-arm64.zip
+          if-no-files-found: error
+
+  smoke-mac:
+    needs: build-mac
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Relay dependencies (the smoke test runs a local relay)
+        working-directory: relay
+        run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-build
+          path: build-out
+      - name: Install like a person would (zip into Applications), and check the DMG
+        run: |
+          ditto -x -k build-out/dist/Orcha-mac-arm64.zip /Applications
+          MOUNT=$(hdiutil attach -nobrowse -readonly build-out/dist/Orcha-mac-arm64.dmg | tail -1 | cut -f3)
+          ls -la "$MOUNT"
+          test -d "$MOUNT/Orcha.app" && test -L "$MOUNT/Applications"
+          codesign --verify --deep --strict "$MOUNT/Orcha.app"
+          hdiutil detach "$MOUNT"
+      - name: Smoke test
+        run: node scripts/smoke/run.mjs --app /Applications/Orcha.app --next-zip build-out/dist-next/Orcha-mac-arm64.zip
+        env:
+          SMOKE_OUT: smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: smoke-out
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx electron-rebuild --force --only better-sqlite3
+      - run: npx electron-vite build
+      - run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-build
+          path: dist/*-setup.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [unit, build-mac, smoke-mac, build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir upload
+          cp artifacts/mac-build/dist/Orcha-mac-arm64.dmg artifacts/mac-build/dist/Orcha-mac-arm64.zip upload/
+          cp artifacts/win-build/*-setup.exe upload/
+          (cd upload && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          gh release create "$TAG" upload/* --repo "$GITHUB_REPOSITORY" --draft --title "Orcha ${TAG#v}" --notes "Draft built by CI. Publish once the smoke screenshots look right."

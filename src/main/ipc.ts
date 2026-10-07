@@ -1,7 +1,7 @@
 import { execFileAsync } from './exec'
-import { ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
-import { existsSync } from 'fs'
-import { join } from 'path'
+import { app, ipcMain, dialog, shell, clipboard, BrowserWindow } from 'electron'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { join, sep } from 'path'
 import { homedir } from 'os'
 import { IPC } from '../shared/ipc'
 import * as db from './db'
@@ -14,10 +14,13 @@ import {
   INVITE_LINK,
   isGuest,
   leaveGuestMode,
-  redeemInvite
+  redeemInvite,
+  takePendingInvite
 } from './guest'
 import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import { installTool, refreshPath, toolsStatus } from './tools'
+import { isMac, logFilePath } from './platform'
+import { PROJECTS_ROOT } from './services/ProjectService'
 import type { Agent, CreditPool, Project, ToolName, WorkspaceAuth } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
 import type { PtyManager } from './services/PtyManager'
@@ -28,6 +31,7 @@ import type { ShareService } from './services/ShareService'
 import type { CodexService } from './services/CodexService'
 import type { ClipboardService } from './services/ClipboardService'
 import type { MobileService } from './services/MobileService'
+import type { Updater } from './updater'
 
 
 interface Services {
@@ -40,6 +44,7 @@ interface Services {
   codexService: CodexService
   clipboardService: ClipboardService
   mobileService: MobileService
+  updater: Updater
 }
 
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
@@ -52,7 +57,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     shareService,
     codexService,
     clipboardService,
-    mobileService
+    mobileService,
+    updater
   } = services
 
   // --- setup / onboarding ---------------------------------------------------
@@ -67,7 +73,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     }
     const claude =
       existsSync(join(homedir(), '.claude', '.credentials.json')) ||
-      Boolean(process.env.ANTHROPIC_API_KEY)
+      Boolean(process.env.ANTHROPIC_API_KEY) ||
+      (isMac && (await claudeKeychainLogin()))
     return { gh, claude }
   })
 
@@ -82,12 +89,16 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     async (_e, pickedPath?: string, agent?: Agent): Promise<Project | null> => {
       let repoPath = pickedPath
       if (!repoPath) {
+        if (isMac) mkdirSync(PROJECTS_ROOT, { recursive: true })
         const result = await dialog.showOpenDialog(mainWindow, {
           title: 'Open a local git repository',
-          properties: ['openDirectory']
+          // A Mac's picker shows no New Folder button without createDirectory.
+          properties: ['openDirectory', 'createDirectory'],
+          ...(isMac ? { defaultPath: PROJECTS_ROOT } : {})
         })
         if (result.canceled || result.filePaths.length === 0) return null
         repoPath = result.filePaths[0]
+        if (isMac && !(await confirmMacFolder(mainWindow, repoPath))) return null
       }
       return projectService.addLocal(repoPath, agentFor(agent))
     }
@@ -274,6 +285,20 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.SessionPathFor, (_e, workspaceId: string, localPath: string) =>
     clipboardService.pathFor(workspaceId, localPath)
   )
+  ipcMain.handle(
+    IPC.ClipboardSaveBlob,
+    (_e, workspaceId: string, data: Uint8Array, extension: string) =>
+      clipboardService.saveBlob(workspaceId, data, extension.replace(/[^a-z0-9]/gi, '') || 'bin')
+  )
+  // The terminal's own "Paste" menu item on a Mac: a real paste into the
+  // focused field, so it takes the same path as ⌘V.
+  ipcMain.handle(IPC.AppPaste, () => mainWindow.webContents.paste())
+
+  // --- updates and support ---------------------------------------------------
+
+  ipcMain.handle(IPC.UpdateStatus, () => updater.status())
+  ipcMain.handle(IPC.UpdateInstall, () => updater.install())
+  ipcMain.handle(IPC.AppDiagnostics, () => diagnostics())
 
   // Switch what a tab runs (Claude/Codex) and on which model, then restart it
   // in place; the conversation resumes.
@@ -300,10 +325,12 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.GuestLeave, () => leaveGuestMode())
   ipcMain.handle(IPC.GuestBalance, (_e, force?: boolean) => guestBalance(force === true))
   ipcMain.handle(IPC.GuestUsage, () => guestUsage())
-  ipcMain.handle(
-    IPC.GuestClipboardInvite,
-    () => clipboard.readText().match(INVITE_LINK)?.[0] ?? null
+  // A Mac never reads the clipboard behind the user's back (newer macOS shows
+  // an "allow paste?" alert for that); invites arrive by the orcha:// link.
+  ipcMain.handle(IPC.GuestClipboardInvite, () =>
+    isMac ? null : (clipboard.readText().match(INVITE_LINK)?.[0] ?? null)
   )
+  ipcMain.handle(IPC.GuestPendingInvite, () => takePendingInvite())
 
   ipcMain.handle(IPC.ToolsStatus, () => toolsStatus())
   ipcMain.handle(IPC.ToolsInstall, (e, name: ToolName) =>
@@ -343,4 +370,69 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.UiSaveState, (_e, key: string, value: string) =>
     db.appState.set(`ui:${key}`, value)
   )
+}
+
+// A support snapshot to paste into a message: versions, tools, PATH and the
+// recent log. Relay tokens and API keys are blanked out.
+async function diagnostics(): Promise<string> {
+  const tools = await toolsStatus().catch(() => null)
+  let log = ''
+  try {
+    log = readFileSync(logFilePath(), 'utf8').split('\n').slice(-200).join('\n')
+  } catch {
+    log = '(no log yet)'
+  }
+  const guest = guestStatus()
+  const text = [
+    `Orcha ${app.getVersion()} · ${process.platform} ${process.getSystemVersion()} ${process.arch}`,
+    `Guest: ${guest.paired ? `${guest.name} on ${guest.hostName}'s credits` : 'no'}`,
+    `Tools: ${
+      tools
+        ? Object.entries(tools)
+            .map(([k, v]) => `${k} ${v.version ?? 'missing'}`)
+            .join(', ')
+        : 'unknown'
+    }`,
+    `PATH: ${process.env.PATH ?? ''}`,
+    `LANG: ${process.env.LANG ?? ''}`,
+    '',
+    log
+  ].join('\n')
+  return text.replace(/\b(og_|oa_|sk-ant-)[A-Za-z0-9_-]+/g, '$1…')
+}
+
+// Claude Code on a Mac keeps its login in the Keychain rather than in
+// ~/.claude/.credentials.json. Only whether the item exists is asked (no -w),
+// so the secret is never read and macOS shows no Keychain prompt.
+async function claudeKeychainLogin(): Promise<boolean> {
+  try {
+    await execFileAsync('/usr/bin/security', [
+      'find-generic-password',
+      '-s',
+      'Claude Code-credentials'
+    ])
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Desktop and Documents are permission-gated on a Mac, and iCloud may sync
+// them; a git repo inside an iCloud-synced folder gets corrupted. Worth one
+// plain warning before a project lands there.
+async function confirmMacFolder(window: BrowserWindow, folder: string): Promise<boolean> {
+  const home = homedir()
+  const risky = ['Desktop', 'Documents', join('Library', 'Mobile Documents')].some((dir) =>
+    (folder + sep).startsWith(join(home, dir) + sep)
+  )
+  if (!risky) return true
+  const { response } = await dialog.showMessageBox(window, {
+    type: 'warning',
+    buttons: ['Choose another folder', 'Use it anyway'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'This folder may be synced to iCloud',
+    detail: `Projects in Desktop or Documents can be uploaded to iCloud, which can break them. The Projects folder in your home folder (${PROJECTS_ROOT}) is safer.`
+  })
+  return response === 1
 }

@@ -18,10 +18,27 @@ import type {
   GuestStatus,
   GuestUsage,
   ToolName,
-  ToolsStatus
+  ToolsStatus,
+  UpdateState
 } from '../shared/types'
 
 const api = {
+  // 'darwin' | 'win32' | … — for the few places the UI differs (⌘ vs Ctrl).
+  platform: process.platform,
+  app: {
+    // A real paste into the focused field (the terminal's Paste menu on a Mac).
+    paste: (): Promise<void> => ipcRenderer.invoke(IPC.AppPaste),
+    diagnostics: (): Promise<string> => ipcRenderer.invoke(IPC.AppDiagnostics)
+  },
+  update: {
+    status: (): Promise<UpdateState> => ipcRenderer.invoke(IPC.UpdateStatus),
+    install: (): Promise<void> => ipcRenderer.invoke(IPC.UpdateInstall)
+  },
+  // CI smoke-test hooks; main only answers when launched with --orcha-smoke.
+  smoke: {
+    state: (): Promise<unknown> => ipcRenderer.invoke('smoke:state'),
+    quit: (): Promise<void> => ipcRenderer.invoke('smoke:quit')
+  },
   setup: {
     status: (): Promise<{ gh: boolean; claude: boolean }> => ipcRenderer.invoke(IPC.SetupStatus)
   },
@@ -91,7 +108,9 @@ const api = {
       ipcRenderer.invoke(IPC.GuestBalance, force),
     usage: (): Promise<GuestUsage | null> => ipcRenderer.invoke(IPC.GuestUsage),
     // An invite link sitting on the clipboard, if there is one.
-    clipboardInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestClipboardInvite)
+    clipboardInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestClipboardInvite),
+    // An invite that arrived as an orcha:// link and hasn't been shown yet.
+    pendingInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestPendingInvite)
   },
   tools: {
     status: (): Promise<ToolsStatus> => ipcRenderer.invoke(IPC.ToolsStatus),
@@ -154,6 +173,10 @@ const api = {
       ipcRenderer.invoke(IPC.ClipboardUse, workspaceId, id),
     pathFor: (workspaceId: string, localPath: string): Promise<string> =>
       ipcRenderer.invoke(IPC.SessionPathFor, workspaceId, localPath),
+    // Pasted bytes with no file behind them (a screenshot, long text) saved
+    // as a file; returns the path the session should reference.
+    saveBlob: (workspaceId: string, data: Uint8Array, extension: string): Promise<string> =>
+      ipcRenderer.invoke(IPC.ClipboardSaveBlob, workspaceId, data, extension),
     // Electron strips File.path in the renderer; this is the supported way to
     // recover the real path of a dropped file.
     pathForFile: (file: File): string => webUtils.getPathForFile(file)

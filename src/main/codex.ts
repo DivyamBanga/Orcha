@@ -17,16 +17,20 @@ export const MIN_CODEX_VERSION = '0.158.0'
 // The env var the relay token rides in; Codex sends it as a Bearer token.
 const TOKEN_ENV = 'ORCHA_RELAY_KEY'
 
-// Where the official installer (chatgpt.com/codex/install.ps1) puts it. Used
-// by full path because a just-installed Codex isn't on this process's PATH.
-export const OFFICIAL_CODEX_EXE = join(
-  process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
-  'Programs',
-  'OpenAI',
-  'Codex',
-  'bin',
-  'codex.exe'
-)
+// Where the official installer (chatgpt.com/codex/install.ps1, or install.sh
+// on a Mac) puts it. Used by full path because a just-installed Codex isn't on
+// this process's PATH.
+export const OFFICIAL_CODEX_EXE =
+  process.platform === 'win32'
+    ? join(
+        process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+        'Programs',
+        'OpenAI',
+        'Codex',
+        'bin',
+        'codex.exe'
+      )
+    : join(homedir(), '.local', 'bin', 'codex')
 
 export function codexExecutable(): string {
   return existsSync(OFFICIAL_CODEX_EXE) ? OFFICIAL_CODEX_EXE : 'codex'
@@ -49,7 +53,10 @@ function ps(arg: string): string {
 // `codex resume --last` continues this folder's most recent Orcha session. It
 // only runs when one exists: with nothing to resume, codex 0.158 sits on
 // "Resuming session…" forever instead of starting fresh (observed live).
-export function codexLaunchCommand(workspace: Workspace, project: Project | undefined): string {
+export function codexArgv(
+  workspace: Workspace,
+  project: Project | undefined
+): { file: string; args: string[] } {
   const relay = relayConfig()
   if (!relay) throw new Error('Codex tabs need Orcha to be paired with an invite first.')
   const headers = Object.entries(attributionHeaders(project?.name ?? workspace.name, workspace.id))
@@ -87,7 +94,13 @@ export function codexLaunchCommand(workspace: Workspace, project: Project | unde
     '-C',
     workspace.worktreePath
   ]
-  return `& ${ps(codexExecutable())} ${args.map(ps).join(' ')}`
+  return { file: codexExecutable(), args }
+}
+
+// The same launch as one PowerShell command line (Windows tabs).
+export function codexLaunchCommand(workspace: Workspace, project: Project | undefined): string {
+  const { file, args } = codexArgv(workspace, project)
+  return `& ${ps(file)} ${args.map(ps).join(' ')}`
 }
 
 export function codexEnv(base: Record<string, string>): Record<string, string> {

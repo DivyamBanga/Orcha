@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, Menu } from 'electron'
+import { app, shell, BrowserWindow, Menu, dialog, powerSaveBlocker } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -16,45 +16,92 @@ import { CodexService } from './services/CodexService'
 import { ClipboardService } from './services/ClipboardService'
 import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
-import { isGuest } from './guest'
+import { isGuest, queueInviteLink } from './guest'
 import { refreshPath } from './tools'
+import { isMac, resolveShellEnv, startLogFile } from './platform'
+import { Updater } from './updater'
+import { registerSmoke } from './smoke'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
 // text field rather than left to whatever Chromium does by default. The bar
-// itself stays hidden (autoHideMenuBar).
+// itself stays hidden (autoHideMenuBar). A Mac's menu bar is always visible
+// and its first menu is the app menu, so it gets the standard set (⌘Q, ⌘H,
+// ⌘W, ⌘M come from the app and window roles). No Reset Zoom there: its ⌘0
+// would steal the Mission Control shortcut.
 function buildMenu(): void {
+  const edit: Electron.MenuItemConstructorOptions = {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'pasteAndMatchStyle' },
+      { role: 'selectAll' }
+    ]
+  }
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      {
-        label: 'Edit',
-        submenu: [
-          { role: 'undo' },
-          { role: 'redo' },
-          { type: 'separator' },
-          { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
-          { role: 'pasteAndMatchStyle' },
-          { role: 'selectAll' }
-        ]
-      },
-      {
-        label: 'View',
-        submenu: [
-          { role: 'reload' },
-          { role: 'toggleDevTools' },
-          { type: 'separator' },
-          { role: 'resetZoom' },
-          { role: 'zoomIn' },
-          { role: 'zoomOut' },
-          { type: 'separator' },
-          { role: 'togglefullscreen' }
-        ]
-      }
-    ])
+    Menu.buildFromTemplate(
+      isMac
+        ? [
+            { role: 'appMenu' },
+            edit,
+            {
+              label: 'View',
+              submenu: [
+                { role: 'reload' },
+                { role: 'toggleDevTools' },
+                { type: 'separator' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+              ]
+            },
+            { role: 'windowMenu' }
+          ]
+        : [
+            edit,
+            {
+              label: 'View',
+              submenu: [
+                { role: 'reload' },
+                { role: 'toggleDevTools' },
+                { type: 'separator' },
+                { role: 'resetZoom' },
+                { role: 'zoomIn' },
+                { role: 'zoomOut' },
+                { type: 'separator' },
+                { role: 'togglefullscreen' }
+              ]
+            }
+          ]
+    )
   )
 }
+
+let appWindow: BrowserWindow | null = null
+// Set once a real quit starts; until then, closing the window on a Mac only
+// hides it, so the sessions behind it keep running and one set of services
+// lives for the whole app.
+let quitting = false
+app.on('before-quit', () => (quitting = true))
+
+// orcha://join/… from an invite page. Registered before launch finishes so a
+// link that starts Orcha isn't lost; the welcome screen picks it up.
+app.on('will-finish-launching', () => {
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    const link = queueInviteLink(url)
+    if (link && appWindow && !appWindow.isDestroyed()) {
+      appWindow.webContents.send(IPC.EvInviteLink, { link })
+      appWindow.show()
+    }
+  })
+})
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -74,9 +121,17 @@ function createWindow(): void {
       backgroundThrottling: false
     }
   })
+  appWindow = mainWindow
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.on('close', (event) => {
+    if (isMac && !quitting) {
+      event.preventDefault()
+      mainWindow.hide()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -120,7 +175,9 @@ function createWindow(): void {
   const shareService = new ShareService(send, ptyManager)
   const codexService = new CodexService()
   const clipboardService = new ClipboardService()
-  clipboardService.start()
+  // The paste-history poll reads the clipboard in the background, which newer
+  // macOS answers with an "allow paste?" alert, so a Mac goes without it.
+  if (!isMac) clipboardService.start()
   workspaceManager.onBeforeArchive = async (workspaceId) => {
     shareService.stop(workspaceId)
     ptyManager.kill(workspaceId)
@@ -134,7 +191,24 @@ function createWindow(): void {
   const mobileService = new MobileService(ptyManager, activityMonitor, gitService)
   activityMonitor.onPing = (workspaceId, kind, body, focused) =>
     mobileService.handlePing(workspaceId, kind, body, focused)
-  activityMonitor.onState = (workspaceId, state) => mobileService.handleState(workspaceId, state)
+  // App Nap throttles a hidden app's timers, which would delay the activity
+  // poll (and its notifications) while you're elsewhere; a Mac holds it off
+  // only while some session is actually working.
+  let napBlocker: number | null = null
+  activityMonitor.onState = (workspaceId, state) => {
+    mobileService.handleState(workspaceId, state)
+    if (!isMac) return
+    const working = activityMonitor.anyWorking()
+    if (working && napBlocker === null) {
+      napBlocker = powerSaveBlocker.start('prevent-app-suspension')
+    } else if (!working && napBlocker !== null) {
+      powerSaveBlocker.stop(napBlocker)
+      napBlocker = null
+    }
+  }
+  const updater = new Updater(send)
+  updater.busy = () => activityMonitor.anyWorking()
+  updater.start()
   // The phone companion opens a network port, so it only starts at launch on
   // a machine where it's already been set up; otherwise the first open of
   // Settings → Phone starts it (and a fresh install never meets a firewall
@@ -149,14 +223,19 @@ function createWindow(): void {
   activityMonitor.onNotificationClick = (workspaceId) => {
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
-    // On Windows focus() alone often only flashes the taskbar; a brief
-    // always-on-top toggle forces the window to the foreground.
-    mainWindow.setAlwaysOnTop(true)
-    mainWindow.focus()
-    mainWindow.setAlwaysOnTop(false)
+    if (isMac) {
+      app.focus({ steal: true })
+    } else {
+      // On Windows focus() alone often only flashes the taskbar; a brief
+      // always-on-top toggle forces the window to the foreground.
+      mainWindow.setAlwaysOnTop(true)
+      mainWindow.focus()
+      mainWindow.setAlwaysOnTop(false)
+    }
     send(IPC.EvFocusSession, { workspaceId })
   }
   activityMonitor.start()
+  registerSmoke(mainWindow, ptyManager, activityMonitor)
   app.on('before-quit', () => {
     activityMonitor.stop()
     clipboardService.stop()
@@ -173,14 +252,41 @@ function createWindow(): void {
     shareService,
     codexService,
     clipboardService,
-    mobileService
+    mobileService,
+    updater
   })
 }
 
-app.whenReady().then(() => {
+// A downloaded Mac app that's opened where it landed runs from a randomised
+// read-only copy and can't update itself, so offer to move it once.
+async function offerMoveToApplications(): Promise<boolean> {
+  if (!isMac || !app.isPackaged || process.argv.includes('--orcha-smoke')) return false
+  if (app.isInApplicationsFolder()) return false
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Move to Applications', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+    message: 'Move Orcha to your Applications folder?',
+    detail: 'Orcha can keep itself up to date from there.'
+  })
+  if (response !== 0) return false
+  try {
+    return app.moveToApplicationsFolder() // relaunches from the new place
+  } catch {
+    return false
+  }
+}
+
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.orcha.app')
+  startLogFile()
+  if (await offerMoveToApplications()) return
+  // Before anything spawns a process: a Finder-launched Mac app has no PATH.
+  await resolveShellEnv()
   buildMenu()
   initDb()
+  if (isMac && app.isPackaged) app.setAsDefaultProtocolClient('orcha')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -188,8 +294,11 @@ app.whenReady().then(() => {
 
   createWindow()
 
+  // A Mac's window only ever hides (see 'close'), so the Dock icon brings the
+  // same one back.
   app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (appWindow && !appWindow.isDestroyed()) appWindow.show()
+    else if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 

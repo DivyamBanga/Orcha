@@ -3,13 +3,16 @@ import { dirname, join } from 'path'
 import { homedir, tmpdir } from 'os'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
-import { execFileAsync } from './exec'
+import { execFileAsync, gitReady } from './exec'
 import { MIN_CODEX_VERSION, OFFICIAL_CODEX_EXE, codexExecutable } from './codex'
+import { compareVersions, mergePath, xcodeInstallOutcome } from './platform-core'
+import { isMac, LOCAL_BIN } from './platform'
 import type { ToolName, ToolState, ToolsStatus } from '../shared/types'
 
 // The command-line tools a guest's Orcha drives — Claude Code, Codex and git —
 // found or installed with one click each. Every installer here is the
-// vendor's own and needs no admin rights, so there's never a UAC prompt.
+// vendor's own and needs no admin rights, so there's never a UAC prompt. (On a
+// Mac, git comes from Apple's developer tools, whose own installer may ask.)
 
 const LOCALAPPDATA = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
 const PORTABLE_GIT_DIR = join(LOCALAPPDATA, 'Programs', 'Git')
@@ -25,7 +28,13 @@ const TOOL_DIRS = [
 
 // Rebuilds PATH from the registry (machine + user, as a fresh login would see
 // it) plus the installer folders, so new tools work without restarting Orcha.
+// On a Mac the login shell's PATH was already merged in at startup; only the
+// folder both installers use needs to be there.
 export async function refreshPath(): Promise<void> {
+  if (isMac) {
+    process.env.PATH = mergePath([LOCAL_BIN, process.env.PATH])
+    return
+  }
   let registry: string[] = []
   try {
     const { stdout } = await execFileAsync('powershell.exe', [
@@ -50,27 +59,23 @@ export async function refreshPath(): Promise<void> {
 }
 
 // Runs `<command> --version` through PowerShell, which resolves .exe, .cmd
-// and .ps1 shims alike (npm installs Codex and older Claude Code as .cmd).
+// and .ps1 shims alike (npm installs Codex and older Claude Code as .cmd). A
+// Mac has no shims to resolve, so the command runs directly (git included:
+// execFileAsync refuses it, rather than popping Apple's installer, until
+// Apple's developer tools are in).
 async function versionOf(command: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-Command', `& '${command.replace(/'/g, "''")}' --version`],
-      { timeout: 20_000 }
-    )
+    const { stdout } = isMac
+      ? await execFileAsync(command, ['--version'], { timeout: 20_000 })
+      : await execFileAsync(
+          'powershell.exe',
+          ['-NoProfile', '-Command', `& '${command.replace(/'/g, "''")}' --version`],
+          { timeout: 20_000 }
+        )
     return stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? null
   } catch {
     return null
   }
-}
-
-function atLeast(version: string, minimum: string): boolean {
-  const a = version.split('.').map(Number)
-  const b = minimum.split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0)
-  }
-  return true
 }
 
 export async function toolsStatus(): Promise<ToolsStatus> {
@@ -82,7 +87,7 @@ export async function toolsStatus(): Promise<ToolsStatus> {
   const state = (version: string | null, min?: string): ToolState => ({
     installed: version !== null,
     version,
-    ready: version !== null && (!min || atLeast(version, min))
+    ready: version !== null && (!min || compareVersions(version, min) >= 0)
   })
   return { claude: state(claude), codex: state(codex, MIN_CODEX_VERSION), git: state(git) }
 }
@@ -131,10 +136,56 @@ async function installPortableGit(onProgress: (message: string) => void): Promis
   )
 }
 
+// The vendors' own shell installers, which put each tool in ~/.local/bin.
+async function runInstallScript(url: string, env: Record<string, string> = {}): Promise<void> {
+  await execFileAsync('/bin/bash', ['-c', `curl -fsSL ${url} | bash`], {
+    timeout: 10 * 60_000,
+    env: { ...process.env, ...env }
+  })
+}
+
+// Git on a Mac comes with Apple's Command Line Tools. Their installer is a
+// system dialog (Install → Agree, then a download of several minutes), so
+// this opens it and waits for the tools to show up.
+async function installAppleDeveloperTools(onProgress: (message: string) => void): Promise<void> {
+  if (await gitReady()) return
+  let output = ''
+  try {
+    const result = await execFileAsync('/usr/bin/xcode-select', ['--install'])
+    output = result.stdout + result.stderr
+  } catch (err) {
+    output = String((err as { stderr?: string }).stderr ?? err)
+  }
+  const outcome = xcodeInstallOutcome(output)
+  if (outcome === 'error') throw new Error(`Apple's installer didn't start: ${output.trim()}`)
+  onProgress("Apple's installer is open: click Install, then Agree. It takes 5–20 minutes.")
+  const deadline = Date.now() + 60 * 60_000
+  while (!(await gitReady())) {
+    if (Date.now() > deadline) throw new Error("Apple's developer tools didn't finish installing.")
+    await new Promise((r) => setTimeout(r, 5000))
+  }
+}
+
 export async function installTool(
   name: ToolName,
   onProgress: (message: string) => void
 ): Promise<void> {
+  if (isMac) {
+    if (name === 'claude') {
+      onProgress('Installing Claude Code…')
+      await runInstallScript('https://claude.ai/install.sh')
+    } else if (name === 'codex') {
+      onProgress('Installing Codex…')
+      await runInstallScript('https://chatgpt.com/codex/install.sh', {
+        CODEX_NON_INTERACTIVE: '1'
+      })
+    } else {
+      await installAppleDeveloperTools(onProgress)
+    }
+    await refreshPath()
+    onProgress('Done')
+    return
+  }
   if (name === 'claude') {
     onProgress('Installing Claude Code…')
     await runPowerShell('irm https://claude.ai/install.ps1 | iex')

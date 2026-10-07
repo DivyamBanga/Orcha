@@ -1,9 +1,12 @@
 import * as pty from 'node-pty'
+import { homedir } from 'os'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { hasSessionHistory } from '../claudeSessions'
 import { claudeRelayEnv, isGuest } from '../guest'
-import { codexEnv, codexLaunchCommand } from '../codex'
+import { codexArgv, codexEnv, codexLaunchCommand } from '../codex'
+import { isWin, loginShell } from '../platform'
+import { findExecutable } from '../platform-core'
 import { sshArgs, shQuote, remoteHasSessionHistory, type SshTarget } from '../ssh'
 import type { Workspace, Project } from '../../shared/types'
 
@@ -52,6 +55,10 @@ interface PtyEntry {
   // folder?" dialog itself — it pre-selects "No, exit", which would throw a
   // newcomer straight out of the folder they just chose. Null = not watching.
   trustTail: string | null
+  // Mac/Linux: the agent printed EXIT_MARK on its way out and the tab is now
+  // a plain shell (Windows reads PowerShell's prompt off the screen instead).
+  agentExited: boolean
+  exitTail: string
 }
 
 // The TUI repaints this constantly while Claude is running a turn. Matched
@@ -70,8 +77,11 @@ const TITLE = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g
 // Remote Control session link shown by /remote-control.
 const REMOTE_URL = /https:\/\/claude\.ai\/code\/[A-Za-z0-9_-]{8,}/g
+// Printed by a Mac tab's launch script once the agent exits (an OSC sequence,
+// which xterm.js silently drops, so the user never sees it).
+const EXIT_MARK = '\x1b]7701;orcha-exit\x07'
 
-function claudeLaunchCommand(workspace: Workspace): string {
+function claudeArgv(workspace: Workspace): string[] {
   const parts = ['claude', '--dangerously-skip-permissions']
   if (hasSessionHistory(workspace.worktreePath)) parts.push('--continue')
   // Guests default to Sonnet: it's the best value on a fixed budget, and their
@@ -79,7 +89,24 @@ function claudeLaunchCommand(workspace: Workspace): string {
   const model = workspace.model ?? (isGuest() ? 'sonnet' : null)
   if (model) parts.push('--model', model)
   if (workspace.effort) parts.push('--effort', workspace.effort)
-  return parts.join(' ')
+  return parts
+}
+
+// A Mac tab runs the agent directly under /bin/sh with the relay settings in
+// its environment: no rc file runs first, so nothing prints ahead of the agent
+// (the dispatch boot gate counts on that) and no .zshrc export can redirect a
+// guest's billing. When the agent exits, the tab says so in plain words and
+// becomes the user's login shell in the same folder (Windows: -NoExit).
+function macLaunchScript(argv: string[], agentName: string): string {
+  const file = findExecutable(argv[0])
+  const shell = `exec ${shQuote(loginShell())} -l`
+  if (!file) {
+    const missing = `${agentName} isn't installed yet. Install it from Orcha's setup, then reopen this tab.`
+    return `printf '%s\\r\\n' ${shQuote(missing)}; ${shell}`
+  }
+  const run = [file, ...argv.slice(1)].map(shQuote).join(' ')
+  const exited = `${agentName} exited. Restart the tab to start it again.`
+  return `${run}; printf '\\033]7701;orcha-exit\\007\\r\\n%s\\r\\n' ${shQuote(exited)}; ${shell}`
 }
 
 // Remote counterpart of claudeLaunchCommand: cd into the folder on the
@@ -192,13 +219,40 @@ export class PtyManager {
       const remoteCommand = remoteClaudeCommand(workspace, hasHistory)
       // -tt forces pty allocation: ssh only auto-allocates one when no
       // command is given, and without it the remote Claude TUI gets no tty.
-      proc = pty.spawn('ssh.exe', [...sshArgs(target, { batch: false }), '-tt', remoteCommand], {
-        name: 'xterm-color',
-        cwd: process.env.USERPROFILE,
-        env: process.env as Record<string, string>,
+      const args = [...sshArgs(target, { batch: false }), '-tt', remoteCommand]
+      proc = isWin
+        ? pty.spawn('ssh.exe', args, {
+            name: 'xterm-color',
+            cwd: process.env.USERPROFILE,
+            env: process.env as Record<string, string>,
+            cols,
+            rows,
+            useConpty: true
+          })
+        : pty.spawn('ssh', args, {
+            name: 'xterm-256color',
+            cwd: homedir(),
+            env: { ...process.env, COLORTERM: 'truecolor' } as Record<string, string>,
+            cols,
+            rows
+          })
+    } else if (!isWin) {
+      let script: string | null = null
+      if (workspace?.agent === 'codex') {
+        const { file, args } = codexArgv(workspace, project)
+        script = macLaunchScript([file, ...args], 'Codex')
+      } else if (workspace) {
+        script = macLaunchScript(claudeArgv(workspace), 'Claude')
+      }
+      const env = workspace
+        ? this.authEnv(workspace, project)
+        : (process.env as Record<string, string>)
+      proc = pty.spawn(script ? '/bin/sh' : loginShell(), script ? ['-c', script] : ['-l'], {
+        name: 'xterm-256color',
+        cwd: workspace ? workspace.worktreePath : homedir(),
+        env: { ...env, COLORTERM: 'truecolor' },
         cols,
-        rows,
-        useConpty: true
+        rows
       })
     } else {
       // -NoExit: when the agent exits (/exit, crash), you land in a shell in
@@ -206,7 +260,7 @@ export class PtyManager {
       const launch = workspace
         ? workspace.agent === 'codex'
           ? codexLaunchCommand(workspace, project)
-          : claudeLaunchCommand(workspace)
+          : claudeArgv(workspace).join(' ')
         : null
       const args = launch ? ['-NoLogo', '-NoExit', '-Command', launch] : ['-NoLogo']
       proc = pty.spawn('powershell.exe', args, {
@@ -234,7 +288,9 @@ export class PtyManager {
       busyMarker: workspace?.agent === 'codex' ? CODEX_BUSY_MARKER : BUSY_MARKER,
       title: '',
       titleTail: '',
-      trustTail: workspace?.agent === 'claude' && isGuest() ? '' : null
+      trustTail: workspace?.agent === 'claude' && isGuest() ? '' : null,
+      agentExited: false,
+      exitTail: ''
     }
     this.ptys.set(workspaceId, entry)
     // The trust dialog only ever shows at startup.
@@ -243,9 +299,18 @@ export class PtyManager {
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
       entry.lastOutputAt = Date.now()
-      entry.markerTail = (entry.markerTail + data.replace(ANSI, '').replace(/\s+/g, '')).slice(-64)
-      if (entry.busyMarker.test(entry.markerTail)) {
+      // The whole chunk is scanned, not just the kept tail: Claude Code can draw
+      // a long status line right after the marker (a guest's sessions show a
+      // "connectors are disabled" warning there), which would push it out.
+      const markerScan = entry.markerTail + data.replace(ANSI, '').replace(/\s+/g, '')
+      if (entry.busyMarker.test(markerScan)) {
         entry.lastBusyMarkerAt = Date.now()
+      }
+      entry.markerTail = markerScan.slice(-64)
+      if (!isWin && !entry.agentExited) {
+        const scan = entry.exitTail + data
+        if (scan.includes(EXIT_MARK)) entry.agentExited = true
+        entry.exitTail = scan.slice(-EXIT_MARK.length)
       }
       if (data.includes('\x1b]') || entry.titleTail) {
         const scan = entry.titleTail + data
@@ -328,6 +393,11 @@ export class PtyManager {
     return at ? Date.now() - at : null
   }
 
+  // Mac/Linux: the agent has exited and the tab is a plain shell.
+  agentExited(workspaceId: string): boolean {
+    return this.ptys.get(workspaceId)?.agentExited ?? false
+  }
+
   // The terminal title the TUI last set ('' if none or not open).
   title(workspaceId: string): string {
     return this.ptys.get(workspaceId)?.title ?? ''
@@ -342,28 +412,38 @@ export class PtyManager {
   // Type a prompt into the session's Claude TUI. Boots the session first if
   // its terminal was never opened (TUI needs a few seconds before input).
   async dispatchPrompt(workspaceId: string, prompt: string): Promise<void> {
-    if (!this.ptys.has(workspaceId)) {
+    // A prompt for an agent that has exited would land in the shell and run as
+    // a command, so the agent comes back first.
+    if (this.agentExited(workspaceId)) {
+      const size = this.size(workspaceId) ?? { cols: 120, rows: 30 }
+      await this.restart(workspaceId, size.cols, size.rows)
+      await this.waitForBoot(workspaceId)
+    } else if (!this.ptys.has(workspaceId)) {
       await this.create(workspaceId, 120, 30)
-      // A booting TUI (--continue repaints history) silently eats input typed
-      // while it's still painting. An idle TUI emits nothing over ConPTY, so
-      // quiet output means the prompt is ready — but only after real output:
-      // the shell prompt paints in <1s and claude's node startup then emits
-      // NOTHING for a few seconds, so quiet alone fires inside that gap.
-      // The TUI's welcome/recap is always well over 800 chars; a bare shell
-      // prompt is far under it.
-      const deadline = Date.now() + 25_000
-      while (Date.now() < deadline) {
-        const age = this.outputAgeMs(workspaceId)
-        const booted = this.buffer(workspaceId).length > 800
-        if (booted && age !== null && age > 2500) break
-        await new Promise((r) => setTimeout(r, 300))
-      }
+      await this.waitForBoot(workspaceId)
     }
     const text = prompt.replace(/\r?\n/g, ' ').trim()
     this.write(workspaceId, text)
     // Small pause so the TUI ingests the paste before Enter.
     await new Promise((r) => setTimeout(r, 300))
     this.write(workspaceId, '\r')
+  }
+
+  private async waitForBoot(workspaceId: string): Promise<void> {
+    // A booting TUI (--continue repaints history) silently eats input typed
+    // while it's still painting. An idle TUI emits nothing over ConPTY, so
+    // quiet output means the prompt is ready — but only after real output:
+    // the shell prompt paints in <1s and claude's node startup then emits
+    // NOTHING for a few seconds, so quiet alone fires inside that gap.
+    // The TUI's welcome/recap is always well over 800 chars; a bare shell
+    // prompt is far under it.
+    const deadline = Date.now() + 25_000
+    while (Date.now() < deadline) {
+      const age = this.outputAgeMs(workspaceId)
+      const booted = this.buffer(workspaceId).length > 800
+      if (booted && age !== null && age > 2500) break
+      await new Promise((r) => setTimeout(r, 300))
+    }
   }
 
   resize(workspaceId: string, cols: number, rows: number): void {

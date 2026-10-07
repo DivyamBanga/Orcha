@@ -1,7 +1,7 @@
 import { Ledger, type GuestState } from './ledger'
 import { anthropicMeter, peekModel, responsesMeter, type Meter } from './meter'
 import { POOLS, poolForResponsesModel, type Pool } from './pricing'
-import { joinPage } from './join'
+import { joinPage, visitorFrom } from './join'
 
 export { Ledger }
 
@@ -15,6 +15,7 @@ interface Env {
   // fake upstream; production always talks to api.anthropic.com.
   ANTHROPIC_UPSTREAM?: string
   DOWNLOAD_URL: string // where an invite page sends people to get Orcha
+  MAC_DOWNLOAD_URL: string // the same for a Mac (the arm64 disk image)
 }
 
 const INVITE_TTL_MS = 7 * 24 * 3_600_000
@@ -341,16 +342,20 @@ async function guestAccount(request: Request, env: Env, path: string, url: URL):
 }
 
 // An invite link opened in a browser rather than pasted into Orcha.
-async function join(env: Env, url: URL): Promise<Response> {
+async function join(request: Request, env: Env, url: URL): Promise<Response> {
   const code = url.pathname.slice('/join/'.length).toUpperCase()
   const info = /^[A-Z0-9]{5}(-[A-Z0-9]{5}){3}$/.test(code)
     ? await ledger(env).inviteInfo(await sha256(code))
     : null
   const html = joinPage({
     link: `${url.origin}/join/${code}`,
+    code,
+    relayOrigin: url.origin,
     hostName: info?.hostName ?? null,
     usable: info?.usable ?? false,
-    downloadUrl: env.DOWNLOAD_URL
+    downloadUrl: env.DOWNLOAD_URL,
+    macDownloadUrl: env.MAC_DOWNLOAD_URL,
+    visitor: visitorFrom(request.headers.get('user-agent') ?? '')
   })
   return new Response(html, {
     headers: { 'content-type': 'text/html; charset=utf-8', 'referrer-policy': 'no-referrer' }
@@ -436,7 +441,7 @@ export default {
         return await proxyResponses(request, env, ctx, path.slice('/openai'.length))
       }
       if (path === '/v1/redeem' && request.method === 'POST') return await redeem(request, env)
-      if (path.startsWith('/join/') && request.method === 'GET') return await join(env, url)
+      if (path.startsWith('/join/') && request.method === 'GET') return await join(request, env, url)
       if (path.startsWith('/v1/me/')) return await guestAccount(request, env, path, url)
       if (path.startsWith('/admin/')) return await admin(request, env, path, url)
       return json({ error: 'Not found' }, 404)

@@ -1,7 +1,7 @@
 {
   "name": "orcha",
-  "version": "0.2.0",
-  "description": "Orchestrate parallel Claude Code sessions on Windows",
+  "version": "0.3.0",
+  "description": "Orchestrate parallel Claude Code and Codex sessions",
   "main": "./out/main/index.js",
   "author": "DivyamBanga",
   "scripts": {
@@ -17,8 +17,9 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "reinstall": "node scripts/reinstall.mjs",
-    "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:mac": "electron-vite build && electron-builder --mac --arm64 --publish never",
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.200",
@@ -59,6 +60,7 @@
     "react-dom": "^19.2.1",
     "tailwindcss": "4.3.2",
     "typescript": "^5.9.3",
-    "vite": "^7.2.6"
+    "vite": "^7.2.6",
+    "vitest": "^3.2.7"
   }
 }

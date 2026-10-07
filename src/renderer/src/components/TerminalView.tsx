@@ -7,6 +7,10 @@ import PasteHistory from './PasteHistory'
 import type { PasteTarget } from '../../../shared/types'
 import '@xterm/xterm/css/xterm.css'
 
+const isMac = window.orcha.platform === 'darwin'
+// Text above this pastes as a file reference (same limit as ClipboardService).
+const INLINE_LIMIT = 50_000
+
 // One live terminal per session (the Claude TUI runs inside it). Stays
 // mounted (hidden) across switches so the session keeps running.
 function TerminalView({
@@ -61,7 +65,7 @@ function TerminalView({
 
     const term = new Terminal({
       fontSize: 13,
-      fontFamily: "'Cascadia Code', Consolas, monospace",
+      fontFamily: "'Cascadia Code', Consolas, Menlo, monospace",
       theme: {
         background: '#09090b',
         foreground: '#d4d4d8',
@@ -80,7 +84,32 @@ function TerminalView({
     // (which Claude Code ignores on Windows — it leaves Ctrl+V to the
     // terminal) and cancel the browser's own paste, and Ctrl+C would always
     // interrupt even with text selected. Claim both keys here instead.
+    //
+    // A Mac splits the roles the way its terminals do: every Ctrl combo goes
+    // to the session (Ctrl+C always interrupts), ⌘ keys belong to the app.
+    // ⌘V runs the menu's real paste, which the paste listener below handles.
     term.attachCustomKeyEventHandler((event) => {
+      if (isMac) {
+        if (event.type !== 'keydown') return !event.metaKey
+        if (event.metaKey && !event.ctrlKey && !event.altKey) {
+          const key = event.key.toLowerCase()
+          if (key === 'c' && term.hasSelection()) {
+            event.preventDefault()
+            copySelection()
+          } else if (key === 'v' && event.shiftKey) {
+            event.preventDefault()
+            setHistoryOpen(true)
+          }
+          return false
+        }
+        // Claude Code reads Esc+Return as a newline in the prompt.
+        if (event.key === 'Enter' && (event.shiftKey || event.altKey) && !event.ctrlKey) {
+          event.preventDefault()
+          window.orcha.pty.input(workspaceId, '\x1b\r')
+          return false
+        }
+        return true
+      }
       if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true
       const key = event.key.toLowerCase()
       if (key === 'v') {
@@ -116,7 +145,36 @@ function TerminalView({
     })
     resizeObserver.observe(container)
 
+    // A Mac paste arrives as a real paste event (Orcha never reads a Mac
+    // clipboard on its own). Plain text is left to xterm's bracketed paste;
+    // files copied in Finder, images and very long text become a path to
+    // reference, the same as Ctrl+V does on Windows.
+    const onPaste = (event: ClipboardEvent): void => {
+      const data = event.clipboardData
+      if (!data) return
+      const files = Array.from(data.files)
+      const text = data.getData('text/plain')
+      if (files.length === 0 && text.length <= INLINE_LIMIT) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const clip = window.orcha.clipboard
+      const paths =
+        files.length > 0
+          ? files.map(async (file) => {
+              const local = clip.pathForFile(file)
+              if (local) return clip.pathFor(workspaceId, local)
+              const extension = file.type.split('/')[1] ?? 'bin'
+              return clip.saveBlob(workspaceId, new Uint8Array(await file.arrayBuffer()), extension)
+            })
+          : [clip.saveBlob(workspaceId, new TextEncoder().encode(text), 'txt')]
+      Promise.all(paths)
+        .then((list) => term.paste(list.map((p) => `@${p}`).join(' ') + ' '))
+        .catch(() => {})
+    }
+    if (isMac) container.addEventListener('paste', onPaste, true)
+
     return () => {
+      if (isMac) container.removeEventListener('paste', onPaste, true)
       resizeObserver.disconnect()
       dataDisposable.dispose()
       unsubData()
@@ -148,7 +206,15 @@ function TerminalView({
   const menuItems: MenuItem[] = menu
     ? [
         ...(menu.hasSelection ? [{ label: 'Copy', onClick: copySelection }] : []),
-        { label: 'Paste', onClick: pasteClipboard },
+        {
+          label: 'Paste',
+          onClick: isMac
+            ? () => {
+                termRef.current?.focus()
+                window.orcha.app.paste().catch(() => {})
+              }
+            : pasteClipboard
+        },
         { label: 'Paste from history…', onClick: () => setHistoryOpen(true) },
         {
           label: 'Select all',

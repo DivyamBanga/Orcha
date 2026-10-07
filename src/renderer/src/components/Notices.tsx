@@ -14,7 +14,7 @@ function NoticeCard({ notice }: { notice: Notice }): React.JSX.Element {
 
   // Heads-ups fade on their own; "it's used up" stays until dismissed.
   useEffect(() => {
-    if (notice.tone === 'danger') return
+    if (notice.tone === 'danger' || notice.sticky) return
     const timer = setTimeout(() => dismiss(notice.id), 12_000)
     return () => clearTimeout(timer)
   }, [notice, dismiss])
@@ -22,15 +22,24 @@ function NoticeCard({ notice }: { notice: Notice }): React.JSX.Element {
   return (
     <div className="toast popover pointer-events-auto flex w-[340px] items-start gap-3 px-3.5 py-3">
       <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE[notice.tone]}`} />
-      <button
-        onClick={() => {
-          openCredits(true)
-          dismiss(notice.id)
-        }}
-        className="min-w-0 flex-1 text-left text-[12.5px] leading-relaxed text-zinc-300 hover:text-zinc-100"
-      >
-        {notice.text}
-      </button>
+      {notice.action ? (
+        <div className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-zinc-300">
+          {notice.text}
+          <button onClick={notice.action.run} className="btn btn-secondary btn-sm mt-2 block">
+            {notice.action.label}
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => {
+            openCredits(true)
+            dismiss(notice.id)
+          }}
+          className="min-w-0 flex-1 text-left text-[12.5px] leading-relaxed text-zinc-300 hover:text-zinc-100"
+        >
+          {notice.text}
+        </button>
+      )}
       <button
         onClick={() => dismiss(notice.id)}
         className="btn btn-ghost btn-icon -mr-1.5 -mt-1 h-6 w-6 text-zinc-500"

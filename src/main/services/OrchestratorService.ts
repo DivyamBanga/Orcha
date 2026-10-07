@@ -13,10 +13,11 @@ import * as db from '../db'
 import { lastActivityAgeSeconds, readRecentActivity } from '../claudeSessions'
 import { claudeRelayEnv, isGuest } from '../guest'
 import { codexActivityAgeSeconds, codexRecentActivity } from '../codex'
+import { claudeSdkBinary } from '../platform'
+import { PROJECTS_ROOT, type ProjectService } from './ProjectService'
 import type { WorkspaceManager } from './WorkspaceManager'
 import type { PtyManager } from './PtyManager'
 import type { GitService } from './GitService'
-import type { ProjectService } from './ProjectService'
 import type { Workspace } from '../../shared/types'
 
 type SendFn = (channel: string, payload: unknown) => void
@@ -50,7 +51,7 @@ Your MCP tools (server "orcha"):
 - get_session_activity: recent transcript lines for one session.
 - send_prompt_to_session: TYPE a prompt into that session's terminal (as if the user
   typed it). Async — the session works on its own; check activity later.
-- create_project: create a brand-new GitHub repo, clone it under Desktop\\Projects,
+- create_project: create a brand-new GitHub repo, clone it under ${PROJECTS_ROOT},
   and open it as a session tab; optionally send it an initial prompt.
 - create_parallel_session: add a worktree session (own branch) to an existing project
   for parallel work; optionally send an initial prompt.
@@ -148,7 +149,7 @@ export class OrchestratorService {
 
         tool(
           'create_project',
-          'Create a new GitHub repo, clone it under Desktop\\Projects, open it as a session tab',
+          `Create a new GitHub repo, clone it under ${PROJECTS_ROOT}, open it as a session tab`,
           {
             name: z.string(),
             private: z.boolean().optional(),
@@ -256,6 +257,7 @@ export class OrchestratorService {
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           executable: 'node',
+          pathToClaudeCodeExecutable: claudeSdkBinary(),
           includePartialMessages: true,
           abortController: abort
         }

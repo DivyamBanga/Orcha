@@ -4,6 +4,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import * as db from '../db'
 import { pendingAsk, readRecentActivity } from '../claudeSessions'
+import { claudeSdkBinary } from '../platform'
 import type { NextStep, Project } from '../../shared/types'
 
 // Runs in its own folder so generations never write transcripts into a real
@@ -56,7 +57,8 @@ export async function generateNextSteps(project: Project): Promise<NextStep[]> {
       model: 'haiku',
       maxTurns: 1,
       allowedTools: [],
-      executable: 'node'
+      executable: 'node',
+      pathToClaudeCodeExecutable: claudeSdkBinary()
     }
   })
   for await (const msg of q) {

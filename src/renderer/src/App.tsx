@@ -112,10 +112,12 @@ function App(): React.JSX.Element {
     }
   }, [])
 
-  // Ctrl+1..9 jumps to a session (0 = Mission Control).
+  // Ctrl+1..9 jumps to a session (0 = Mission Control); ⌘ on a Mac, where
+  // Ctrl belongs to the terminal.
   useEffect(() => {
+    const mac = window.orcha.platform === 'darwin'
     const onKey = (e: KeyboardEvent): void => {
-      if (!e.ctrlKey || e.altKey || e.metaKey) return
+      if ((mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) || e.altKey) return
       const s = useStore.getState()
       if (e.key === '0') {
         e.preventDefault()
