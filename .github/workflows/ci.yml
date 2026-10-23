@@ -47,7 +47,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: npx electron-rebuild --force --only better-sqlite3
       - run: npx electron-vite build
       - run: npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v4

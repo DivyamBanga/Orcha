@@ -442,8 +442,8 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.GuestUsage, () => guestUsage())
   // A Mac never reads the clipboard behind the user's back (newer macOS shows
   // an "allow paste?" alert for that); invites arrive by the orcha:// link.
-  ipcMain.handle(IPC.GuestClipboardInvite, () =>
-    isMac ? null : (clipboard.readText().match(INVITE_LINK)?.[0] ?? null)
+  ipcMain.handle(IPC.GuestClipboardInvite, async () =>
+    isMac ? null : ((await clipboard.readText()).match(INVITE_LINK)?.[0] ?? null)
   )
   ipcMain.handle(IPC.GuestPendingInvite, () => takePendingInvite())
 

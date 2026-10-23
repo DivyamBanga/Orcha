@@ -74,7 +74,7 @@ export async function chatToPdf(chatId: string, path: string): Promise<void> {
     const pdf = await window.webContents.printToPDF({
       printBackground: true,
       pageSize: 'A4',
-      margins: { marginType: 'custom', top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 }
+      margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 }
     })
     writeFileSync(path, pdf)
   } finally {
