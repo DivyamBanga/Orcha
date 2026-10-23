@@ -11,7 +11,7 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   # Sibling projects with their own node_modules (the phone app alone is
   # 1.5 GB); none of it is used at runtime.
-  - '!{mobile,relay,video,scripts,.github}{,/**/*}'
+  - '!{mobile,relay,video,scripts,docs,.github}{,/**/*}'
 asarUnpack:
   - resources/**
   # The Agent SDK spawns its bundled Claude binary; node-pty ships prebuilt
