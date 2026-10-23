@@ -10,6 +10,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
 ## Decisions
 
 ### Providers and billing
+
 - **Connections**: Anthropic Console API keys (several, named; a default; choose per chat/project; per-key
   budget and usage), the Claude **Max plan** (Agent SDK; the default for Claude chats), one **Azure AI
   Foundry** resource (endpoint + key, deployments found by probing known model names, manual add), and
@@ -23,6 +24,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
   Ollama is up, else Claude Haiku 5.5. Memory writing: Haiku 5.5 on an API key (local models proved unsafe).
 
 ### Chat
+
 - Switch providers freely mid-chat (earlier turns carry over as visible text).
 - Composer: model picker (current models + "More models", provider sections, capability glyphs, prices),
   **per-model effort menu** showing only the levels a model supports (remembered per model), web search off
@@ -31,7 +33,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
   **soft words** (each new word fades in with a 2 px rise; buffered, tail-only).
 - Per-chat drawer: GPT verbosity, and sampling only where the model accepts it (Claude rejects sampling
   parameters since API version 2026-10-21).
-- **Incognito**: chosen per chat as *Personalized* (instructions, read-only memory) or *Clean slate*; never
+- **Incognito**: chosen per chat as _Personalized_ (instructions, read-only memory) or _Clean slate_; never
   saved; files deleted on close; allowed: web search, attachments, "Keep this chat"; Undo on close; not inside
   projects; Fable 5.1 unavailable (30-day retention).
 - Quote-reply on selection, branch into a new chat, exclude a message from context, find in chat.
@@ -44,6 +46,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
 - Notifications only for long replies (> ~30 s), research runs and scheduled tasks.
 
 ### Memory, projects, files
+
 - Memory: in-chat saves (with Undo) plus a background pass that tidies into editable **Topics**; global plus
   per project. Changes apply automatically, except anything learned from web pages, files or tool output,
   which waits for approval. Sensitive topics are excluded unless asked; secrets never.
@@ -56,6 +59,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
   passage. Embeddings local (qwen3-embedding) with Azure fallback.
 
 ### Tools and agents
+
 - Web search: provider-native (Anthropic, Azure) plus **Ollama web search** for local models; models search
   when they decide it helps.
 - Code execution: Anthropic sandbox / Azure code interpreter / local Pyodide (also for Max-plan chats).
@@ -65,10 +69,11 @@ Every decision below was made by the owner (October 2026). Research notes behind
   shared with Claude Code (`~/.claude/skills`).
 - Quick chat window (Ctrl+Alt+Space; saved like any chat; can grab a screenshot, selected text, clipboard).
 - Import Claude history, export everything, daily local backups (no attachments), locked chats (Windows Hello
-  + PIN; key in the OS keychain). No app lock, no full-database encryption.
+  - PIN; key in the OS keychain). No app lock, no full-database encryption.
 - Remote images in replies load on click; unfamiliar links in chats that read web pages or files confirm.
 
 ### Look and feel
+
 - Direction **Graphite**: monochrome, precise; colour still means session state only.
 - Opening **Unfold**: the mark's two panes grow into the sidebar and main area while the app loads; cold
   start only; never waits on CLI probes; reduced motion gets a short fade.
@@ -79,6 +84,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
 - Close keeps Orcha in the tray; it starts hidden at sign-in.
 
 ### Code mode
+
 - Behaviour stays; the frame gets the Graphite refresh. Terminals never animate and stay dark; tab switches
   are instant.
 - Codex tabs run directly on the Azure key. Claude Code tabs: Max plan by default, per-tab API key.
@@ -90,6 +96,7 @@ Every decision below was made by the owner (October 2026). Research notes behind
   the phone come later.
 
 ### Usage
+
 - One local, append-only ledger of every model call (chat, chores, research, Mission Control, Claude Code,
   Codex, local). Max plan shown as its real limit meters plus a separate "plan value" tile, never mixed into
   cash. Budgets are off until set; then warn at 50/80/95 % and ask before going over. The price book updates
@@ -97,20 +104,21 @@ Every decision below was made by the owner (October 2026). Research notes behind
   their price. Local models show tokens and speed only. USD with a CAD toggle.
 
 ### Process
+
 - Electron 39 → 45 first. Every milestone is committed and pushed to `main`; a GitHub release only when the
   owner says so, published with `--latest=false`, version **1.0.0**. Live API tests stay under $5 in total on
   cheap models.
 
 ## Milestones
 
-| # | Milestone | Contents |
-|---|-----------|----------|
-| 0 | Foundation | Electron 45 (+ better-sqlite3 13, async clipboard), test harness (Playwright `_electron`, fake providers, DB seams), secrets vault, connections + model catalog + price book, usage ledger and a corrected transcript scanner, guest side removed, SDK upgrades, IPC hardening |
-| 1 | Shell | Graphite tokens and primitives, mode switch, new sidebars, Unfold opening, full-page Settings, palette, startup speed, tray |
-| 2 | Chat | Direct Anthropic, Azure and Ollama adapters plus the Max plan; picker, effort, reasoning, soft-word streaming, queue, incognito, compare, presets, prompt library, context and compaction, conversation tools |
-| 3 | Knowledge | File pipeline and viewer, project index and Library, memory Topics, past-chat search |
-| 4 | Tools | Async tool runner and approvals, search, fetch, code execution, images, MCP, Skills, research, schedules, dictation |
-| 5 | Usage | Dashboard, budgets, inline cost surfaces |
-| 6 | Code mode | Bundled ConPTY + status, refresh, review dock, Codex on Azure, per-tab keys, hand-off, Mission Control picker |
-| 7 | Desktop | Quick chat, locked chats, Claude import, export and backups, notifications, phone hardening |
-| 8 | Release | 1.x update channel, README, 1.0.0 |
+| #   | Milestone  | Contents                                                                                                                                                                                                                                                                       |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0   | Foundation | Electron 45 (+ better-sqlite3 13, async clipboard), test harness (Playwright `_electron`, fake providers, DB seams), secrets vault, connections + model catalog + price book, usage ledger and a corrected transcript scanner, guest side removed, SDK upgrades, IPC hardening |
+| 1   | Shell      | Graphite tokens and primitives, mode switch, new sidebars, Unfold opening, full-page Settings, palette, startup speed, tray                                                                                                                                                    |
+| 2   | Chat       | Direct Anthropic, Azure and Ollama adapters plus the Max plan; picker, effort, reasoning, soft-word streaming, queue, incognito, compare, presets, prompt library, context and compaction, conversation tools                                                                  |
+| 3   | Knowledge  | File pipeline and viewer, project index and Library, memory Topics, past-chat search                                                                                                                                                                                           |
+| 4   | Tools      | Async tool runner and approvals, search, fetch, code execution, images, MCP, Skills, research, schedules, dictation                                                                                                                                                            |
+| 5   | Usage      | Dashboard, budgets, inline cost surfaces                                                                                                                                                                                                                                       |
+| 6   | Code mode  | Bundled ConPTY + status, refresh, review dock, Codex on Azure, per-tab keys, hand-off, Mission Control picker                                                                                                                                                                  |
+| 7   | Desktop    | Quick chat, locked chats, Claude import, export and backups, notifications, phone hardening                                                                                                                                                                                    |
+| 8   | Release    | 1.x update channel, README, 1.0.0                                                                                                                                                                                                                                              |
