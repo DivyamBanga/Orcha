@@ -143,9 +143,13 @@ const api = {
   chat: {
     list: (): Promise<ChatSummary[]> => ipcRenderer.invoke(IPC.ChatList),
     get: (chatId: string): Promise<ChatDetail | null> => ipcRenderer.invoke(IPC.ChatGet, chatId),
-    send: (input: ChatSendInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
+    send: (
+      input: ChatSendInput
+    ): Promise<{ chatId: string; userId: number; assistantId: number }> =>
       ipcRenderer.invoke(IPC.ChatSend, input),
-    retry: (input: ChatRetryInput): Promise<{ chatId: string; userId: number; assistantId: number }> =>
+    retry: (
+      input: ChatRetryInput
+    ): Promise<{ chatId: string; userId: number; assistantId: number }> =>
       ipcRenderer.invoke(IPC.ChatRetry, input),
     // Stores a file for the next message; what it is comes back.
     attach: (name: string, mime: string, data: Uint8Array): Promise<ChatFile> =>

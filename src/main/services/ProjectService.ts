@@ -8,7 +8,6 @@ import type { Agent, Project } from '../../shared/types'
 import type { WorkspaceManager } from './WorkspaceManager'
 import { verifyRemotePath } from '../ssh'
 
-
 // A Mac keeps it out of Desktop: that folder is permission-gated, and with
 // iCloud's Desktop sync on it would upload every repo (which corrupts git).
 export const PROJECTS_ROOT =

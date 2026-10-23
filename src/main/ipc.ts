@@ -52,7 +52,6 @@ import type { MobileService } from './services/MobileService'
 import type { Updater } from './updater'
 import type { ChatService } from './chat/ChatService'
 
-
 interface Services {
   workspaceManager: WorkspaceManager
   ptyManager: PtyManager

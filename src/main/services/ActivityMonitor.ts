@@ -193,7 +193,8 @@ export class ActivityMonitor {
         // lag it by a few seconds, which would shrink measured work time.
         if (next === 'working') {
           const markerAge = this.ptyManager.busyMarkerAgeMs(workspace.id)
-          const fromMarker = markerAge !== null && markerAge < MARKER_FRESH_MS ? now - markerAge : now
+          const fromMarker =
+            markerAge !== null && markerAge < MARKER_FRESH_MS ? now - markerAge : now
           const fromFlow = this.flowStart.get(workspace.id) ?? now
           this.workingSince.set(workspace.id, Math.min(fromMarker, fromFlow))
         }

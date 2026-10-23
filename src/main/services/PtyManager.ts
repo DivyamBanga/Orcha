@@ -289,10 +289,7 @@ export class PtyManager {
       busyMarker: workspace?.agent === 'codex' ? CODEX_BUSY_MARKER : BUSY_MARKER,
       title: '',
       titleTail: '',
-      firstRun:
-        workspace?.agent === 'claude' && isGuest()
-          ? { tail: '', done: new Set() }
-          : null,
+      firstRun: workspace?.agent === 'claude' && isGuest() ? { tail: '', done: new Set() } : null,
       agentExited: false,
       exitTail: ''
     }

@@ -355,10 +355,7 @@ export const useStore = create<OrchaStore>((set) => ({
   },
   setShowCredits: (show) => set({ showCredits: show }),
   loadIdentity: async () => {
-    const [identity, catalog] = await Promise.all([
-      window.orcha.identity(),
-      window.orcha.catalog()
-    ])
+    const [identity, catalog] = await Promise.all([window.orcha.identity(), window.orcha.catalog()])
     set({ identity, catalog })
   },
   // Applied as they load: the chat text size, and where the composer's model

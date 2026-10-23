@@ -3,7 +3,6 @@ import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import type { GitStatus } from '../../shared/types'
 
-
 type SendFn = (channel: string, payload: unknown) => void
 
 export class GitService {
@@ -18,11 +17,7 @@ export class GitService {
     const workspace = db.workspaces.get(workspaceId)
     if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
 
-    const out = await this.git(workspace.worktreePath, [
-      'status',
-      '--porcelain=v2',
-      '--branch'
-    ])
+    const out = await this.git(workspace.worktreePath, ['status', '--porcelain=v2', '--branch'])
     let branch = workspace.branch
     let ahead = 0
     let behind = 0
@@ -113,9 +108,7 @@ export class GitService {
     const workspace = db.workspaces.get(workspaceId)
     if (!workspace) throw new Error(`Unknown workspace: ${workspaceId}`)
     const remote = (await this.git(workspace.worktreePath, ['remote', 'get-url', 'origin'])).trim()
-    const https = remote
-      .replace(/^git@github\.com:/, 'https://github.com/')
-      .replace(/\.git$/, '')
+    const https = remote.replace(/^git@github\.com:/, 'https://github.com/').replace(/\.git$/, '')
     const branch = (
       await this.git(workspace.worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])
     ).trim()

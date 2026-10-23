@@ -156,7 +156,9 @@ export function initDb(): void {
     .all() as ProjectRow[]
   for (const p of projectRows) {
     const main = db
-      .prepare("SELECT id FROM workspaces WHERE project_id = ? AND kind = 'main' AND status = 'active'")
+      .prepare(
+        "SELECT id FROM workspaces WHERE project_id = ? AND kind = 'main' AND status = 'active'"
+      )
       .get(p.id)
     if (!main) {
       db.prepare(
@@ -246,15 +248,12 @@ export const projects = {
     )
   },
   get(id: string): Project | undefined {
-    const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
-      | ProjectRow
-      | undefined
+    const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined
     return row && toProject(row)
   },
   byRepoPath(repoPath: string): Project | undefined {
     const row = db.prepare('SELECT * FROM projects WHERE repo_path = ?').get(repoPath) as
-      | ProjectRow
-      | undefined
+      ProjectRow | undefined
     return row && toProject(row)
   },
   remove(id: string): void {
@@ -293,8 +292,7 @@ export const workspaces = {
   },
   get(id: string): Workspace | undefined {
     const row = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as
-      | WorkspaceRow
-      | undefined
+      WorkspaceRow | undefined
     return row && toWorkspace(row)
   },
   setSessionId(id: string, sessionId: string): void {
@@ -319,8 +317,7 @@ export const workspaces = {
 export const appState = {
   get(key: string): string | undefined {
     const row = db.prepare('SELECT value FROM app_state WHERE key = ?').get(key) as
-      | { value: string }
-      | undefined
+      { value: string } | undefined
     return row?.value
   },
   set(key: string, value: string): void {

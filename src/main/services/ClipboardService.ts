@@ -7,7 +7,6 @@ import * as db from '../db'
 import { sshArgs, shQuote, type SshTarget } from '../ssh'
 import type { ClipEntry, PasteTarget } from '../../shared/types'
 
-
 const HISTORY_LIMIT = 12
 const PREVIEW_CHARS = 240
 const CLIP_DIR = join(tmpdir(), 'orcha-clips')

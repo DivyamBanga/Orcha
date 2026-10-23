@@ -55,6 +55,8 @@ describe('first-run screens', () => {
   })
 
   it('leaves an ordinary prompt alone', () => {
-    expect(run(['> Try "refactor <filepath>"  ⏵⏵ bypass permissions on (shift+tab to cycle)'])).toEqual([])
+    expect(
+      run(['> Try "refactor <filepath>"  ⏵⏵ bypass permissions on (shift+tab to cycle)'])
+    ).toEqual([])
   })
 })

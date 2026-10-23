@@ -4,7 +4,6 @@ import { join } from 'path'
 import { homedir } from 'os'
 import type { CodexStatus } from '../../shared/types'
 
-
 export class CodexService {
   async status(): Promise<CodexStatus> {
     const cliInstalled = await execFileAsync('codex', ['--version'])

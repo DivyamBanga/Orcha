@@ -293,41 +293,41 @@ export class MobileService {
       .list()
       .filter((p) => !p.chatOnly)
       .map((p) => {
-      const sessions = workspaces
-        .filter((w) => w.projectId === p.id)
-        .map((w): FleetSession => {
-          const state = this.activityMonitor.current(w.id)
-          const mark = this.blocked.get(w.id)
-          // Re-verify a remembered block against the transcript: the user may
-          // have answered from the desk. SSH sessions have no local transcript,
-          // so the screen-scraped body from the ping is the card there.
-          let ask: PendingAsk | null = null
-          if (mark && state === 'waiting') {
-            ask = pendingAsk(w.worktreePath) ?? { question: mark.body, options: [] }
-          }
-          const age = lastActivityAgeSeconds(w.worktreePath)
-          return {
-            id: w.id,
-            name: w.kind === 'main' ? 'main' : w.name,
-            kind: w.kind,
-            state,
-            ask,
-            askAt: mark?.at ?? null,
-            lastLine: readRecentActivity(w.worktreePath, 1)[0] ?? null,
-            lastActivityAgoS: age === null ? null : Math.round(age),
-            terminalOpen: this.ptyManager.has(w.id)
-          }
-        })
-      const stored = this.storedNextSteps(p.id)
-      return {
-        id: p.id,
-        name: p.name,
-        ssh: Boolean(p.sshHost),
-        sessions,
-        nextSteps: stored?.steps ?? [],
-        nextStepsAt: stored?.at ?? null
-      }
-    })
+        const sessions = workspaces
+          .filter((w) => w.projectId === p.id)
+          .map((w): FleetSession => {
+            const state = this.activityMonitor.current(w.id)
+            const mark = this.blocked.get(w.id)
+            // Re-verify a remembered block against the transcript: the user may
+            // have answered from the desk. SSH sessions have no local transcript,
+            // so the screen-scraped body from the ping is the card there.
+            let ask: PendingAsk | null = null
+            if (mark && state === 'waiting') {
+              ask = pendingAsk(w.worktreePath) ?? { question: mark.body, options: [] }
+            }
+            const age = lastActivityAgeSeconds(w.worktreePath)
+            return {
+              id: w.id,
+              name: w.kind === 'main' ? 'main' : w.name,
+              kind: w.kind,
+              state,
+              ask,
+              askAt: mark?.at ?? null,
+              lastLine: readRecentActivity(w.worktreePath, 1)[0] ?? null,
+              lastActivityAgoS: age === null ? null : Math.round(age),
+              terminalOpen: this.ptyManager.has(w.id)
+            }
+          })
+        const stored = this.storedNextSteps(p.id)
+        return {
+          id: p.id,
+          name: p.name,
+          ssh: Boolean(p.sshHost),
+          sessions,
+          nextSteps: stored?.steps ?? [],
+          nextStepsAt: stored?.at ?? null
+        }
+      })
     return {
       projects,
       usage: five ? { pct: Math.round(five.utilization), resetsAt: five.resetsAt } : null,
@@ -347,8 +347,10 @@ export class MobileService {
     const url = new URL(req.url ?? '/', 'http://x')
     const path = url.pathname
     // xterm assets for the terminal peek page — no secrets in them.
-    if (path === '/xterm.js') return this.asset(res, join('@xterm', 'xterm', 'lib', 'xterm.js'), 'text/javascript')
-    if (path === '/xterm.css') return this.asset(res, join('@xterm', 'xterm', 'css', 'xterm.css'), 'text/css')
+    if (path === '/xterm.js')
+      return this.asset(res, join('@xterm', 'xterm', 'lib', 'xterm.js'), 'text/javascript')
+    if (path === '/xterm.css')
+      return this.asset(res, join('@xterm', 'xterm', 'css', 'xterm.css'), 'text/css')
 
     if (!this.authorized(req, url)) {
       res.writeHead(401, { 'content-type': 'application/json' })

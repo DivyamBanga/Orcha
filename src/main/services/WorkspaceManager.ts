@@ -133,11 +133,21 @@ export class WorkspaceManager {
     if (project) {
       await this.enqueue(workspace.projectId, async () => {
         try {
-          await this.git(project.repoPath, ['worktree', 'remove', '--force', workspace.worktreePath])
+          await this.git(project.repoPath, [
+            'worktree',
+            'remove',
+            '--force',
+            workspace.worktreePath
+          ])
         } catch {
           // Windows file locks: retry once after the holder had time to die.
           await new Promise((r) => setTimeout(r, 500))
-          await this.git(project.repoPath, ['worktree', 'remove', '--force', workspace.worktreePath])
+          await this.git(project.repoPath, [
+            'worktree',
+            'remove',
+            '--force',
+            workspace.worktreePath
+          ])
         }
         await this.git(project.repoPath, ['worktree', 'prune'])
       })
