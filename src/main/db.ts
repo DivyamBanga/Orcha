@@ -6,8 +6,9 @@ import type { Project, Workspace, WorkspaceAuth } from '../shared/types'
 
 let db: Database.Database
 
-export function initDb(): void {
-  db = new Database(join(app.getPath('userData'), 'orcha.db'))
+// The file is only passed by tests that want a database of their own.
+export function initDb(file?: string): void {
+  db = new Database(file ?? join(app.getPath('userData'), 'orcha.db'))
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
@@ -171,6 +172,11 @@ export function initDb(): void {
 }
 
 // The open database, for modules that keep their own queries (chat/store.ts).
+// Releases the file (Windows can't delete a database that is still open).
+export function closeDb(): void {
+  db?.close()
+}
+
 export function database(): Database.Database {
   return db
 }

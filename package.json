@@ -9,7 +9,8 @@
     "lint": "eslint --cache .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:e2e",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
@@ -18,7 +19,8 @@
     "reinstall": "node scripts/reinstall.mjs",
     "build:mac": "electron-vite build && electron-builder --mac --arm64 --publish never",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.309",
@@ -44,6 +46,7 @@
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.2",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "^22.19.1",

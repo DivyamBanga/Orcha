@@ -27,6 +27,7 @@ import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
 import { isMac, resolveShellEnv, startLogFile } from './platform'
 import { Updater } from './updater'
+import { isE2e } from './e2e'
 import { ChatService } from './chat/ChatService'
 import { serveAttachments } from './chat/attachments'
 import { serveArtifacts } from './chat/artifactRuntime'
@@ -119,6 +120,8 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
+    // Under test the window sits off-screen so it can't cover the owner's work.
+    ...(isE2e ? { x: -32000, y: -32000 } : {}),
     autoHideMenuBar: true,
     backgroundColor: surface(),
     title: 'Orcha',
@@ -141,7 +144,9 @@ function createWindow(): void {
   appWindow = mainWindow
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    // Shown without focus under test (a never-shown window renders no frames).
+    if (isE2e) mainWindow.showInactive()
+    else mainWindow.show()
   })
 
   nativeTheme.on('updated', () => {
@@ -231,7 +236,7 @@ function createWindow(): void {
   }
   const updater = new Updater(send)
   updater.busy = () => activityMonitor.anyWorking()
-  updater.start()
+  if (!isE2e) updater.start()
   // The phone companion opens a network port, so it only starts at launch on
   // a machine where it's already been set up; otherwise the first open of
   // Settings → Phone starts it (and a fresh install never meets a firewall
