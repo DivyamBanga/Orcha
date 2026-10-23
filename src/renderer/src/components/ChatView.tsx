@@ -180,7 +180,7 @@ function ChatView({ workspaceId }: { workspaceId: string }): React.JSX.Element {
             ))}
             {slashCommands.length === 0 && (
               <div className="px-3 py-1.5 font-mono text-[11px] text-zinc-600">
-                commands appear after the session's first message
+                commands appear after the session&apos;s first message
               </div>
             )}
           </div>

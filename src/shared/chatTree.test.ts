@@ -3,7 +3,11 @@ import { deepestLatest, pathTo, siblings } from './chatTree'
 
 // 1 → 2 → 3, with an edited user message 4 (sibling of 2) → 5, and a retry 6
 // of reply 3.
-const m = (id: number, parentId: number | null, createdAt: number) => ({ id, parentId, createdAt })
+const m = (
+  id: number,
+  parentId: number | null,
+  createdAt: number
+): { id: number; parentId: number | null; createdAt: number } => ({ id, parentId, createdAt })
 const chat = [m(1, null, 1), m(2, 1, 2), m(3, 2, 3), m(4, 1, 4), m(5, 4, 5), m(6, 2, 6)]
 
 describe('chat tree', () => {

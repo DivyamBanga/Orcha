@@ -6,7 +6,9 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  // mobile/ and video/ are separate projects with their own toolchains, and
+  // relay/.wrangler holds wrangler's generated bundles.
+  { ignores: ['**/node_modules', '**/dist', '**/out', 'relay/.wrangler', 'mobile', 'video'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],
@@ -15,6 +17,14 @@ export default defineConfig(
       react: {
         version: 'detect'
       }
+    }
+  },
+  // Plain JS scripts: no type annotations to write, and .cjs files require().
+  {
+    files: ['**/*.{js,mjs,cjs}'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/no-require-imports': 'off'
     }
   },
   {
