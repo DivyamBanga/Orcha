@@ -1,7 +1,8 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { catalog } from '../catalog'
+import { models } from '../connections'
 import { pathTo } from '../../shared/chatTree'
+import { modelLabel } from '../../shared/models'
 import { artifactsAsCode } from '../../shared/artifacts'
 import { chats, messages } from './store'
 
@@ -12,8 +13,8 @@ import { chats, messages } from './store'
 function chatMarkdown(chatId: string): { title: string; text: string } | null {
   const chat = chats.get(chatId)
   if (!chat) return null
-  const label = (id: string | null): string =>
-    catalog().models.find((m) => m.id === id)?.label ?? id ?? 'Assistant'
+  const offered = models()
+  const label = (id: string | null): string => (id ? modelLabel(id, offered) : 'Assistant')
   const title = chat.title ?? 'New chat'
   const lines = [`# ${title}`, '', `_${new Date(chat.createdAt).toLocaleString('en-US')}_`, '']
   const notes: string[] = []

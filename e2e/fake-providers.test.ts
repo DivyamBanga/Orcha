@@ -23,10 +23,39 @@ describe('fake providers', () => {
   })
 
   it('streams an Azure reply that ends in response.completed', async () => {
-    const res = await post(`${fake.azureUrl}/openai/v1/responses`, { model: 'm', input: 'yo' })
+    const res = await post(`${fake.azureUrl}/openai/v1/responses`, {
+      model: 'gpt-6-sol',
+      input: 'yo',
+      stream: true
+    })
     const text = await res.text()
     expect(text).toContain('response.output_text.delta')
     expect(text).toContain('event: response.completed')
+  })
+
+  it('has one Azure deployment, and refuses a probe as invalid rather than answering it', async () => {
+    const missing = await post(`${fake.azureUrl}/openai/v1/responses`, {
+      model: 'gpt-5',
+      input: 'x'
+    })
+    expect(missing.status).toBe(404)
+    const probe = await post(`${fake.azureUrl}/openai/v1/responses`, {
+      model: 'gpt-6-sol',
+      input: 'x',
+      max_output_tokens: 1
+    })
+    expect(probe.status).toBe(400)
+  })
+
+  it('lists models for a key and refuses one with "bad" in it', async () => {
+    const ok = await fetch(`${fake.anthropicUrl}/v1/models`, {
+      headers: { authorization: 'Bearer sk-ant-test' }
+    })
+    expect(((await ok.json()) as { data: unknown[] }).data.length).toBeGreaterThan(0)
+    const bad = await fetch(`${fake.anthropicUrl}/v1/models`, {
+      headers: { authorization: 'Bearer sk-ant-bad' }
+    })
+    expect(bad.status).toBe(401)
   })
 
   it('answers the Ollama discovery calls and chats in NDJSON', async () => {

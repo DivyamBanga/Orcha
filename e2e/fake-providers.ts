@@ -323,6 +323,28 @@ function ollamaPieces(model: string, p: Plan): string[] {
 
 // ---------------------------------------------------------------- server
 
+// The models a fake Anthropic key reaches, and the one deployment on the fake
+// Azure resource.
+const ANTHROPIC_MODELS = [
+  {
+    type: 'model',
+    id: 'claude-haiku-5-5',
+    display_name: 'Claude Haiku 5.5',
+    created_at: '2026-09-01T00:00:00Z',
+    max_input_tokens: 200_000,
+    max_tokens: 64_000
+  },
+  {
+    type: 'model',
+    id: 'claude-sonnet-5-5',
+    display_name: 'Claude Sonnet 5.5',
+    created_at: '2026-09-01T00:00:00Z',
+    max_input_tokens: 1_000_000,
+    max_tokens: 64_000
+  }
+]
+export const AZURE_DEPLOYED = ['gpt-6-sol']
+
 async function handle(
   req: IncomingMessage,
   res: ServerResponse,
@@ -338,6 +360,53 @@ async function handle(
   const body = req.method === 'POST' ? await readBody(req) : null
   requests.push({ provider, method: req.method ?? 'GET', path, body })
   const model = (body as { model?: string } | null)?.model ?? 'fake-model'
+
+  // What Settings asks when a key or Azure is added. A key with "bad" in it
+  // is refused. (Anthropic's SDK sends its key as a bearer token since 1.0.)
+  const key = String(
+    req.headers['x-api-key'] ?? req.headers['api-key'] ?? req.headers.authorization ?? ''
+  )
+  if (provider !== 'ollama' && key.includes('bad')) {
+    return sendJson(
+      res,
+      401,
+      provider === 'azure'
+        ? { error: { code: '401', message: 'Access denied due to invalid subscription key.' } }
+        : { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }
+    )
+  }
+  if (provider === 'anthropic' && req.method === 'GET' && path === '/v1/models') {
+    return sendJson(res, 200, {
+      data: ANTHROPIC_MODELS,
+      has_more: false,
+      first_id: ANTHROPIC_MODELS[0].id,
+      last_id: ANTHROPIC_MODELS[ANTHROPIC_MODELS.length - 1].id
+    })
+  }
+  if (provider === 'azure') {
+    if (req.method === 'GET' && path === '/openai/v1/models') {
+      return sendJson(res, 200, { object: 'list', data: [] })
+    }
+    // Only AZURE_DEPLOYED exists; anything else is the "no such deployment"
+    // a probe looks for. A request that can't succeed (the probe's: not
+    // streamed, too few output tokens) is refused as invalid, never answered.
+    if (req.method === 'POST') {
+      const named = (body as { model?: string } | null)?.model
+      if (!named || !AZURE_DEPLOYED.includes(named)) {
+        return sendJson(res, 404, {
+          error: {
+            code: 'DeploymentNotFound',
+            message: 'The API deployment for this resource does not exist.'
+          }
+        })
+      }
+      if (!(body as { stream?: boolean }).stream) {
+        return sendJson(res, 400, {
+          error: { code: 'integer_below_min_value', message: 'max_output_tokens is too small.' }
+        })
+      }
+    }
+  }
 
   if (provider === 'ollama') {
     if (path === '/api/version') return sendJson(res, 200, { version: '0.30.3' })

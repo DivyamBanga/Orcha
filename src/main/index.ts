@@ -32,6 +32,7 @@ import { isE2e } from './e2e'
 import { ChatService } from './chat/ChatService'
 import { serveAttachments } from './chat/attachments'
 import { serveArtifacts } from './chat/artifactRuntime'
+import { initConnections } from './connections'
 
 // Replaces Electron's default menu so the editing roles — and the
 // Ctrl+C/X/V/A accelerators that come with them — are guaranteed in every
@@ -319,6 +320,12 @@ app.whenReady().then(async () => {
   buildMenu()
   initDb()
   startUsage()
+  // Every window hears when a key, Azure or Ollama changes the models on offer.
+  initConnections(() => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(IPC.EvModelsChanged, {})
+    }
+  })
   serveAttachments()
   serveArtifacts()
 

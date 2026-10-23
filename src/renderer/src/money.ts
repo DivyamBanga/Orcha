@@ -1,4 +1,5 @@
-import type { Catalog, CatalogModel, PoolBalance } from '../../shared/types'
+import type { PoolBalance } from '../../shared/types'
+import type { ChatModel } from '../../shared/ai'
 
 // Dollars as the Guests panel and chat replies show them: two decimals, and a
 // small spend never shows as nothing.
@@ -33,10 +34,16 @@ export function levelColors(level: PoolLevel): { text: string; fill: string } {
   return { text: 'text-zinc-300', fill: 'bg-zinc-300' }
 }
 
-// The Codex model a tab runs: its own if still on offer, else the default.
-export function codexModel(model: string | null, catalog: Catalog | null): CatalogModel | null {
-  const models = catalog?.models.filter((m) => m.codex) ?? []
-  return models.find((m) => m.id === model) ?? models.find((m) => m.default) ?? models[0] ?? null
+// The Codex model a tab runs, by Azure deployment name: its own if still on
+// offer, else GPT-6 Sol, else the first deployment.
+export function codexModel(model: string | null, models: ChatModel[]): ChatModel | null {
+  const azure = models.filter((m) => m.route === 'azure')
+  return (
+    azure.find((m) => m.apiModel === model) ??
+    azure.find((m) => m.apiModel === 'gpt-6-sol') ??
+    azure[0] ??
+    null
+  )
 }
 
 // "claude-sonnet-5-5-20260928" → "Sonnet 5.5", "gpt-6-astra" → "GPT-6 Astra".

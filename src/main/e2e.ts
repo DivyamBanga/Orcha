@@ -27,3 +27,16 @@ export function e2eEndpoint(kind: E2eEndpointKind): string | null {
     return null
   }
 }
+
+// A fetch that sends what was meant for `real` (an origin, like the owner's
+// Azure endpoint) to the test's fake server instead; plain fetch otherwise.
+export function e2eFetch(kind: E2eEndpointKind, real: string): typeof fetch {
+  const fake = e2eEndpoint(kind)
+  if (!fake) return fetch
+  const from = real.replace(/\/+$/, '')
+  return (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const to = url.startsWith(from) ? fake + url.slice(from.length) : url
+    return fetch(input instanceof Request ? new Request(to, input) : to, init)
+  }
+}

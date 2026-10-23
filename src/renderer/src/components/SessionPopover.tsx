@@ -65,11 +65,11 @@ function AgentPicker({
   workspace: Workspace
   onClose: () => void
 }): React.JSX.Element {
-  const catalog = useStore((s) => s.catalog)
-  const codexDefault = codexModel(null, catalog)?.id ?? 'gpt-6-sol'
-  const codexChoices: [string, string][] = (catalog?.models ?? [])
-    .filter((m) => m.codex)
-    .map((m) => [m.id, m.label])
+  const offered = useStore((s) => s.models)
+  const codexDefault = codexModel(null, offered)?.apiModel ?? 'gpt-6-sol'
+  const codexChoices: [string, string][] = offered
+    .filter((m) => m.route === 'azure')
+    .map((m) => [m.apiModel, m.label])
   const load = useStore((s) => s.load)
   const [agent, setAgent] = useState<Agent>(workspace.agent)
   const [model, setModel] = useState<string>(

@@ -1,11 +1,6 @@
-import {
-  MODEL_SPECS,
-  specFor,
-  type Effort,
-  type ModelSpec,
-  type Reasoning
-} from '../../shared/models'
-import type { ChatModel, Connections, LocalModel, Route } from '../../shared/ai'
+import { MODEL_SPECS, specFor, type ModelSpec, type Reasoning } from '../../shared/models'
+import type { ChatModel, Connections, Route } from '../../shared/ai'
+import { localChatModel } from '../chat/providers/ollama'
 
 // Every model the picker offers, from every connection: Claude on the Max
 // plan, Claude on API keys, the enabled chat deployments on Azure, and the
@@ -116,43 +111,13 @@ function azureModels(c: Connections): ChatModel[] {
     })
 }
 
-// How a local model's thinking is controlled: a switch for models that think
-// on or off, effort levels for the ones that take levels (gpt-oss).
-function localReasoning(model: LocalModel): Reasoning {
-  if (Array.isArray(model.think)) {
-    const levels = model.think.filter((l): l is Effort => ['low', 'medium', 'high'].includes(l))
-    return { levels, defaultLevel: levels.includes('medium') ? 'medium' : null, off: 'omit' }
-  }
-  return model.think
-    ? { levels: [], defaultLevel: null, off: 'omit', offByDefault: true }
-    : NO_REASONING
-}
-
+// The Ollama provider describes its own models (thinking switch or levels,
+// output cap), so the picker and the requests agree.
 function localModels(c: Connections): ChatModel[] {
   const ready = c.ollama.status === 'running'
   return c.ollama.models
     .filter((m) => m.capabilities.includes('completion'))
-    .map((m) => ({
-      id: `ollama:${m.name}`,
-      route: 'ollama' as const,
-      apiModel: m.name,
-      label: m.name,
-      description: [m.parameters, 'on this computer'].filter(Boolean).join(' · '),
-      spec: null,
-      current: true,
-      context: m.context,
-      maxOutput: m.context,
-      vision: m.capabilities.includes('vision'),
-      pdf: false,
-      tools: m.capabilities.includes('tools'),
-      reasoning: localReasoning(m),
-      sampling: 'always' as const,
-      verbosity: false,
-      webSearch: false,
-      retains30d: false,
-      price: null,
-      ready
-    }))
+    .map((m) => localChatModel(m, ready))
 }
 
 export function buildCatalog(c: Connections, listed: ListedModel[] | null): ChatModel[] {

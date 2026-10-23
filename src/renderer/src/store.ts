@@ -11,9 +11,9 @@ import type {
   UsageSummary,
   Agent,
   Identity,
-  Catalog,
   ChatSettings
 } from '../../shared/types'
+import type { ChatModel } from '../../shared/ai'
 
 // A small in-app message (a new version, a chat that couldn't send, and the
 // like). Not an OS toast: these are about the app itself, so they only matter
@@ -83,9 +83,9 @@ interface OrchaStore {
   showPalette: boolean
 
   notices: Notice[]
-  // Who this Orcha is, and the models on offer (null until loaded).
+  // Who this Orcha is (null until loaded), and the models on offer.
   identity: Identity | null
-  catalog: Catalog | null
+  models: ChatModel[]
   // Settings → Profile, Appearance and Defaults (null until loaded).
   settings: ChatSettings | null
 
@@ -114,6 +114,7 @@ interface OrchaStore {
   setShowUsageDashboard: (show: boolean) => void
   loadUsageSummary: (force?: boolean) => Promise<void>
   loadIdentity: () => Promise<void>
+  loadModels: () => Promise<void>
   loadSettings: () => Promise<void>
   saveSettings: (changes: Partial<ChatSettings>) => void
   pushNotice: (notice: Notice) => void
@@ -146,7 +147,7 @@ export const useStore = create<OrchaStore>((set) => ({
   showPalette: false,
   notices: [],
   identity: null,
-  catalog: null,
+  models: [],
   settings: null,
 
   checkSetup: async () => {
@@ -318,8 +319,11 @@ export const useStore = create<OrchaStore>((set) => ({
     set({ usageSummary, usageSummaryFetchedAt: Date.now() })
   },
   loadIdentity: async () => {
-    const [identity, catalog] = await Promise.all([window.orcha.identity(), window.orcha.catalog()])
-    set({ identity, catalog })
+    const [identity, models] = await Promise.all([window.orcha.identity(), window.orcha.models()])
+    set({ identity, models })
+  },
+  loadModels: async () => {
+    set({ models: await window.orcha.models() })
   },
   // Applied as they load: the chat text size, and where the composer's model
   // and toggles start.

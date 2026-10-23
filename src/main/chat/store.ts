@@ -39,7 +39,6 @@ function toChat(r: ChatRow): StoredChat {
     id: r.id,
     projectId: r.project_id,
     title: r.title,
-    provider: r.provider === 'azure' ? 'azure' : 'anthropic',
     model: r.model,
     starred: r.starred === 1,
     createdAt: r.created_at,

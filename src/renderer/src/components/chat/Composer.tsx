@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useStore } from '../../store'
 import {
   addFiles,
-  chatModels,
   pickModel,
+  ROUTES,
   removeFile,
   setDraft,
   useChatStore,
@@ -11,26 +11,34 @@ import {
 } from '../../chatStore'
 import { fileMeta } from '../../attach'
 import { ArrowUp, Check, ChevronDown, Close, FileDoc, Globe, Paperclip, Spark, Stop } from '../Icon'
-import type { CatalogModel } from '../../../../shared/types'
+import { hasThinkingSwitch } from '../../../../shared/models'
+import type { ChatModel, Route } from '../../../../shared/ai'
 
-const providerName = (provider: string): string => (provider === 'anthropic' ? 'Claude' : 'GPT')
+// Why a model can't be used right now, in a few words.
+const NOT_READY: Record<Route, string> = {
+  plan: 'Sign in to Claude Code first',
+  api: 'Check the key in Settings',
+  azure: 'Check Azure in Settings',
+  ollama: 'Ollama isn’t running'
+}
 
 function ModelPicker({
   route,
-  model,
-  chatProvider
+  model
 }: {
   route: string
-  model: CatalogModel | null
-  chatProvider: string | null
+  model: ChatModel | null
 }): React.JSX.Element {
-  const catalog = useStore((s) => s.catalog)
+  const models = useStore((s) => s.models)
   const [open, setOpen] = useState(false)
+  // Older and less used models wait under "More models".
+  const [more, setMore] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const models = chatModels(catalog)
-  const groups = ['anthropic', 'azure']
-    .map((provider) => ({ provider, models: models.filter((m) => m.provider === provider) }))
+  const shown = (m: ChatModel): boolean => more || m.current || m.id === model?.id
+  const groups = ROUTES.map((g) => ({ ...g, models: models.filter((m) => m.route === g.route) }))
+    .map((g) => ({ ...g, models: g.models.filter(shown) }))
     .filter((g) => g.models.length > 0)
+  const hidden = models.some((m) => !shown(m))
 
   useEffect(() => {
     if (!open) return
@@ -62,29 +70,26 @@ function ModelPicker({
       {open && (
         <div
           style={{ transformOrigin: 'bottom left' }}
-          className="popover absolute bottom-full left-0 z-20 mb-2 w-72 p-1"
+          className="popover absolute bottom-full left-0 z-20 mb-2 max-h-[60vh] w-80 overflow-y-auto p-1"
         >
           {groups.map((group) => (
-            <div key={group.provider} className="py-0.5">
-              <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
-                <span className="eyebrow">{providerName(group.provider)}</span>
-                {chatProvider && chatProvider !== group.provider && (
-                  <span className="text-[11px] text-zinc-600">starts a new chat</span>
-                )}
+            <div key={group.route} className="py-0.5">
+              <div className="px-2.5 pb-1 pt-1.5">
+                <span className="eyebrow">{group.label}</span>
               </div>
               {group.models.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => {
                     setOpen(false)
-                    pickModel(route, m, chatProvider)
+                    pickModel(route, m)
                   }}
-                  className="menu-item h-auto items-start py-1.5"
+                  className={`menu-item h-auto items-start py-1.5 ${m.ready ? '' : 'opacity-60'}`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block text-zinc-200">{m.label}</span>
                     <span className="block text-[11.5px] leading-snug text-zinc-500">
-                      {m.description}
+                      {m.ready ? m.description : NOT_READY[m.route]}
                     </span>
                   </span>
                   {m.id === model?.id && (
@@ -96,6 +101,16 @@ function ModelPicker({
               ))}
             </div>
           ))}
+          {groups.length === 0 && (
+            <div className="px-2.5 py-2 text-[12.5px] text-zinc-500">
+              No models yet. Add a key or Azure in Settings → Models &amp; keys.
+            </div>
+          )}
+          {hidden && (
+            <button onClick={() => setMore(true)} className="menu-item text-zinc-400">
+              More models
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -169,14 +184,12 @@ function Attachment({
 function Composer({
   route,
   model,
-  chatProvider,
   running,
   onSend,
   onStop
 }: {
   route: string
-  model: CatalogModel | null
-  chatProvider: string | null
+  model: ChatModel | null
   running: boolean
   onSend: (text: string, model: string) => Promise<void>
   onStop: () => void
@@ -215,10 +228,10 @@ function Composer({
       .finally(() => setSending(false))
   }
 
-  const thinkingTitle =
-    model?.thinking === 'always'
-      ? 'Think longer before answering (this model always thinks some)'
-      : 'Think before answering'
+  // Models that always think, or never do, have no switch for it.
+  const canThink = model
+    ? hasThinkingSwitch(model.reasoning) || Boolean(model.reasoning.budgetOnly)
+    : false
 
   return (
     <div
@@ -254,9 +267,7 @@ function Composer({
             send()
           }
         }}
-        placeholder={
-          model ? `Ask ${providerName(model.provider)} anything` : 'Pick a model to start'
-        }
+        placeholder={model ? `Ask ${model.label} anything` : 'Pick a model to start'}
         className="composer-input"
       />
       <div className="flex items-center gap-1 px-2 pb-2">
@@ -277,15 +288,17 @@ function Composer({
         >
           <Paperclip size={15} />
         </button>
-        <ModelPicker route={route} model={model} chatProvider={chatProvider} />
-        <Toggle
-          on={thinking}
-          onClick={() => useChatStore.setState({ thinking: !thinking })}
-          title={thinkingTitle}
-        >
-          <Spark size={13} />
-          Think
-        </Toggle>
+        <ModelPicker route={route} model={model} />
+        {canThink && (
+          <Toggle
+            on={thinking}
+            onClick={() => useChatStore.setState({ thinking: !thinking })}
+            title="Think before answering"
+          >
+            <Spark size={13} />
+            Think
+          </Toggle>
+        )}
         {model?.webSearch && (
           <Toggle
             on={webSearch}

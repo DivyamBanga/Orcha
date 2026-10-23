@@ -2,9 +2,8 @@ import { create } from 'zustand'
 import { useStore } from './store'
 import { deepestLatest } from '../../shared/chatTree'
 import { prepare } from './attach'
+import type { ChatModel, Route } from '../../shared/ai'
 import type {
-  Catalog,
-  CatalogModel,
   ChatDetail,
   ChatFile,
   ChatMessage,
@@ -134,20 +133,31 @@ function clearFiles(route: string): void {
   updateFiles(route, () => [])
 }
 
-// The models you can chat with.
-export function chatModels(catalog: Catalog | null): CatalogModel[] {
-  return catalog?.models.filter((m) => m.chat) ?? []
-}
+// The picker's sections, in order: where each model runs and who pays.
+export const ROUTES: { route: Route; label: string }[] = [
+  { route: 'plan', label: 'Claude · Max plan' },
+  { route: 'api', label: 'Claude · API key' },
+  { route: 'azure', label: 'Azure' },
+  { route: 'ollama', label: 'On this computer' }
+]
 
-// Where a new chat starts: the last model picked, else the catalog's default.
-export function defaultModel(catalog: Catalog | null): string | null {
-  const usable = chatModels(catalog)
-  const picked = useChatStore.getState().picked[NEW_CHAT]
-  if (picked && usable.some((m) => m.id === picked)) return picked
+// What a new chat starts on unless you pick another: Opus 5.5 on the Max plan.
+const DEFAULT_MODEL = 'plan:claude-opus-5-5'
+
+// Where a new chat starts: the last model picked (one saved before 1.0 named
+// a Max-plan model without its route), else the default, else the first
+// model that's ready.
+export function defaultModel(
+  models: ChatModel[],
+  picked: string | undefined = useChatStore.getState().picked[NEW_CHAT]
+): string | null {
+  for (const id of picked ? [picked, `plan:${picked}`] : []) {
+    if (models.some((m) => m.id === id)) return id
+  }
   return (
-    usable.find((m) => m.default && m.provider === 'anthropic')?.id ??
-    usable.find((m) => m.default)?.id ??
-    usable[0]?.id ??
+    models.find((m) => m.id === DEFAULT_MODEL)?.id ??
+    models.find((m) => m.ready && m.current)?.id ??
+    models[0]?.id ??
     null
   )
 }
@@ -172,18 +182,8 @@ export function setDraft(route: string, text: string): void {
   useChatStore.setState((s) => ({ drafts: { ...s.drafts, [route]: text } }))
 }
 
-// Picks the model for the next message. Claude and GPT can't share a chat, so
-// a pick across starts a new chat on it, taking the unsent text and files.
-export function pickModel(route: string, model: CatalogModel, chatProvider: string | null): void {
-  if (chatProvider && chatProvider !== model.provider) {
-    useChatStore.setState((s) => ({
-      picked: { ...s.picked, [NEW_CHAT]: model.id },
-      drafts: { ...s.drafts, [NEW_CHAT]: s.drafts[route] ?? '', [route]: '' },
-      attachments: { ...s.attachments, [NEW_CHAT]: s.attachments[route] ?? [], [route]: [] }
-    }))
-    useStore.getState().setActive(NEW_CHAT)
-    return
-  }
+// Picks the model for the next message. Any model can carry on any chat.
+export function pickModel(route: string, model: ChatModel): void {
   useChatStore.setState((s) => ({ picked: { ...s.picked, [route]: model.id } }))
 }
 

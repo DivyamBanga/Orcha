@@ -1,5 +1,8 @@
 import { execFileAsync } from './exec'
 import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
+import { pathToFileURL } from 'url'
+import { is } from '@electron-toolkit/utils'
 import { existsSync, mkdirSync } from 'fs'
 import { join, sep } from 'path'
 import { homedir } from 'os'
@@ -7,7 +10,17 @@ import { IPC } from '../shared/ipc'
 import * as db from './db'
 import { sessionUsage } from './claudeSessions'
 import { computeUsageSummary } from './usage'
-import { catalog } from './catalog'
+import {
+  cancelPull,
+  connections,
+  connectionsChanged,
+  connectionState,
+  models,
+  ollamaManager,
+  pullModel,
+  refreshListed,
+  refreshOllama
+} from './connections'
 import { codexProvider } from './codex'
 import { relayAdmin, relayAdminStatus } from './relayAdmin'
 import { isMac } from './platform'
@@ -54,6 +67,41 @@ interface Services {
   chatService: ChatService
 }
 
+// The page every Orcha window shows: the dev server while developing, the
+// built index.html otherwise.
+const APP_PAGE =
+  is.dev && process.env['ELECTRON_RENDERER_URL']
+    ? new URL(process.env['ELECTRON_RENDERER_URL'])
+    : pathToFileURL(join(__dirname, '../renderer/index.html'))
+
+// Only Orcha's own pages may call into the main process: a window's top
+// frame showing the app. Never an artifact's frame, nor a page a window was
+// steered to (a link, a redirect), whatever it manages to load.
+function fromApp(event: IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame
+  if (!frame || frame !== event.sender.mainFrame) return false
+  let url: URL
+  try {
+    url = new URL(frame.url)
+  } catch {
+    return false
+  }
+  return APP_PAGE.protocol === 'file:'
+    ? url.protocol === 'file:' && url.pathname.toLowerCase() === APP_PAGE.pathname.toLowerCase()
+    : url.origin === APP_PAGE.origin
+}
+
+// ipcMain.handle, for Orcha's own pages only (see fromApp).
+function handle(
+  channel: string,
+  fn: (event: IpcMainInvokeEvent, ...args: never[]) => unknown
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!fromApp(event)) throw new Error('Not allowed.')
+    return fn(event, ...(args as never[]))
+  })
+}
+
 export function registerIpc(mainWindow: BrowserWindow, services: Services): void {
   const {
     workspaceManager,
@@ -71,7 +119,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- setup / onboarding ---------------------------------------------------
 
-  ipcMain.handle(IPC.SetupStatus, async () => {
+  handle(IPC.SetupStatus, async () => {
     let gh = false
     try {
       await execFileAsync('gh', ['auth', 'status'])
@@ -93,7 +141,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   const agentFor = (agent?: Agent): Agent =>
     agent === 'codex' && codexProvider() ? 'codex' : 'claude'
 
-  ipcMain.handle(
+  handle(
     IPC.ProjectsAdd,
     async (_e, pickedPath?: string, agent?: Agent): Promise<Project | null> => {
       let repoPath = pickedPath
@@ -115,12 +163,12 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // A plain folder picked by someone who just wants to work in it: make it a
   // git repo (sessions, worktrees and the git chip all need one), then open it.
-  ipcMain.handle(IPC.ProjectsInitGit, async (_e, folder: string, agent?: Agent) => {
+  handle(IPC.ProjectsInitGit, async (_e, folder: string, agent?: Agent) => {
     await execFileAsync('git', ['init'], { cwd: folder })
     return projectService.addLocal(folder, agentFor(agent))
   })
 
-  ipcMain.handle(IPC.ProjectsList, () => db.projects.list())
+  handle(IPC.ProjectsList, () => db.projects.list())
 
   // Projects for chats: one with no folder, its instructions (the repo's
   // CLAUDE.md when it has one here), and its knowledge files.
@@ -129,27 +177,27 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     if (!p) throw new Error('That project no longer exists.')
     return p
   }
-  ipcMain.handle(IPC.ProjectsCreateChat, (_e, name: string) =>
+  handle(IPC.ProjectsCreateChat, (_e, name: string) =>
     projectService.createChatProject(String(name))
   )
-  ipcMain.handle(IPC.ProjectInstructions, (_e, id: string) => projectInstructions(project(id)))
-  ipcMain.handle(IPC.ProjectSetInstructions, (_e, id: string, text: string) =>
+  handle(IPC.ProjectInstructions, (_e, id: string) => projectInstructions(project(id)))
+  handle(IPC.ProjectSetInstructions, (_e, id: string, text: string) =>
     setProjectInstructions(project(id), String(text))
   )
-  ipcMain.handle(IPC.ProjectFiles, (_e, id: string) => knowledge.list(id))
-  ipcMain.handle(IPC.ProjectAddFile, (_e, id: string, file: ChatFile) =>
+  handle(IPC.ProjectFiles, (_e, id: string) => knowledge.list(id))
+  handle(IPC.ProjectAddFile, (_e, id: string, file: ChatFile) =>
     knowledge.add(project(id).id, file)
   )
-  ipcMain.handle(IPC.ProjectRemoveFile, (_e, fileId: number) => knowledge.remove(fileId))
+  handle(IPC.ProjectRemoveFile, (_e, fileId: number) => knowledge.remove(fileId))
 
-  ipcMain.handle(IPC.ProjectsCreateRepo, (_e, name: string, isPrivate: boolean, agent?: Agent) =>
+  handle(IPC.ProjectsCreateRepo, (_e, name: string, isPrivate: boolean, agent?: Agent) =>
     projectService.createRepo(name, isPrivate, agentFor(agent))
   )
-  ipcMain.handle(IPC.ProjectsListGithub, () => projectService.listGithub())
-  ipcMain.handle(IPC.ProjectsCloneGithub, (_e, nameWithOwner: string, agent?: Agent) =>
+  handle(IPC.ProjectsListGithub, () => projectService.listGithub())
+  handle(IPC.ProjectsCloneGithub, (_e, nameWithOwner: string, agent?: Agent) =>
     projectService.cloneGithub(nameWithOwner, agentFor(agent))
   )
-  ipcMain.handle(
+  handle(
     IPC.ProjectsAddRemote,
     (_e, host: string, user: string, port: number | null, remotePath: string) =>
       projectService.addRemote(host, user, port, remotePath)
@@ -157,7 +205,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- sessions (workspaces) ---------------------------------------------------
 
-  ipcMain.handle(
+  handle(
     IPC.WorkspacesCreate,
     (
       _e,
@@ -175,57 +223,55 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
         agentFor(agent)
       )
   )
-  ipcMain.handle(IPC.WorkspacesList, () => db.workspaces.listActive())
-  ipcMain.handle(IPC.WorkspacesArchive, (_e, workspaceId: string) =>
-    workspaceManager.archive(workspaceId)
-  )
+  handle(IPC.WorkspacesList, () => db.workspaces.listActive())
+  handle(IPC.WorkspacesArchive, (_e, workspaceId: string) => workspaceManager.archive(workspaceId))
 
   // --- Mission Control chat ------------------------------------------------
 
-  ipcMain.handle(IPC.OrchestratorSend, (_e, text: string) => orchestratorService.sendPrompt(text))
-  ipcMain.handle(IPC.OrchestratorInterrupt, () => orchestratorService.interrupt())
-  ipcMain.handle(IPC.OrchestratorHistory, () => orchestratorService.getHistory())
+  handle(IPC.OrchestratorSend, (_e, text: string) => orchestratorService.sendPrompt(text))
+  handle(IPC.OrchestratorInterrupt, () => orchestratorService.interrupt())
+  handle(IPC.OrchestratorHistory, () => orchestratorService.getHistory())
 
   // --- git -------------------------------------------------------------------
 
-  ipcMain.handle(IPC.GitStatus, (_e, workspaceId: string) => gitService.status(workspaceId))
-  ipcMain.handle(IPC.GitCommitPush, (_e, workspaceId: string, message: string) =>
+  handle(IPC.GitStatus, (_e, workspaceId: string) => gitService.status(workspaceId))
+  handle(IPC.GitCommitPush, (_e, workspaceId: string, message: string) =>
     gitService.commitAndPush(workspaceId, message)
   )
-  ipcMain.handle(IPC.GitCreatePr, (_e, workspaceId: string) => gitService.createPr(workspaceId))
-  ipcMain.handle(IPC.GitPull, (_e, workspaceId: string) => gitService.pull(workspaceId))
-  ipcMain.handle(IPC.GitOpenGithub, async (_e, workspaceId: string) => {
+  handle(IPC.GitCreatePr, (_e, workspaceId: string) => gitService.createPr(workspaceId))
+  handle(IPC.GitPull, (_e, workspaceId: string) => gitService.pull(workspaceId))
+  handle(IPC.GitOpenGithub, async (_e, workspaceId: string) => {
     const url = await gitService.githubUrl(workspaceId)
     await shell.openExternal(url)
   })
-  ipcMain.handle(IPC.ShellOpenPath, (_e, path: string) => shell.openPath(path))
-  ipcMain.handle(IPC.ProjectsRemove, (_e, projectId: string) => projectService.remove(projectId))
+  handle(IPC.ShellOpenPath, (_e, path: string) => shell.openPath(path))
+  handle(IPC.ProjectsRemove, (_e, projectId: string) => projectService.remove(projectId))
 
   // --- terminals ---------------------------------------------------------------
 
-  ipcMain.handle(IPC.PtyCreate, (_e, workspaceId: string, cols: number, rows: number) =>
+  handle(IPC.PtyCreate, (_e, workspaceId: string, cols: number, rows: number) =>
     ptyManager.create(workspaceId, cols, rows)
   )
-  ipcMain.handle(IPC.PtyInput, (_e, workspaceId: string, data: string) =>
+  handle(IPC.PtyInput, (_e, workspaceId: string, data: string) =>
     ptyManager.write(workspaceId, data)
   )
-  ipcMain.handle(IPC.PtyResize, (_e, workspaceId: string, cols: number, rows: number) =>
+  handle(IPC.PtyResize, (_e, workspaceId: string, cols: number, rows: number) =>
     ptyManager.resize(workspaceId, cols, rows)
   )
-  ipcMain.handle(IPC.PtyKill, (_e, workspaceId: string) => ptyManager.kill(workspaceId))
-  ipcMain.handle(IPC.PtyRestart, (_e, workspaceId: string, cols: number, rows: number) =>
+  handle(IPC.PtyKill, (_e, workspaceId: string) => ptyManager.kill(workspaceId))
+  handle(IPC.PtyRestart, (_e, workspaceId: string, cols: number, rows: number) =>
     ptyManager.restart(workspaceId, cols, rows)
   )
 
   // Typing a prompt into a session's TUI from UI buttons ("Ask Claude ...").
-  ipcMain.handle(IPC.SessionSend, (_e, workspaceId: string, text: string) =>
+  handle(IPC.SessionSend, (_e, workspaceId: string, text: string) =>
     ptyManager.dispatchPrompt(workspaceId, text)
   )
 
   // Token usage/estimated cost for a workspace's current session, parsed
   // from its local transcript. Remote (SSH) workspaces have no local
   // transcript to read, so this returns null for those.
-  ipcMain.handle(IPC.SessionUsage, (_e, workspaceId: string) => {
+  handle(IPC.SessionUsage, (_e, workspaceId: string) => {
     const workspace = db.workspaces.get(workspaceId)
     if (!workspace) return null
     const project = db.projects.get(workspace.projectId)
@@ -235,23 +281,21 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // Per-workspace auth-mode override (subscription login vs. API key).
   // Applies on the next restart of that workspace's pty (see PtyManager.authEnv).
-  ipcMain.handle(IPC.WorkspaceAuthGet, (_e, workspaceId: string) =>
-    db.workspaceAuth.get(workspaceId)
-  )
-  ipcMain.handle(IPC.WorkspaceAuthSet, (_e, workspaceId: string, auth: WorkspaceAuth) =>
+  handle(IPC.WorkspaceAuthGet, (_e, workspaceId: string) => db.workspaceAuth.get(workspaceId))
+  handle(IPC.WorkspaceAuthSet, (_e, workspaceId: string, auth: WorkspaceAuth) =>
     db.workspaceAuth.set(workspaceId, auth)
   )
 
   // Real subscription limits from Anthropic's usage endpoint, plus local
   // transcript-derived attribution for what's consuming them — see
   // planUsage.ts and usage/insights.ts.
-  ipcMain.handle(IPC.UsageSummary, (_e, force?: boolean) => computeUsageSummary(force === true))
+  handle(IPC.UsageSummary, (_e, force?: boolean) => computeUsageSummary(force === true))
 
   // Connect a session to your phone via Claude Code's official Remote Control:
   // type /remote-control into the TUI, then watch its output for the session
   // link. The link only counts if printed after the command was sent, so a
   // stale URL from a --continue recap can't win.
-  ipcMain.handle(IPC.SessionRemoteControl, async (_e, workspaceId: string) => {
+  handle(IPC.SessionRemoteControl, async (_e, workspaceId: string) => {
     // Esc closes the TUI's Remote Control panel, which otherwise stays open
     // as a dialog and swallows the next dispatched prompt. The connection
     // itself stays up. Skipped while output is streaming, where Esc would
@@ -296,58 +340,50 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- live share ------------------------------------------------------------
 
-  ipcMain.handle(IPC.ShareStart, (_e, workspaceId: string) => shareService.start(workspaceId))
-  ipcMain.handle(IPC.ShareStop, (_e, workspaceId: string) => shareService.stop(workspaceId))
+  handle(IPC.ShareStart, (_e, workspaceId: string) => shareService.start(workspaceId))
+  handle(IPC.ShareStop, (_e, workspaceId: string) => shareService.stop(workspaceId))
 
   // --- clipboard -------------------------------------------------------------
 
-  ipcMain.handle(IPC.ClipboardPaste, (_e, workspaceId: string) =>
-    clipboardService.paste(workspaceId)
-  )
-  ipcMain.handle(IPC.ClipboardCopy, (_e, text: string) => clipboardService.copy(text))
-  ipcMain.handle(IPC.ClipboardHistory, () => clipboardService.entries())
-  ipcMain.handle(IPC.ClipboardUse, (_e, workspaceId: string, id: string) =>
+  handle(IPC.ClipboardPaste, (_e, workspaceId: string) => clipboardService.paste(workspaceId))
+  handle(IPC.ClipboardCopy, (_e, text: string) => clipboardService.copy(text))
+  handle(IPC.ClipboardHistory, () => clipboardService.entries())
+  handle(IPC.ClipboardUse, (_e, workspaceId: string, id: string) =>
     clipboardService.use(workspaceId, id)
   )
   // Files dropped onto a session: local sessions reference them where they
   // are, remote ones get a copy on the server first.
-  ipcMain.handle(IPC.SessionPathFor, (_e, workspaceId: string, localPath: string) =>
+  handle(IPC.SessionPathFor, (_e, workspaceId: string, localPath: string) =>
     clipboardService.pathFor(workspaceId, localPath)
   )
-  ipcMain.handle(
-    IPC.ClipboardSaveBlob,
-    (_e, workspaceId: string, data: Uint8Array, extension: string) =>
-      clipboardService.saveBlob(workspaceId, data, extension.replace(/[^a-z0-9]/gi, '') || 'bin')
+  handle(IPC.ClipboardSaveBlob, (_e, workspaceId: string, data: Uint8Array, extension: string) =>
+    clipboardService.saveBlob(workspaceId, data, extension.replace(/[^a-z0-9]/gi, '') || 'bin')
   )
   // The terminal's own "Paste" menu item on a Mac: a real paste into the
   // focused field, so it takes the same path as ⌘V.
-  ipcMain.handle(IPC.AppPaste, () => mainWindow.webContents.paste())
+  handle(IPC.AppPaste, () => mainWindow.webContents.paste())
 
   // --- chat ------------------------------------------------------------------
 
-  ipcMain.handle(IPC.ChatList, () => chatService.list())
-  ipcMain.handle(IPC.ChatGet, (_e, chatId: string) => chatService.detail(chatId))
-  ipcMain.handle(IPC.ChatSend, (_e, input: ChatSendInput) => chatService.send(input))
-  ipcMain.handle(IPC.ChatRetry, (_e, input: ChatRetryInput) => chatService.retry(input))
-  ipcMain.handle(IPC.ChatAttach, (_e, name: string, mime: string, data: Uint8Array) =>
+  handle(IPC.ChatList, () => chatService.list())
+  handle(IPC.ChatGet, (_e, chatId: string) => chatService.detail(chatId))
+  handle(IPC.ChatSend, (_e, input: ChatSendInput) => chatService.send(input))
+  handle(IPC.ChatRetry, (_e, input: ChatRetryInput) => chatService.retry(input))
+  handle(IPC.ChatAttach, (_e, name: string, mime: string, data: Uint8Array) =>
     chatService.attach(String(name), String(mime), new Uint8Array(data))
   )
-  ipcMain.handle(IPC.ChatStop, (_e, chatId: string) => chatService.stop(chatId))
-  ipcMain.handle(IPC.ChatSetLeaf, (_e, chatId: string, leafId: number) =>
+  handle(IPC.ChatStop, (_e, chatId: string) => chatService.stop(chatId))
+  handle(IPC.ChatSetLeaf, (_e, chatId: string, leafId: number) =>
     chatService.setLeaf(chatId, leafId)
   )
-  ipcMain.handle(IPC.ChatRename, (_e, chatId: string, title: string) =>
-    chatService.rename(chatId, title)
-  )
-  ipcMain.handle(IPC.ChatStar, (_e, chatId: string, starred: boolean) =>
-    chatService.star(chatId, starred)
-  )
-  ipcMain.handle(IPC.ChatDelete, (_e, chatId: string) => chatService.remove(chatId))
-  ipcMain.handle(IPC.ChatSearch, (_e, query: string) => chatService.search(query))
-  ipcMain.handle(IPC.ChatDeleteAll, () => chatService.removeAll())
+  handle(IPC.ChatRename, (_e, chatId: string, title: string) => chatService.rename(chatId, title))
+  handle(IPC.ChatStar, (_e, chatId: string, starred: boolean) => chatService.star(chatId, starred))
+  handle(IPC.ChatDelete, (_e, chatId: string) => chatService.remove(chatId))
+  handle(IPC.ChatSearch, (_e, query: string) => chatService.search(query))
+  handle(IPC.ChatDeleteAll, () => chatService.removeAll())
   // Export as Markdown: one chat to a file, or every chat into a folder.
   // Null when the dialog is cancelled.
-  ipcMain.handle(IPC.ChatExport, async (_e, chatId: string, title: string) => {
+  handle(IPC.ChatExport, async (_e, chatId: string, title: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       defaultPath: join(app.getPath('documents'), `${fileName(title)}.md`),
       filters: [{ name: 'Markdown', extensions: ['md'] }]
@@ -356,7 +392,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     exportChat(chatId, filePath)
     return filePath
   })
-  ipcMain.handle(IPC.ChatExportPdf, async (_e, chatId: string, title: string) => {
+  handle(IPC.ChatExportPdf, async (_e, chatId: string, title: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
       defaultPath: join(app.getPath('documents'), `${fileName(title)}.pdf`),
       filters: [{ name: 'PDF', extensions: ['pdf'] }]
@@ -365,9 +401,9 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     await chatToPdf(chatId, filePath)
     return filePath
   })
-  ipcMain.handle(IPC.ArtifactPopOut, (_e, artifact: ArtifactSnapshot) => popOutArtifact(artifact))
-  ipcMain.handle(IPC.ArtifactSnapshot, (_e, id: string) => artifactSnapshot(id))
-  ipcMain.handle(IPC.ChatExportAll, async () => {
+  handle(IPC.ArtifactPopOut, (_e, artifact: ArtifactSnapshot) => popOutArtifact(artifact))
+  handle(IPC.ArtifactSnapshot, (_e, id: string) => artifactSnapshot(id))
+  handle(IPC.ChatExportAll, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose a folder for your chats',
       defaultPath: app.getPath('documents'),
@@ -377,20 +413,18 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     return { folder: filePaths[0], count: exportAllChats(filePaths[0]) }
   })
 
-  ipcMain.handle(IPC.MemoryList, () => chatService.memories())
-  ipcMain.handle(IPC.MemoryUpdate, (_e, id: number, text: string) =>
-    chatService.updateMemory(id, text)
-  )
-  ipcMain.handle(IPC.MemoryRemove, (_e, id: number) => chatService.removeMemory(id))
-  ipcMain.handle(IPC.MemoryClear, () => chatService.clearMemories())
+  handle(IPC.MemoryList, () => chatService.memories())
+  handle(IPC.MemoryUpdate, (_e, id: number, text: string) => chatService.updateMemory(id, text))
+  handle(IPC.MemoryRemove, (_e, id: number) => chatService.removeMemory(id))
+  handle(IPC.MemoryClear, () => chatService.clearMemories())
 
   // --- settings --------------------------------------------------------------
 
-  ipcMain.handle(IPC.SettingsGet, () => chatSettings())
-  ipcMain.handle(IPC.SettingsSet, (_e, changes: Partial<ChatSettings>) => saveChatSettings(changes))
+  handle(IPC.SettingsGet, () => chatSettings())
+  handle(IPC.SettingsSet, (_e, changes: Partial<ChatSettings>) => saveChatSettings(changes))
   // Light, dark, or the system's. The window follows through
   // prefers-color-scheme, and its frame through nativeTheme's 'updated'.
-  ipcMain.handle(IPC.AppSetTheme, (_e, theme: string) => {
+  handle(IPC.AppSetTheme, (_e, theme: string) => {
     const value = theme === 'light' || theme === 'dark' ? theme : 'system'
     db.appState.set('ui:theme', value)
     nativeTheme.themeSource = value
@@ -398,12 +432,12 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- updates and support ---------------------------------------------------
 
-  ipcMain.handle(IPC.UpdateStatus, () => updater.status())
-  ipcMain.handle(IPC.UpdateInstall, () => updater.install())
+  handle(IPC.UpdateStatus, () => updater.status())
+  handle(IPC.UpdateInstall, () => updater.install())
 
   // Switch what a tab runs (Claude/Codex) and on which model, then restart it
   // in place; the conversation resumes.
-  ipcMain.handle(
+  handle(
     IPC.SessionSetAgent,
     async (_e, workspaceId: string, agent: Agent, model: string | null) => {
       db.workspaces.setAgentModel(workspaceId, agentFor(agent), model)
@@ -417,48 +451,126 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // The host is the machine with a relay's admin file; Codex needs an Azure
   // connection.
-  ipcMain.handle(IPC.Identity, (): Identity => ({
+  handle(IPC.Identity, (): Identity => ({
     kind: relayAdminStatus().configured ? 'host' : 'local',
     codex: codexProvider() !== null
   }))
-  ipcMain.handle(IPC.Catalog, () => catalog())
+  handle(IPC.Models, () => models())
+
+  // --- Settings → Models & keys -----------------------------------------------
+  // A key is only ever sent this way (pasted into Settings); none comes back.
+
+  handle(IPC.Connections, () => connectionState())
+  // A change to the default key changes which models Anthropic lists.
+  const keysChanged = (): void => {
+    connectionsChanged()
+    void refreshListed()
+  }
+  handle(IPC.KeyAdd, async (_e, label: string, key: string) => {
+    const added = await connections().addKey(String(label), String(key))
+    keysChanged()
+    return added
+  })
+  handle(IPC.KeyRemove, (_e, id: string) => {
+    connections().removeKey(String(id))
+    keysChanged()
+  })
+  handle(IPC.KeySetDefault, (_e, id: string) => {
+    connections().setDefaultKey(String(id))
+    keysChanged()
+  })
+  handle(IPC.KeyRename, (_e, id: string, label: string) => {
+    connections().updateKey(String(id), { label: String(label) })
+    connectionsChanged()
+  })
+  handle(IPC.KeyCheck, async (_e, id: string) => {
+    const key = await connections().checkKey(String(id))
+    connectionsChanged()
+    return key
+  })
+  handle(IPC.AzureSet, async (_e, endpoint: string, key: string) => {
+    const azure = await connections().setAzure(String(endpoint), String(key))
+    connectionsChanged()
+    return azure
+  })
+  handle(IPC.AzureReprobe, async () => {
+    const azure = await connections().reprobeAzure()
+    connectionsChanged()
+    return azure
+  })
+  handle(IPC.AzureRemove, () => {
+    connections().removeAzure()
+    connectionsChanged()
+  })
+  handle(
+    IPC.AzureSetDeployment,
+    (_e, name: string, patch: { model?: string | null; enabled?: boolean }) => {
+      const clean = String(name).trim()
+      if (!clean) throw new Error('Type the deployment name as it appears in Azure.')
+      connections().setDeployment(clean, {
+        ...(patch && 'model' in patch ? { model: patch.model ? String(patch.model) : null } : {}),
+        ...(typeof patch?.enabled === 'boolean' ? { enabled: patch.enabled } : {})
+      })
+      connectionsChanged()
+    }
+  )
+  handle(IPC.AzureRemoveDeployment, (_e, name: string) => {
+    connections().removeDeployment(String(name))
+    connectionsChanged()
+  })
+  handle(IPC.OllamaRefresh, () => refreshOllama())
+  handle(IPC.OllamaStart, async () => {
+    await ollamaManager().ensureRunning()
+    return refreshOllama()
+  })
+  handle(IPC.OllamaPull, (_e, name: string) => {
+    // Runs on; progress arrives as ev:models:changed.
+    void pullModel(String(name).trim())
+  })
+  handle(IPC.OllamaCancelPull, (_e, name: string) => cancelPull(String(name)))
+  handle(IPC.OllamaRemove, async (_e, name: string) => {
+    await ollamaManager().remove(String(name))
+    return refreshOllama()
+  })
+  handle(IPC.OllamaUnload, async (_e, name: string) => {
+    await ollamaManager().unload(String(name))
+    return refreshOllama()
+  })
 
   // --- host: managing guests on your own relay ---------------------------------
 
-  ipcMain.handle(IPC.RelayAdminStatus, () => relayAdminStatus())
-  ipcMain.handle(IPC.RelayAdminGuests, () => relayAdmin.guests())
-  ipcMain.handle(
+  handle(IPC.RelayAdminStatus, () => relayAdminStatus())
+  handle(IPC.RelayAdminGuests, () => relayAdmin.guests())
+  handle(
     IPC.RelayAdminCreate,
     (_e, name: string, hostName: string, caps: Record<CreditPool, number>) =>
       relayAdmin.create(name, hostName, caps)
   )
-  ipcMain.handle(IPC.RelayAdminInvite, (_e, guestId: string) => relayAdmin.invite(guestId))
-  ipcMain.handle(IPC.RelayAdminBalance, (_e, guestId: string, pool: CreditPool, balance: number) =>
+  handle(IPC.RelayAdminInvite, (_e, guestId: string) => relayAdmin.invite(guestId))
+  handle(IPC.RelayAdminBalance, (_e, guestId: string, pool: CreditPool, balance: number) =>
     relayAdmin.setBalance(guestId, pool, balance)
   )
-  ipcMain.handle(IPC.RelayAdminPause, (_e, guestId: string, pool: CreditPool, paused: boolean) =>
+  handle(IPC.RelayAdminPause, (_e, guestId: string, pool: CreditPool, paused: boolean) =>
     relayAdmin.setPaused(guestId, pool, paused)
   )
-  ipcMain.handle(IPC.RelayAdminAccess, (_e, guestId: string, access: 'revoke' | 'restore') =>
+  handle(IPC.RelayAdminAccess, (_e, guestId: string, access: 'revoke' | 'restore') =>
     relayAdmin.setAccess(guestId, access)
   )
 
   // --- codex plugin ------------------------------------------------------
 
-  ipcMain.handle(IPC.CodexStatus, () => codexService.status())
-  ipcMain.handle(IPC.CodexSetup, () => codexService.setup())
+  handle(IPC.CodexStatus, () => codexService.status())
+  handle(IPC.CodexSetup, () => codexService.setup())
 
   // Pairing info for the phone companion (Settings → Phone shows it as a QR).
-  ipcMain.handle(IPC.MobileInfo, async () => {
+  handle(IPC.MobileInfo, async () => {
     await mobileService.ensureStarted()
     return mobileService.info()
   })
 
   // Small persisted UI state (open sessions, last active) in app_state.
-  ipcMain.handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)
-  ipcMain.handle(IPC.UiSaveState, (_e, key: string, value: string) =>
-    db.appState.set(`ui:${key}`, value)
-  )
+  handle(IPC.UiGetState, (_e, key: string) => db.appState.get(`ui:${key}`) ?? null)
+  handle(IPC.UiSaveState, (_e, key: string, value: string) => db.appState.set(`ui:${key}`, value))
 }
 
 // Claude Code on a Mac keeps its login in the Keychain rather than in

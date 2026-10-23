@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { useStore } from '../store'
-import { chatModels, defaultModel, NEW_CHAT, useChatStore } from '../chatStore'
+import { defaultModel, NEW_CHAT, ROUTES, useChatStore } from '../chatStore'
 import Modal from './Modal'
 import GuestsPanel from './GuestsPanel'
+import ModelsPanel from './ModelsPanel'
 import { Check as CheckIcon, Circle, Close } from './Icon'
 import type { CodexStatus, Memory, MobileInfo } from '../../../shared/types'
 
@@ -18,11 +19,20 @@ function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element
   )
 }
 
-type Section = 'Profile' | 'Appearance' | 'Defaults' | 'Memory' | 'Data' | 'Guests' | 'Integrations'
+type Section =
+  | 'Profile'
+  | 'Appearance'
+  | 'Models & keys'
+  | 'Defaults'
+  | 'Memory'
+  | 'Data'
+  | 'Guests'
+  | 'Integrations'
 
 const SECTIONS: Section[] = [
   'Profile',
   'Appearance',
+  'Models & keys',
   'Defaults',
   'Memory',
   'Data',
@@ -67,6 +77,7 @@ function SettingsModal(): React.JSX.Element {
           </button>
           {section === 'Profile' && <ProfileSection />}
           {section === 'Appearance' && <AppearanceSection />}
+          {section === 'Models & keys' && <ModelsPanel />}
           {section === 'Defaults' && <DefaultsSection />}
           {section === 'Memory' && <MemorySection />}
           {section === 'Data' && <DataSection />}
@@ -243,11 +254,10 @@ function AppearanceSection(): React.JSX.Element {
 
 function DefaultsSection(): React.JSX.Element | null {
   const settings = useStore((s) => s.settings)
-  const catalog = useStore((s) => s.catalog)
+  const models = useStore((s) => s.models)
   const save = useStore((s) => s.saveSettings)
   if (!settings) return null
-  const models = chatModels(catalog)
-  const current = settings.model ?? defaultModel(catalog) ?? ''
+  const current = defaultModel(models, settings.model ?? undefined) ?? ''
   return (
     <>
       <Heading
@@ -260,11 +270,11 @@ function DefaultsSection(): React.JSX.Element | null {
           onChange={(e) => save({ model: e.target.value })}
           className="input w-56"
         >
-          {(['anthropic', 'azure'] as const).map((provider) => {
-            const group = models.filter((m) => m.provider === provider)
+          {ROUTES.map(({ route, label }) => {
+            const group = models.filter((m) => m.route === route)
             if (group.length === 0) return null
             return (
-              <optgroup key={provider} label={provider === 'anthropic' ? 'Claude' : 'GPT'}>
+              <optgroup key={route} label={label}>
                 {group.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}

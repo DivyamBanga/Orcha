@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { database } from '../db'
 import { hasAttachment, readAttachment } from './attachments'
-import { fileText } from './adapter'
+import { fileText } from './provider'
 import type { ChatFile, Project, ProjectInstructions } from '../../shared/types'
 
 // What chats in a project start with: its instructions and its knowledge

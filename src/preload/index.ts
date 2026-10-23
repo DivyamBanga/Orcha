@@ -16,7 +16,6 @@ import type {
   CreditPool,
   UpdateState,
   Identity,
-  Catalog,
   ChatDetail,
   ChatFile,
   ChatRetryInput,
@@ -27,6 +26,7 @@ import type {
   ArtifactSnapshot,
   ChatSummary
 } from '../shared/types'
+import type { ApiKey, AzureConnection, ChatModel, Connections, OllamaState } from '../shared/ai'
 
 const api = {
   // 'darwin' | 'win32' | … — for the few places the UI differs (⌘ vs Ctrl).
@@ -150,8 +150,38 @@ const api = {
     search: (query: string): Promise<{ chatId: string; messageId: number; snippet: string }[]> =>
       ipcRenderer.invoke(IPC.ChatSearch, query)
   },
-  // The models on offer.
-  catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
+  // The models on offer, from every connection; ev:models:changed means they
+  // (or the connections) changed.
+  models: (): Promise<ChatModel[]> => ipcRenderer.invoke(IPC.Models),
+  // Settings → Models & keys. Keys go in; only a hint ever comes back.
+  connections: {
+    get: (): Promise<Connections> => ipcRenderer.invoke(IPC.Connections),
+    addKey: (label: string, key: string): Promise<ApiKey> =>
+      ipcRenderer.invoke(IPC.KeyAdd, label, key),
+    removeKey: (id: string): Promise<void> => ipcRenderer.invoke(IPC.KeyRemove, id),
+    setDefaultKey: (id: string): Promise<void> => ipcRenderer.invoke(IPC.KeySetDefault, id),
+    renameKey: (id: string, label: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.KeyRename, id, label),
+    checkKey: (id: string): Promise<ApiKey | null> => ipcRenderer.invoke(IPC.KeyCheck, id),
+    setAzure: (endpoint: string, key: string): Promise<AzureConnection> =>
+      ipcRenderer.invoke(IPC.AzureSet, endpoint, key),
+    reprobeAzure: (): Promise<AzureConnection | null> => ipcRenderer.invoke(IPC.AzureReprobe),
+    removeAzure: (): Promise<void> => ipcRenderer.invoke(IPC.AzureRemove),
+    setDeployment: (
+      name: string,
+      patch: { model?: string | null; enabled?: boolean }
+    ): Promise<void> => ipcRenderer.invoke(IPC.AzureSetDeployment, name, patch),
+    removeDeployment: (name: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.AzureRemoveDeployment, name),
+    ollama: {
+      refresh: (): Promise<OllamaState> => ipcRenderer.invoke(IPC.OllamaRefresh),
+      start: (): Promise<OllamaState> => ipcRenderer.invoke(IPC.OllamaStart),
+      pull: (name: string): Promise<void> => ipcRenderer.invoke(IPC.OllamaPull, name),
+      cancelPull: (name: string): Promise<void> => ipcRenderer.invoke(IPC.OllamaCancelPull, name),
+      remove: (name: string): Promise<OllamaState> => ipcRenderer.invoke(IPC.OllamaRemove, name),
+      unload: (name: string): Promise<OllamaState> => ipcRenderer.invoke(IPC.OllamaUnload, name)
+    }
+  },
   // An artifact in a window of its own (the window reads it back by id).
   artifact: {
     popOut: (artifact: ArtifactSnapshot): Promise<void> =>

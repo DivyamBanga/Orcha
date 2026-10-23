@@ -13,8 +13,8 @@ function NewSessionModal(): React.JSX.Element {
   const setShow = useStore((s) => s.setShowNewSession)
   const createParallelSession = useStore((s) => s.createParallelSession)
   const codexAvailable = useCodexAvailable()
-  const catalog = useStore((s) => s.catalog)
-  const codexDefault = codexModel(null, catalog)?.id ?? 'gpt-6-sol'
+  const models = useStore((s) => s.models)
+  const codexDefault = codexModel(null, models)?.apiModel ?? 'gpt-6-sol'
 
   const [projectId, setProjectId] = useState('')
   const [name, setName] = useState('')
@@ -32,9 +32,9 @@ function NewSessionModal(): React.JSX.Element {
 
   const modelChoices: [string, string][] =
     agent === 'codex'
-      ? (catalog?.models ?? [])
-          .filter((m) => m.codex)
-          .map((m): [string, string] => [m.id === codexDefault ? '' : m.id, m.label])
+      ? models
+          .filter((m) => m.route === 'azure')
+          .map((m): [string, string] => [m.apiModel === codexDefault ? '' : m.apiModel, m.label])
       : [
           ['', 'Default'],
           ['opus', 'Opus'],

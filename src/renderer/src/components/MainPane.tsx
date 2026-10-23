@@ -7,7 +7,8 @@ import ProjectHome from './chat/ProjectHome'
 import TerminalView from './TerminalView'
 import SessionPopover from './SessionPopover'
 import { ArrowDown, ArrowUp, ChevronDown, Diamond } from './Icon'
-import type { Catalog, Workspace } from '../../../shared/types'
+import type { Workspace } from '../../../shared/types'
+import type { ChatModel } from '../../../shared/ai'
 
 function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
   const status = useStore((s) => s.gitStatus[workspaceId])
@@ -41,8 +42,8 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
 }
 
 // What a Codex tab runs: "Codex · GPT-6 Sol".
-function codexLabel(workspace: Workspace, catalog: Catalog | null): string {
-  return `Codex · ${codexModel(workspace.model, catalog)?.label ?? modelName(workspace.model ?? '')}`
+function codexLabel(workspace: Workspace, models: ChatModel[]): string {
+  return `Codex · ${codexModel(workspace.model, models)?.label ?? modelName(workspace.model ?? '')}`
 }
 
 function MainPane(): React.JSX.Element {
@@ -57,7 +58,7 @@ function MainPane(): React.JSX.Element {
   const setLinkModal = useStore((s) => s.setLinkModal)
   const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
   const setUsage = useStore((s) => s.setUsage)
-  const catalog = useStore((s) => s.catalog)
+  const models = useStore((s) => s.models)
   const [gitBusy, setGitBusy] = useState(false)
   const [showSession, setShowSession] = useState(false)
   const workspaceId = workspace?.id
@@ -220,7 +221,7 @@ function MainPane(): React.JSX.Element {
           <span className="truncate font-medium text-zinc-50">{workspace.name}</span>
           {workspace.agent === 'codex' && (
             <span className="shrink-0 whitespace-nowrap text-[12px] text-zinc-500">
-              {codexLabel(workspace, catalog)}
+              {codexLabel(workspace, models)}
             </span>
           )}
           {!project?.sshHost && (

@@ -54,9 +54,27 @@ export const IPC = {
   SessionSetAgent: 'session:setAgent',
   ProjectsInitGit: 'projects:initGit',
 
-  // who this Orcha is, and the models it offers
+  // who this Orcha is, the models it offers, and the connections they come
+  // from (Settings → Models & keys)
   Identity: 'identity:get',
-  Catalog: 'catalog:get',
+  Models: 'models:list',
+  Connections: 'connections:get',
+  KeyAdd: 'keys:add',
+  KeyRemove: 'keys:remove',
+  KeySetDefault: 'keys:setDefault',
+  KeyRename: 'keys:rename',
+  KeyCheck: 'keys:check',
+  AzureSet: 'azure:set',
+  AzureReprobe: 'azure:reprobe',
+  AzureRemove: 'azure:remove',
+  AzureSetDeployment: 'azure:setDeployment',
+  AzureRemoveDeployment: 'azure:removeDeployment',
+  OllamaRefresh: 'ollama:refresh',
+  OllamaStart: 'ollama:start',
+  OllamaPull: 'ollama:pull',
+  OllamaCancelPull: 'ollama:cancelPull',
+  OllamaRemove: 'ollama:remove',
+  OllamaUnload: 'ollama:unload',
 
   // chat
   ChatList: 'chat:list',
@@ -110,5 +128,6 @@ export const IPC = {
   EvShareStatus: 'ev:share:status',
   EvChat: 'ev:chat',
   EvChatsChanged: 'ev:chats:changed',
+  EvModelsChanged: 'ev:models:changed',
   EvUpdate: 'ev:update'
 } as const

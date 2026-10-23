@@ -203,43 +203,12 @@ export type PasteTarget =
 // later). Each is one-time and topped up by the host.
 export type CreditPool = string
 
-export interface CatalogPool {
-  id: CreditPool
-  label: string
-  order: number
-  provider: 'anthropic' | 'azure'
-}
-
-export interface CatalogModel {
-  id: string
-  label: string
-  description: string
-  pool: CreditPool
-  provider: 'anthropic' | 'azure'
-  chat: boolean
-  codex: boolean
-  thinking: 'toggle' | 'always' | 'budget' | 'reasoning'
-  webSearch: string | null
-  vision: boolean
-  pdfPages: number | null
-  default?: boolean
-  title?: boolean
-  rates: { in: number; out: number; cacheRead: number }
-}
-
-// The models this Orcha can use.
-export interface Catalog {
-  pools: CatalogPool[]
-  models: CatalogModel[]
-}
-
 // ---- chat ----
 
 export interface ChatSummary {
   id: string
   projectId: string | null
   title: string | null
-  provider: 'anthropic' | 'azure'
   model: string
   starred: boolean
   createdAt: number

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { PlanLimit, PlanUsage } from '../shared/types'
+import type { PlanState } from '../shared/ai'
 
 // Real subscription limits, read from the same endpoint Claude Code's own
 // `/usage` view calls, with the OAuth token the CLI already keeps in
@@ -62,6 +63,13 @@ function readCredentials(): Credentials | null {
   } catch {
     return null
   }
+}
+
+// Whether Claude Code is signed in to a Claude plan, and which one, for the
+// model picker and Settings → Models & keys. The token itself stays here.
+export function planState(): PlanState {
+  const credentials = readCredentials()
+  return { signedIn: credentials !== null, plan: credentials?.subscriptionType ?? null }
 }
 
 // resets_at comes back as an ISO string today, but the CLI also handles a

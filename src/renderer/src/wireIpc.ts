@@ -211,10 +211,18 @@ export function wireIpc(): () => void {
   const unsubChats = window.orcha.on(IPC.EvChatsChanged, () => {
     loadChats().catch(() => {})
   })
+  // A key, Azure or Ollama changed what the picker offers.
+  const unsubModels = window.orcha.on(IPC.EvModelsChanged, () => {
+    useStore
+      .getState()
+      .loadModels()
+      .catch(() => {})
+  })
 
   return () => {
     unsubChat()
     unsubChats()
+    unsubModels()
     unsubMessage()
     unsubStatus()
     unsubGit()

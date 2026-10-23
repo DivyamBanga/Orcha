@@ -166,7 +166,8 @@ describe('catalog', () => {
       ready: true,
       price: null
     })
-    expect(local[0].reasoning).toMatchObject({ off: 'omit', offByDefault: true, levels: [] })
-    expect(local[1].reasoning.levels).toEqual(['low', 'medium', 'high'])
+    expect(local[0].reasoning).toMatchObject({ off: 'disabled', offByDefault: true, levels: [] })
+    // Models that take levels can't be switched off.
+    expect(local[1].reasoning).toMatchObject({ levels: ['low', 'medium', 'high'], off: null })
   })
 })

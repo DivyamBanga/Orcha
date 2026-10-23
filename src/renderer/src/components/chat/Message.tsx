@@ -360,8 +360,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   const thinkingText = streaming ? (live?.thinking ?? '') : (message.parts?.thinking?.text ?? '')
   const tools = streaming ? (live?.tools ?? []) : (message.parts?.tools ?? [])
   const error = message.parts?.error
-  // Claude replies run on your Claude plan, not credits.
-  const onPlan = Boolean(message.model?.startsWith('claude'))
+  // Replies on the Max plan cost no credits (they count toward its limits).
+  const onPlan = Boolean(message.model?.startsWith('plan:'))
 
   return (
     <div data-message={message.id} className="msg-in group my-5">

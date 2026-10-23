@@ -201,7 +201,7 @@ function SessionRow({
   // Codex tabs say which model (and so which budget) they run on; Claude is
   // the default and goes unmarked.
   const codexModel = useStore((s) =>
-    workspace.agent === 'codex' ? codexModelOf(workspace.model, s.catalog) : null
+    workspace.agent === 'codex' ? codexModelOf(workspace.model, s.models) : null
   )
 
   return (
@@ -227,7 +227,7 @@ function SessionRow({
             className="shrink-0 rounded-[4px] border border-edge px-1 font-mono text-[9.5px] leading-[14px] text-zinc-500"
             title={`Codex on ${codexModel.label}`}
           >
-            {codexModel.pool}
+            {codexModel.apiModel.replace(/^gpt-[\d.]+-/, '')}
           </span>
         )}
         {isParallel && (

@@ -542,6 +542,16 @@ export function specFor(model: string): ModelSpec | null {
   return BY_ID.get(dateless) ?? null
 }
 
+// A model's name for a reply or an export: the picker's label while it's on
+// offer, else what Orcha knows it as, else its id without the route
+// ('plan:claude-opus-5-5' → 'Opus 5.5').
+export function modelLabel(id: string, offered: { id: string; label: string }[]): string {
+  const known = offered.find((m) => m.id === id)
+  if (known) return known.label
+  const bare = id.replace(/^(plan|api|azure|ollama):/, '')
+  return specFor(bare)?.label ?? bare
+}
+
 // The effort levels to offer, given whether thinking is switched off.
 export function effortLevels(reasoning: Reasoning, thinkingOff: boolean): Effort[] {
   if (!thinkingOff || !reasoning.maxEffortWhenOff) return reasoning.levels

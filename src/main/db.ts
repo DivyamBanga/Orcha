@@ -3,6 +3,8 @@ import { app } from 'electron'
 import { join } from 'path'
 import { randomUUID } from 'crypto'
 import type { Project, Workspace, WorkspaceAuth } from '../shared/types'
+import { VAULT_SCHEMA } from './vault'
+import { CONNECTIONS_SCHEMA } from './connections/store'
 
 let db: Database.Database
 
@@ -143,6 +145,27 @@ export function initDb(file?: string): void {
       created_at INTEGER NOT NULL
     );
   `)
+
+  // Orcha 1.0's connections: secrets (vault.ts) and the owner's Anthropic
+  // keys (connections/store.ts). The usage ledger keeps its own tables
+  // (usage/index.ts).
+  db.exec(VAULT_SCHEMA + CONNECTIONS_SCHEMA)
+
+  // Chats made before 1.0 ran Claude on the Max plan (and GPT on Azure), and
+  // named their models without the route ('claude-opus-5-5'); the picker
+  // names a model with its route now ('plan:claude-opus-5-5').
+  if (!db.prepare("SELECT 1 FROM app_state WHERE key = 'model_routes'").get()) {
+    db.transaction(() => {
+      for (const table of ['chats', 'messages']) {
+        db.exec(`UPDATE ${table} SET model = 'plan:' || model WHERE model LIKE 'claude-%'`)
+        db.exec(`UPDATE ${table} SET model = 'azure:' || model WHERE model LIKE 'gpt-%'`)
+      }
+      db.prepare("INSERT INTO app_state (key, value) VALUES ('model_routes', '1')").run()
+    })()
+  }
+  // Left by guest mode, gone in 1.0: the relay's model list, a guest's
+  // pairing, and this Orcha's own relay token (a credential nothing uses now).
+  db.exec("DELETE FROM app_state WHERE key IN ('catalog', 'guest:config', 'host:relay')")
 
   // Terminal-first rework: retire pre-rework SDK-chat workspaces, then make
   // sure every project has a 'main' session rooted at the repo folder.

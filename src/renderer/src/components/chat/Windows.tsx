@@ -3,6 +3,7 @@ import Markdown from '../Markdown'
 import { ArtifactView } from './Artifact'
 import { canPreview } from '../../artifactVersions'
 import { pathTo } from '../../../../shared/chatTree'
+import { modelLabel } from '../../../../shared/models'
 import { artifactsAsCode, type Artifact } from '../../../../shared/artifacts'
 import type { ChatDetail } from '../../../../shared/types'
 
@@ -65,9 +66,10 @@ export function PrintView({ chatId }: { chatId: string }): React.JSX.Element | n
   useEffect(() => {
     document.documentElement.dataset.theme = 'light'
     document.documentElement.classList.add('print-view')
-    Promise.all([window.orcha.chat.get(chatId), window.orcha.catalog()])
-      .then(([d, catalog]) => {
-        setLabels(Object.fromEntries(catalog.models.map((m) => [m.id, m.label])))
+    Promise.all([window.orcha.chat.get(chatId), window.orcha.models()])
+      .then(([d, models]) => {
+        const used = new Set((d?.messages ?? []).flatMap((m) => (m.model ? [m.model] : [])))
+        setLabels(Object.fromEntries([...used].map((id) => [id, modelLabel(id, models)])))
         setDetail(d)
       })
       .catch(() => {})

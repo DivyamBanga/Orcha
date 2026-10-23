@@ -5,7 +5,6 @@ import {
   chatIdOf,
   closeArtifact,
   openArtifact,
-  chatModels,
   defaultModel,
   deleteChat,
   loadChat,
@@ -16,6 +15,7 @@ import {
   useChatStore
 } from '../../chatStore'
 import { pathTo, siblings } from '../../../../shared/chatTree'
+import { modelLabel } from '../../../../shared/models'
 import Composer from './Composer'
 import { AssistantMessage, UserMessage, type Branches } from './Message'
 import { ArrowDown, Close, More, Star } from '../Icon'
@@ -76,13 +76,13 @@ function DropZone({
 
 // The empty screen a new chat starts from: a greeting and the composer.
 function NewChat(): React.JSX.Element {
-  const catalog = useStore((s) => s.catalog)
+  const models = useStore((s) => s.models)
   const picked = useChatStore((s) => s.picked[NEW_CHAT])
   const projectId = useChatStore((s) => s.newChatProject)
   const project = useStore((s) => s.projects.find((p) => p.id === projectId))
   const [hour] = useState(() => new Date().getHours())
-  const modelId = picked ?? defaultModel(catalog)
-  const model = chatModels(catalog).find((m) => m.id === modelId) ?? null
+  const modelId = defaultModel(models, picked)
+  const model = models.find((m) => m.id === modelId) ?? null
 
   return (
     <DropZone
@@ -110,7 +110,6 @@ function NewChat(): React.JSX.Element {
         <Composer
           route={NEW_CHAT}
           model={model}
-          chatProvider={null}
           running={false}
           onSend={(text, id) => sendMessage(null, null, text, id)}
           onStop={() => {}}
@@ -233,7 +232,7 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
   const running = useChatStore((s) => s.running[chatId] !== undefined)
   const picked = useChatStore((s) => s.picked[route])
   const focus = useChatStore((s) => s.focusMessage)
-  const catalog = useStore((s) => s.catalog)
+  const models = useStore((s) => s.models)
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
@@ -258,15 +257,11 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
     return map
   }, [detail, path])
 
-  const models = chatModels(catalog)
   const model =
     models.find((m) => m.id === (picked ?? detail?.chat.model)) ??
     models.find((m) => m.id === detail?.chat.model) ??
     null
-  const label = useCallback(
-    (id: string | null) => models.find((m) => m.id === id)?.label ?? id,
-    [models]
-  )
+  const label = useCallback((id: string | null) => (id ? modelLabel(id, models) : id), [models])
 
   const onBranch = useCallback(
     (messageId: number, delta: -1 | 1) => {
@@ -447,7 +442,6 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
           <Composer
             route={route}
             model={model}
-            chatProvider={detail?.chat.provider ?? null}
             running={running}
             onSend={send}
             onStop={() => window.orcha.chat.stop(chatId).catch(() => {})}
