@@ -115,17 +115,3 @@ export class TurnAborted extends Error {
     super('aborted')
   }
 }
-
-// What a reply cost, from its usage and the catalog's list prices (the
-// relay's own tally is the bill; this is the "≈" shown on the message).
-export function estimateCost(model: CatalogModel, usage: TurnResult['usage']): number | null {
-  if (!usage) return null
-  const r = model.rates
-  return (
-    (usage.input * r.in +
-      usage.cacheWrite * r.in * 1.25 +
-      usage.cacheRead * r.cacheRead +
-      usage.output * r.out) /
-    1_000_000
-  )
-}

@@ -13,8 +13,6 @@ import { fileMeta } from '../../attach'
 import { ArrowUp, Check, ChevronDown, Close, FileDoc, Globe, Paperclip, Spark, Stop } from '../Icon'
 import type { CatalogModel } from '../../../../shared/types'
 
-type ChatModel = CatalogModel & { blocked: boolean }
-
 const providerName = (provider: string): string => (provider === 'anthropic' ? 'Claude' : 'GPT')
 
 function ModelPicker({
@@ -23,14 +21,13 @@ function ModelPicker({
   chatProvider
 }: {
   route: string
-  model: ChatModel | null
+  model: CatalogModel | null
   chatProvider: string | null
 }): React.JSX.Element {
   const catalog = useStore((s) => s.catalog)
-  const identity = useStore((s) => s.identity)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const models = chatModels(catalog, identity)
+  const models = chatModels(catalog)
   const groups = ['anthropic', 'azure']
     .map((provider) => ({ provider, models: models.filter((m) => m.provider === provider) }))
     .filter((g) => g.models.length > 0)
@@ -78,17 +75,16 @@ function ModelPicker({
               {group.models.map((m) => (
                 <button
                   key={m.id}
-                  disabled={m.blocked}
                   onClick={() => {
                     setOpen(false)
                     pickModel(route, m, chatProvider)
                   }}
-                  className="menu-item h-auto items-start py-1.5 disabled:cursor-default disabled:opacity-45"
+                  className="menu-item h-auto items-start py-1.5"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block text-zinc-200">{m.label}</span>
                     <span className="block text-[11.5px] leading-snug text-zinc-500">
-                      {m.blocked ? 'Not available here' : m.description}
+                      {m.description}
                     </span>
                   </span>
                   {m.id === model?.id && (
@@ -179,7 +175,7 @@ function Composer({
   onStop
 }: {
   route: string
-  model: ChatModel | null
+  model: CatalogModel | null
   chatProvider: string | null
   running: boolean
   onSend: (text: string, model: string) => Promise<void>
@@ -208,12 +204,7 @@ function Composer({
   // Files alone are enough to send; ones still being saved hold it back.
   const saving = files.some((f) => !f.file)
   const canSend =
-    (draft.trim() !== '' || files.length > 0) &&
-    !saving &&
-    model !== null &&
-    !model.blocked &&
-    !running &&
-    !sending
+    (draft.trim() !== '' || files.length > 0) && !saving && model !== null && !running && !sending
   const send = (): void => {
     if (!canSend || !model) return
     const text = draft.trim()

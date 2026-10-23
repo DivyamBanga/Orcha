@@ -82,9 +82,5 @@ export const relayAdmin = {
     call(`/admin/guests/${guestId}/${access}`, {}),
 
   usage: (guestId: string): Promise<{ usage: GuestUsage }> =>
-    call(`/admin/guests/${guestId}/usage?since=${Date.now() - 14 * 86_400_000}`),
-
-  // A relay token for this (the host's own) Orcha: chat and Codex on Azure,
-  // tracked but never capped. Asking again replaces the previous one.
-  hostToken: (hostName: string): Promise<{ token: string }> => call('/admin/host', { hostName })
+    call(`/admin/guests/${guestId}/usage?since=${Date.now() - 14 * 86_400_000}`)
 }

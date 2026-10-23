@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react'
-import { useStore, useIsGuest, useCodexAvailable } from '../store'
+import { useStore, useCodexAvailable } from '../store'
 import Modal from './Modal'
 import type { Agent } from '../../../shared/types'
 
 type Mode = 'new' | 'github' | 'local' | 'remote' | 'chats'
+
+const MODES: [Mode, string][] = [
+  ['new', 'New repo'],
+  ['github', 'GitHub'],
+  ['local', 'Local'],
+  ['remote', 'Remote'],
+  ['chats', 'Chats only']
+]
 
 const cleanError = (err: unknown): string =>
   (err instanceof Error ? err.message : String(err)).replace(
@@ -16,25 +24,9 @@ function NewProjectModal(): React.JSX.Element {
   const setShow = useStore((s) => s.setShowNewProject)
   const load = useStore((s) => s.load)
   const setActive = useStore((s) => s.setActive)
-  const setup = useStore((s) => s.setup)
-  const isGuest = useIsGuest()
   const codexAvailable = useCodexAvailable()
-  // A guest may not have GitHub connected; the GitHub flows only show when it is.
-  const github = setup?.gh ?? false
 
-  const modes: [Mode, string][] = [
-    ...(github || !isGuest
-      ? ([
-          ['new', 'New repo'],
-          ['github', 'GitHub']
-        ] as [Mode, string][])
-      : []),
-    ['local', isGuest ? 'Open a folder' : 'Local'],
-    ...(isGuest ? [] : ([['remote', 'Remote']] as [Mode, string][])),
-    ['chats', 'Chats only']
-  ]
-
-  const [mode, setMode] = useState<Mode>(isGuest ? 'local' : 'new')
+  const [mode, setMode] = useState<Mode>('new')
   const [agent, setAgent] = useState<Agent>('claude')
   const [name, setName] = useState('')
   const [isPrivate, setIsPrivate] = useState(true)
@@ -46,7 +38,7 @@ function NewProjectModal(): React.JSX.Element {
   const [user, setUser] = useState('')
   const [port, setPort] = useState('')
   const [remotePath, setRemotePath] = useState('')
-  // A folder the guest picked that isn't a git repo yet, awaiting their OK.
+  // A folder picked that isn't a git repo yet, awaiting an OK to set it up.
   const [plainFolder, setPlainFolder] = useState<string | null>(null)
 
   // Load the GitHub repo list once when that tab is opened.
@@ -176,22 +168,20 @@ function NewProjectModal(): React.JSX.Element {
         </>
       )}
 
-      {modes.length > 1 && (
-        <div className="segmented mb-5">
-          {modes.map(([m, label]) => (
-            <button
-              key={m}
-              data-active={mode === m}
-              onClick={() => {
-                setMode(m)
-                setError(null)
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="segmented mb-5">
+        {MODES.map(([m, label]) => (
+          <button
+            key={m}
+            data-active={mode === m}
+            onClick={() => {
+              setMode(m)
+              setError(null)
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {working ? (
         <div className="flex items-center gap-2.5 py-6 text-[12.5px] text-zinc-400">

@@ -1,27 +1,16 @@
 import { execFileAsync } from './exec'
-import { app, ipcMain, dialog, shell, clipboard, BrowserWindow, nativeTheme } from 'electron'
-import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme } from 'electron'
+import { existsSync, mkdirSync } from 'fs'
 import { join, sep } from 'path'
 import { homedir } from 'os'
 import { IPC } from '../shared/ipc'
 import * as db from './db'
 import { sessionUsage } from './claudeSessions'
 import { computeUsageSummary } from './usageStats'
-import {
-  guestBalance,
-  guestStatus,
-  guestUsage,
-  INVITE_LINK,
-  isGuest,
-  leaveGuestMode,
-  redeemInvite,
-  relayConfig,
-  takePendingInvite
-} from './guest'
-import { catalog, refreshCatalog } from './catalog'
+import { catalog } from './catalog'
+import { codexProvider } from './codex'
 import { relayAdmin, relayAdminStatus } from './relayAdmin'
-import { installTool, refreshPath, toolsStatus } from './tools'
-import { isMac, logFilePath } from './platform'
+import { isMac } from './platform'
 import { PROJECTS_ROOT } from './services/ProjectService'
 import { exportAllChats, exportChat, fileName } from './chat/exporter'
 import { chatSettings, saveChatSettings } from './chat/settings'
@@ -37,7 +26,6 @@ import type {
   CreditPool,
   Identity,
   Project,
-  ToolName,
   WorkspaceAuth
 } from '../shared/types'
 import type { WorkspaceManager } from './services/WorkspaceManager'
@@ -100,10 +88,10 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // --- projects ---------------------------------------------------------------
 
-  // Codex tabs need a relay (a guest's, or the host's own); without one a
-  // request for one is quietly a Claude tab.
+  // Codex tabs need an Azure connection; without one a request for one is
+  // quietly a Claude tab.
   const agentFor = (agent?: Agent): Agent =>
-    agent === 'codex' && relayConfig() ? 'codex' : 'claude'
+    agent === 'codex' && codexProvider() ? 'codex' : 'claude'
 
   ipcMain.handle(
     IPC.ProjectsAdd,
@@ -412,7 +400,6 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   ipcMain.handle(IPC.UpdateStatus, () => updater.status())
   ipcMain.handle(IPC.UpdateInstall, () => updater.install())
-  ipcMain.handle(IPC.AppDiagnostics, () => diagnostics())
 
   // Switch what a tab runs (Claude/Codex) and on which model, then restart it
   // in place; the conversation resumes.
@@ -426,38 +413,15 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     }
   )
 
-  // --- guest mode ------------------------------------------------------------
+  // --- who this Orcha is ----------------------------------------------------
 
-  ipcMain.handle(IPC.GuestStatus, () => guestStatus())
-  ipcMain.handle(IPC.GuestRedeem, async (_e, link: string) => {
-    const status = await redeemInvite(link)
-    // A guest machine runs no phone server, and may have just installed tools.
-    mobileService.stop()
-    await refreshPath()
-    await refreshCatalog().catch(() => {})
-    return status
-  })
-  ipcMain.handle(IPC.GuestLeave, () => leaveGuestMode())
-  ipcMain.handle(IPC.GuestBalance, (_e, force?: boolean) => guestBalance(force === true))
-  ipcMain.handle(IPC.GuestUsage, () => guestUsage())
-  // A Mac never reads the clipboard behind the user's back (newer macOS shows
-  // an "allow paste?" alert for that); invites arrive by the orcha:// link.
-  ipcMain.handle(IPC.GuestClipboardInvite, async () =>
-    isMac ? null : ((await clipboard.readText()).match(INVITE_LINK)?.[0] ?? null)
-  )
-  ipcMain.handle(IPC.GuestPendingInvite, () => takePendingInvite())
-
-  // Who this Orcha bills, and what it can run.
+  // The host is the machine with a relay's admin file; Codex needs an Azure
+  // connection.
   ipcMain.handle(IPC.Identity, (): Identity => ({
-    kind: isGuest() ? 'guest' : relayAdminStatus().configured ? 'host' : 'local',
-    codex: relayConfig() !== null
+    kind: relayAdminStatus().configured ? 'host' : 'local',
+    codex: codexProvider() !== null
   }))
   ipcMain.handle(IPC.Catalog, () => catalog())
-
-  ipcMain.handle(IPC.ToolsStatus, () => toolsStatus())
-  ipcMain.handle(IPC.ToolsInstall, (e, name: ToolName) =>
-    installTool(name, (message) => e.sender.send(IPC.EvToolsProgress, { tool: name, message }))
-  )
 
   // --- host: managing guests on your own relay ---------------------------------
 
@@ -486,7 +450,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // Pairing info for the phone companion (Settings → Phone shows it as a QR).
   ipcMain.handle(IPC.MobileInfo, async () => {
-    if (!isGuest()) await mobileService.ensureStarted()
+    await mobileService.ensureStarted()
     return mobileService.info()
   })
 
@@ -495,35 +459,6 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
   ipcMain.handle(IPC.UiSaveState, (_e, key: string, value: string) =>
     db.appState.set(`ui:${key}`, value)
   )
-}
-
-// A support snapshot to paste into a message: versions, tools, PATH and the
-// recent log. Relay tokens and API keys are blanked out.
-async function diagnostics(): Promise<string> {
-  const tools = await toolsStatus().catch(() => null)
-  let log = ''
-  try {
-    log = readFileSync(logFilePath(), 'utf8').split('\n').slice(-200).join('\n')
-  } catch {
-    log = '(no log yet)'
-  }
-  const guest = guestStatus()
-  const text = [
-    `Orcha ${app.getVersion()} · ${process.platform} ${process.getSystemVersion()} ${process.arch}`,
-    `Guest: ${guest.paired ? `${guest.name} on ${guest.hostName}'s credits` : 'no'}`,
-    `Tools: ${
-      tools
-        ? Object.entries(tools)
-            .map(([k, v]) => `${k} ${v.version ?? 'missing'}`)
-            .join(', ')
-        : 'unknown'
-    }`,
-    `PATH: ${process.env.PATH ?? ''}`,
-    `LANG: ${process.env.LANG ?? ''}`,
-    '',
-    log
-  ].join('\n')
-  return text.replace(/\b(og_|oa_|sk-ant-)[A-Za-z0-9_-]+/g, '$1…')
 }
 
 // Claude Code on a Mac keeps its login in the Keychain rather than in

@@ -3,11 +3,15 @@ import { homedir } from 'os'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { hasSessionHistory } from '../claudeSessions'
-import { claudeRelayEnv, isGuest } from '../guest'
-import { codexArgv, codexEnv, codexLaunchCommand } from '../codex'
+import {
+  codexArgv,
+  codexEnv,
+  codexLaunchCommand,
+  codexProvider,
+  type CodexProvider
+} from '../codex'
 import { isWin, loginShell } from '../platform'
 import { findExecutable } from '../platform-core'
-import { firstRunKeys, type FirstRunState } from '../firstRun'
 import { sshArgs, shQuote, remoteHasSessionHistory, type SshTarget } from '../ssh'
 import type { Workspace, Project } from '../../shared/types'
 
@@ -52,10 +56,6 @@ interface PtyEntry {
   // across chunks. Codex puts "Action Required" there when it needs you.
   title: string
   titleTail: string
-  // A guest's Claude session answers Claude Code's one-time first-run screens
-  // itself (see firstRun.ts): which it has answered, and a tail of what's drawn
-  // since. Null = not watching (any more).
-  firstRun: FirstRunState | null
   // Mac/Linux: the agent printed EXIT_MARK on its way out and the tab is now
   // a plain shell (Windows reads PowerShell's prompt off the screen instead).
   agentExited: boolean
@@ -85,19 +85,15 @@ const EXIT_MARK = '\x1b]7701;orcha-exit\x07'
 function claudeArgv(workspace: Workspace): string[] {
   const parts = ['claude', '--dangerously-skip-permissions']
   if (hasSessionHistory(workspace.worktreePath)) parts.push('--continue')
-  // Guests default to Sonnet: it's the best value on a fixed budget, and their
-  // own Claude Code settings may default to Opus.
-  const model = workspace.model ?? (isGuest() ? 'sonnet' : null)
-  if (model) parts.push('--model', model)
+  if (workspace.model) parts.push('--model', workspace.model)
   if (workspace.effort) parts.push('--effort', workspace.effort)
   return parts
 }
 
-// A Mac tab runs the agent directly under /bin/sh with the relay settings in
-// its environment: no rc file runs first, so nothing prints ahead of the agent
-// (the dispatch boot gate counts on that) and no .zshrc export can redirect a
-// guest's billing. When the agent exits, the tab says so in plain words and
-// becomes the user's login shell in the same folder (Windows: -NoExit).
+// A Mac tab runs the agent directly under /bin/sh: no rc file runs first, so
+// nothing prints ahead of the agent (the dispatch boot gate counts on that).
+// When the agent exits, the tab says so in plain words and becomes the user's
+// login shell in the same folder (Windows: -NoExit).
 function macLaunchScript(argv: string[], agentName: string): string {
   const file = findExecutable(argv[0])
   const shell = `exec ${shQuote(loginShell())} -l`
@@ -183,12 +179,11 @@ export class PtyManager {
   // Copies process.env, applying the workspace's stored auth-mode override.
   // 'apiKey' sets ANTHROPIC_API_KEY; 'subscription' (including default/unset)
   // strips it, since Claude Code's own precedence lets a global env var
-  // silently beat an OAuth login otherwise. A guest's sessions skip all that:
-  // they always go through their host's relay.
-  private authEnv(workspace: Workspace, project: Project | undefined): Record<string, string> {
+  // silently beat an OAuth login otherwise. A Codex tab carries its provider's
+  // key instead.
+  private authEnv(workspace: Workspace, codex: CodexProvider | null): Record<string, string> {
     const env = { ...process.env } as Record<string, string>
-    if (workspace.agent === 'codex') return codexEnv(env)
-    if (isGuest()) return claudeRelayEnv(env, project?.name ?? workspace.name, workspace.id)
+    if (codex) return codexEnv(env, codex.key)
     const auth = db.workspaceAuth.get(workspace.id)
     if (auth.mode === 'apiKey' && auth.apiKey) {
       env.ANTHROPIC_API_KEY = auth.apiKey
@@ -208,6 +203,12 @@ export class PtyManager {
     const project: Project | undefined = workspace
       ? db.projects.get(workspace.projectId)
       : undefined
+    // A Codex tab runs on the owner's Azure resource; with no connection to it
+    // there is nothing to start.
+    const codex = workspace?.agent === 'codex' ? codexProvider() : null
+    if (workspace?.agent === 'codex' && !codex) {
+      throw new Error("Codex tabs need an Azure connection, and Orcha doesn't have one yet.")
+    }
 
     let proc: pty.IPty
     if (workspace && project?.sshHost) {
@@ -239,14 +240,14 @@ export class PtyManager {
           })
     } else if (!isWin) {
       let script: string | null = null
-      if (workspace?.agent === 'codex') {
-        const { file, args } = codexArgv(workspace, project)
+      if (workspace && codex) {
+        const { file, args } = codexArgv(workspace, codex.baseUrl)
         script = macLaunchScript([file, ...args], 'Codex')
       } else if (workspace) {
         script = macLaunchScript(claudeArgv(workspace), 'Claude')
       }
       const env = workspace
-        ? this.authEnv(workspace, project)
+        ? this.authEnv(workspace, codex)
         : (process.env as Record<string, string>)
       proc = pty.spawn(script ? '/bin/sh' : loginShell(), script ? ['-c', script] : ['-l'], {
         name: 'xterm-256color',
@@ -259,15 +260,15 @@ export class PtyManager {
       // -NoExit: when the agent exits (/exit, crash), you land in a shell in
       // the same folder instead of a dead tab.
       const launch = workspace
-        ? workspace.agent === 'codex'
-          ? codexLaunchCommand(workspace, project)
+        ? codex
+          ? codexLaunchCommand(workspace, codex.baseUrl)
           : claudeArgv(workspace).join(' ')
         : null
       const args = launch ? ['-NoLogo', '-NoExit', '-Command', launch] : ['-NoLogo']
       proc = pty.spawn('powershell.exe', args, {
         name: 'xterm-color',
         cwd: workspace ? workspace.worktreePath : process.env.USERPROFILE,
-        env: workspace ? this.authEnv(workspace, project) : (process.env as Record<string, string>),
+        env: workspace ? this.authEnv(workspace, codex) : (process.env as Record<string, string>),
         cols,
         rows,
         useConpty: true
@@ -289,20 +290,16 @@ export class PtyManager {
       busyMarker: workspace?.agent === 'codex' ? CODEX_BUSY_MARKER : BUSY_MARKER,
       title: '',
       titleTail: '',
-      firstRun: workspace?.agent === 'claude' && isGuest() ? { tail: '', done: new Set() } : null,
       agentExited: false,
       exitTail: ''
     }
     this.ptys.set(workspaceId, entry)
-    // These screens only ever show at startup.
-    if (entry.firstRun) setTimeout(() => (entry.firstRun = null), 120_000)
 
     proc.onData((data) => {
       entry.buffer = (entry.buffer + data).slice(-REPLAY_LIMIT)
       entry.lastOutputAt = Date.now()
       // The whole chunk is scanned, not just the kept tail: Claude Code can draw
-      // a long status line right after the marker (a guest's sessions show a
-      // "connectors are disabled" warning there), which would push it out.
+      // a long status line right after the marker, which would push it out.
       const markerScan = entry.markerTail + data.replace(ANSI, '').replace(/\s+/g, '')
       if (entry.busyMarker.test(markerScan)) {
         entry.lastBusyMarkerAt = Date.now()
@@ -321,22 +318,6 @@ export class PtyManager {
         const open = scan.lastIndexOf('\x1b]')
         const closed = titles.length > 0 ? titles[titles.length - 1].index! : -1
         entry.titleTail = open > closed ? scan.slice(open).slice(0, 512) : ''
-      }
-      const firstRun = entry.firstRun
-      const keys = firstRun ? firstRunKeys(firstRun, data.replace(ANSI, '')) : null
-      if (firstRun && keys) {
-        // Answered once the screen has finished drawing; the tail clears with
-        // the last key, so the next screen is matched on its own text only.
-        keys.forEach((key, i) =>
-          setTimeout(
-            () => {
-              if (this.ptys.get(workspaceId) !== entry) return
-              entry.proc.write(key)
-              if (i === keys.length - 1) firstRun.tail = ''
-            },
-            500 + i * 200
-          )
-        )
       }
       entry.urlTail = (entry.urlTail + data.replace(ANSI, '')).slice(-512)
       const urls = entry.urlTail.match(REMOTE_URL)

@@ -6,9 +6,8 @@ import { homedir } from 'os'
 import { IPC } from '../../shared/ipc'
 import * as db from '../db'
 import { lastActivityAgeSeconds, readRecentActivity } from '../claudeSessions'
-import { claudeRelayEnv, isGuest, relayConfig } from '../guest'
 import { codexModels } from '../catalog'
-import { codexActivityAgeSeconds, codexRecentActivity } from '../codex'
+import { codexActivityAgeSeconds, codexProvider, codexRecentActivity } from '../codex'
 import { claudeSdkBinary } from '../platform'
 import { PROJECTS_ROOT, type ProjectService } from './ProjectService'
 import type { WorkspaceManager } from './WorkspaceManager'
@@ -197,8 +196,10 @@ export class OrchestratorService {
               })
             }
             const agent = args.agent ?? 'claude'
-            if (agent === 'codex' && !relayConfig()) {
-              return this.text({ error: 'Codex sessions need a relay (an invite, or your own).' })
+            if (agent === 'codex' && !codexProvider()) {
+              return this.text({
+                error: "Codex sessions need an Azure connection, and Orcha doesn't have one yet."
+              })
             }
             const codex = codexModels()
             if (agent === 'codex' && args.model && !codex.ids.includes(args.model)) {
@@ -235,10 +236,6 @@ export class OrchestratorService {
     this.send(IPC.EvSessionStatus, { workspaceId: KEY, status: 'busy' })
 
     try {
-      // A guest's Mission Control bills their host's relay, on the cheapest
-      // model: coordinating sessions doesn't need more, and it shouldn't eat
-      // into the budget meant for the real work.
-      const guest = isGuest()
       const q = query({
         prompt: text,
         options: {
@@ -248,16 +245,8 @@ export class OrchestratorService {
           settingSources: ['user'],
           // Mission Control dispatches and coordinates; it doesn't need Opus.
           // Sonnet keeps it snappy and saves the usage window for real work.
-          model: guest ? 'haiku' : 'sonnet',
-          ...(guest
-            ? {
-                env: claudeRelayEnv(
-                  { ...process.env } as Record<string, string>,
-                  'Mission Control',
-                  'mission-control'
-                )
-              }
-            : { effort: 'medium' as const }),
+          model: 'sonnet',
+          effort: 'medium',
           mcpServers: { orcha: this.buildServer() },
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,

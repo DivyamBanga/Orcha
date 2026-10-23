@@ -77,13 +77,12 @@ function DropZone({
 // The empty screen a new chat starts from: a greeting and the composer.
 function NewChat(): React.JSX.Element {
   const catalog = useStore((s) => s.catalog)
-  const identity = useStore((s) => s.identity)
   const picked = useChatStore((s) => s.picked[NEW_CHAT])
   const projectId = useChatStore((s) => s.newChatProject)
   const project = useStore((s) => s.projects.find((p) => p.id === projectId))
   const [hour] = useState(() => new Date().getHours())
-  const modelId = picked ?? defaultModel(catalog, identity)
-  const model = chatModels(catalog, identity).find((m) => m.id === modelId) ?? null
+  const modelId = picked ?? defaultModel(catalog)
+  const model = chatModels(catalog).find((m) => m.id === modelId) ?? null
 
   return (
     <DropZone
@@ -235,7 +234,6 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
   const picked = useChatStore((s) => s.picked[route])
   const focus = useChatStore((s) => s.focusMessage)
   const catalog = useStore((s) => s.catalog)
-  const identity = useStore((s) => s.identity)
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
@@ -260,7 +258,7 @@ function Conversation({ chatId }: { chatId: string }): React.JSX.Element {
     return map
   }, [detail, path])
 
-  const models = chatModels(catalog, identity)
+  const models = chatModels(catalog)
   const model =
     models.find((m) => m.id === (picked ?? detail?.chat.model)) ??
     models.find((m) => m.id === detail?.chat.model) ??

@@ -13,7 +13,7 @@ export interface Project {
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
-// Which coding agent a session tab runs. Codex tabs exist only in guest mode.
+// Which coding agent a session tab runs. Codex tabs run on an Azure connection.
 export type Agent = 'claude' | 'codex'
 
 export interface Workspace {
@@ -198,21 +198,15 @@ export interface ClipEntry {
 export type PasteTarget =
   { kind: 'text'; text: string } | { kind: 'path'; path: string } | { kind: 'empty' }
 
-// ---- guest mode: running on someone else's credits through their relay ----
-
 // A budget on the relay ('claude', 'sol', 'astra', or any pool the relay adds
 // later). Each is one-time and topped up by the host.
 export type CreditPool = string
 
-// The models this Orcha can use, as the relay serves them (/v1/me/models).
-// Adding a model on the relay makes it show up here with no app release.
 export interface CatalogPool {
   id: CreditPool
   label: string
   order: number
   provider: 'anthropic' | 'azure'
-  // The host never bills Claude through the relay.
-  blocked: boolean
 }
 
 export interface CatalogModel {
@@ -232,6 +226,7 @@ export interface CatalogModel {
   rates: { in: number; out: number; cacheRead: number }
 }
 
+// The models this Orcha can use.
 export interface Catalog {
   pools: CatalogPool[]
   models: CatalogModel[]
@@ -367,13 +362,24 @@ export type ChatStreamEvent =
   | { chatId: string; messageId: number; kind: 'tool'; tool: ChatTool }
   | { chatId: string; messageId: number; kind: 'done'; message: ChatMessage }
 
-// Who this Orcha bills. 'guest': paired by invite, everything through the
-// host's relay. 'host': runs a relay (Claude on their own login; chat and Codex
-// on Azure through it). 'local': neither.
+// What this Orcha is: 'host' when it has a relay's admin file (Settings shows
+// Guests), otherwise 'local'.
 export interface Identity {
-  kind: 'guest' | 'host' | 'local'
-  codex: boolean // Codex tabs available (there's a relay to bill)
+  kind: 'host' | 'local'
+  codex: boolean // Codex tabs available (there's an Azure connection to run them on)
 }
+
+// ---- updates ----
+
+// 'manual': the new version's disk image was opened for the person to drag in
+// (Orcha couldn't replace itself where it's installed).
+export interface UpdateState {
+  phase: 'idle' | 'available' | 'downloading' | 'restarting' | 'manual'
+  version: string | null
+  error: string | null
+}
+
+// ---- the host side: managing guests on your own relay ----
 
 export interface PoolBalance {
   pool: CreditPool
@@ -381,19 +387,6 @@ export interface PoolBalance {
   cap: number // USD granted so far, top-ups included
   spent: number // USD spent, lifetime
   paused?: boolean // held by the host for now (relays from before this don't say)
-}
-
-// What the relay knows about this guest right now. `error` is set (and the
-// numbers are the last known ones) when the relay couldn't be reached.
-export interface GuestBalance {
-  name: string
-  hostName: string
-  status: 'active' | 'revoked'
-  pools: PoolBalance[]
-  // Spend per session tab (workspace id), recent tabs only.
-  sessions: { session: string; pool: CreditPool; cost: number; updatedAt: number }[]
-  fetchedAt: number
-  error: string | null
 }
 
 export interface GuestUsage {
@@ -409,36 +402,6 @@ export interface GuestUsage {
     output: number
   }[]
 }
-
-export interface GuestStatus {
-  paired: boolean
-  name: string | null
-  hostName: string | null
-}
-
-// The coding tools a guest machine needs.
-export type ToolName = 'claude' | 'codex' | 'git'
-
-export interface ToolState {
-  installed: boolean
-  version: string | null
-  // Installed and new enough for Orcha (Codex needs a recent version).
-  ready: boolean
-}
-
-export type ToolsStatus = Record<ToolName, ToolState>
-
-// ---- updates ----
-
-// 'manual': the new version's disk image was opened for the person to drag in
-// (Orcha couldn't replace itself where it's installed).
-export interface UpdateState {
-  phase: 'idle' | 'available' | 'downloading' | 'restarting' | 'manual'
-  version: string | null
-  error: string | null
-}
-
-// ---- the host side: managing guests on your own relay ----
 
 export interface AdminGuest {
   id: string

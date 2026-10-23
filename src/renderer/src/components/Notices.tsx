@@ -10,9 +10,8 @@ const TONE: Record<Notice['tone'], string> = {
 
 function NoticeCard({ notice }: { notice: Notice }): React.JSX.Element {
   const dismiss = useStore((s) => s.dismissNotice)
-  const openCredits = useStore((s) => s.setShowCredits)
 
-  // Heads-ups fade on their own; "it's used up" stays until dismissed.
+  // Heads-ups fade on their own; a danger or sticky one stays until dismissed.
   useEffect(() => {
     if (notice.tone === 'danger' || notice.sticky) return
     const timer = setTimeout(() => dismiss(notice.id), 12_000)
@@ -31,10 +30,7 @@ function NoticeCard({ notice }: { notice: Notice }): React.JSX.Element {
         </div>
       ) : (
         <button
-          onClick={() => {
-            openCredits(true)
-            dismiss(notice.id)
-          }}
+          onClick={() => dismiss(notice.id)}
           className="min-w-0 flex-1 text-left text-[12.5px] leading-relaxed text-zinc-300 hover:text-zinc-100"
         >
           {notice.text}
@@ -51,7 +47,7 @@ function NoticeCard({ notice }: { notice: Notice }): React.JSX.Element {
   )
 }
 
-// Bottom-right stack of in-app notices (budget warnings).
+// Bottom-right stack of in-app notices (a new version, a chat that failed).
 function Notices(): React.JSX.Element {
   const notices = useStore((s) => s.notices)
   return (

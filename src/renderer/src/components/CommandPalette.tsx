@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore, useIsGuest } from '../store'
+import { useStore } from '../store'
 import { chatRoute, startChat, useChatStore } from '../chatStore'
 import { usePresence } from '../motion'
 import { Bubble, Folder, Mark, Plus, Search, Settings, SessionState } from './Icon'
@@ -64,7 +64,6 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const workspaces = useStore((s) => s.workspaces)
   const activity = useStore((s) => s.activity)
-  const isGuest = useIsGuest()
   const chats = useChatStore((s) => s.chats)
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<Hit[]>([])
@@ -125,21 +124,13 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
         icon: <Settings size={14} />,
         run: () => s.setShowSettings(true)
       },
-      isGuest
-        ? {
-            id: 'a:credits',
-            group: 'Actions',
-            label: 'Credits',
-            icon: <Settings size={14} />,
-            run: () => s.setShowCredits(true)
-          }
-        : {
-            id: 'a:usage',
-            group: 'Actions',
-            label: 'Usage',
-            icon: <Settings size={14} />,
-            run: () => s.setShowUsageDashboard(true)
-          }
+      {
+        id: 'a:usage',
+        group: 'Actions',
+        label: 'Usage',
+        icon: <Settings size={14} />,
+        run: () => s.setShowUsageDashboard(true)
+      }
     ]
     const chatItems: Item[] = chats.map((c) => ({
       id: `c:${c.id}`,
@@ -190,7 +181,7 @@ function PaletteBody({ onClose }: { onClose: () => void }): React.JSX.Element {
       ...found(actions),
       ...(q.length >= 2 ? messageItems : [])
     ]
-  }, [q, hits, chats, workspaces, projects, activity, isGuest])
+  }, [q, hits, chats, workspaces, projects, activity])
 
   const current = Math.min(selected, Math.max(items.length - 1, 0))
   useEffect(() => {

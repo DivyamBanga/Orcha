@@ -1,20 +1,32 @@
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import { attributionHeaders, relayConfig } from './guest'
 import { codexModels } from './catalog'
-import type { Project, Workspace } from '../shared/types'
+import type { Workspace } from '../shared/types'
 
-// Codex tabs (wherever there's a relay: a guest's, or the host's own): the
-// real `codex` TUI in a terminal, pointed at the relay by command-line config
-// overrides, so nothing in ~/.codex/config.toml changes and a ChatGPT login
-// there is never used or sent. Behaviour verified against codex-cli 0.158.0.
+// Codex tabs: the real `codex` TUI in a terminal, pointed at a provider (the
+// owner's Azure resource) by command-line config overrides, so nothing in
+// ~/.codex/config.toml changes and a ChatGPT login there is never used or
+// sent. Behaviour verified against codex-cli 0.158.0.
 
 // Flags and config keys below exist from this version on.
 export const MIN_CODEX_VERSION = '0.158.0'
 
-// The env var the relay token rides in; Codex sends it as a Bearer token.
-const TOKEN_ENV = 'ORCHA_RELAY_KEY'
+// The env var the provider's key rides in; Codex sends it as a Bearer token.
+const KEY_ENV = 'ORCHA_CODEX_KEY'
+
+// Where a Codex tab sends its requests: the provider's OpenAI-style base URL
+// and the key for it.
+export interface CodexProvider {
+  baseUrl: string
+  key: string
+}
+
+// Orcha has no Azure connection yet, so there is no provider and no Codex tab
+// is offered; the connection that lands next supplies this.
+export function codexProvider(): CodexProvider | null {
+  return null
+}
 
 // Where the official installer (chatgpt.com/codex/install.ps1, or install.sh
 // on a Mac) puts it. Used by full path because a just-installed Codex isn't on
@@ -52,24 +64,15 @@ function ps(arg: string): string {
 // `codex resume --last` continues this folder's most recent Orcha session. It
 // only runs when one exists: with nothing to resume, codex 0.158 sits on
 // "Resuming session…" forever instead of starting fresh (observed live).
-export function codexArgv(
-  workspace: Workspace,
-  project: Project | undefined
-): { file: string; args: string[] } {
-  const relay = relayConfig()
-  if (!relay) throw new Error('Codex tabs need Orcha to be paired with an invite first.')
+export function codexArgv(workspace: Workspace, baseUrl: string): { file: string; args: string[] } {
   const models = codexModels()
-  const headers = Object.entries(attributionHeaders(project?.name ?? workspace.name, workspace.id))
-    .map(([k, v]) => `${toml(k)}=${toml(v)}`)
-    .join(',')
   const provider = [
     "name='Orcha'",
-    `base_url=${toml(`${relay.relay}/openai/v1`)}`,
-    `env_key='${TOKEN_ENV}'`,
+    `base_url=${toml(baseUrl)}`,
+    `env_key='${KEY_ENV}'`,
     "wire_api='responses'",
     // A long reasoning phase can be quiet for minutes before tokens flow.
-    'stream_idle_timeout_ms=600000',
-    `http_headers={${headers}}`
+    'stream_idle_timeout_ms=600000'
   ].join(',')
   const args = [
     ...(latestRollout(workspace.worktreePath) ? ['resume', '--last'] : []),
@@ -96,16 +99,13 @@ export function codexArgv(
 }
 
 // The same launch as one PowerShell command line (Windows tabs).
-export function codexLaunchCommand(workspace: Workspace, project: Project | undefined): string {
-  const { file, args } = codexArgv(workspace, project)
+export function codexLaunchCommand(workspace: Workspace, baseUrl: string): string {
+  const { file, args } = codexArgv(workspace, baseUrl)
   return `& ${ps(file)} ${args.map(ps).join(' ')}`
 }
 
-export function codexEnv(base: Record<string, string>): Record<string, string> {
-  const relay = relayConfig()
-  const env = { ...base }
-  if (relay) env[TOKEN_ENV] = relay.token
-  return env
+export function codexEnv(base: Record<string, string>, key: string): Record<string, string> {
+  return { ...base, [KEY_ENV]: key }
 }
 
 // ---- reading Codex's session logs ----------------------------------------------

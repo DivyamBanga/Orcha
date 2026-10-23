@@ -1,25 +1,14 @@
-import * as db from './db'
-import { isGuest, relayConfig } from './guest'
 import type { Catalog, CatalogModel } from '../shared/types'
 
-// The models this Orcha offers, from the relay's /v1/me/models: adding a
-// model there makes it appear here with no app release. Cached so it's there
-// at startup and offline. Before the first fetch (or against a relay too old
-// to serve it) the built-in copy below stands in; it matches the relay's.
-
-const KEY = 'catalog'
+// The models this Orcha offers: Claude, on this computer's own Claude plan.
 
 const model = (m: Omit<CatalogModel, 'chat'> & { chat?: boolean }): CatalogModel => ({
   chat: true,
   ...m
 })
 
-const BUILT_IN: Catalog = {
-  pools: [
-    { id: 'claude', label: 'Claude', order: 0, provider: 'anthropic', blocked: false },
-    { id: 'sol', label: 'GPT-6 Sol', order: 1, provider: 'azure', blocked: false },
-    { id: 'astra', label: 'GPT-6 Astra', order: 2, provider: 'azure', blocked: false }
-  ],
+const CLAUDE: Catalog = {
+  pools: [{ id: 'claude', label: 'Claude', order: 0, provider: 'anthropic' }],
   models: [
     model({
       id: 'claude-sonnet-5',
@@ -74,77 +63,12 @@ const BUILT_IN: Catalog = {
       pdfPages: 100,
       title: true,
       rates: { in: 1, out: 5, cacheRead: 0.1 }
-    }),
-    model({
-      id: 'gpt-6-sol',
-      label: 'GPT-6 Sol',
-      description: 'Fast and capable',
-      pool: 'sol',
-      provider: 'azure',
-      codex: true,
-      thinking: 'reasoning',
-      webSearch: 'web_search',
-      vision: true,
-      pdfPages: 100,
-      default: true,
-      title: true,
-      rates: { in: 2, out: 10, cacheRead: 0.2 }
-    }),
-    model({
-      id: 'gpt-6-astra',
-      label: 'GPT-6 Astra',
-      description: "OpenAI's most capable",
-      pool: 'astra',
-      provider: 'azure',
-      codex: true,
-      thinking: 'reasoning',
-      webSearch: 'web_search',
-      vision: true,
-      pdfPages: 100,
-      rates: { in: 10, out: 50, cacheRead: 1 }
     })
   ]
 }
 
-// Without a relay, only Claude (on this computer's own login).
-function local(): Catalog {
-  return {
-    pools: BUILT_IN.pools.filter((p) => p.provider === 'anthropic'),
-    models: BUILT_IN.models.filter((m) => m.provider === 'anthropic')
-  }
-}
-
 export function catalog(): Catalog {
-  if (!relayConfig()) return local()
-  try {
-    const stored = JSON.parse(db.appState.get(KEY) ?? '') as Catalog
-    if (Array.isArray(stored.pools) && Array.isArray(stored.models)) return stored
-  } catch {
-    // never fetched
-  }
-  // The host's Claude never goes through the relay.
-  return isGuest()
-    ? BUILT_IN
-    : {
-        ...BUILT_IN,
-        pools: BUILT_IN.pools.map((p) => ({ ...p, blocked: p.provider === 'anthropic' }))
-      }
-}
-
-export async function refreshCatalog(): Promise<Catalog> {
-  const relay = relayConfig()
-  if (!relay) return local()
-  const response = await fetch(`${relay.relay}/v1/me/models`, {
-    headers: { authorization: `Bearer ${relay.token}` },
-    signal: AbortSignal.timeout(10_000)
-  })
-  if (response.ok) {
-    const fresh = (await response.json()) as Catalog
-    if (Array.isArray(fresh.pools) && Array.isArray(fresh.models)) {
-      db.appState.set(KEY, JSON.stringify(fresh))
-    }
-  }
-  return catalog()
+  return CLAUDE
 }
 
 // The Codex models, and the one a new Codex tab starts on.

@@ -1,7 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Markdown from '../Markdown'
 import { usd } from '../../money'
-import { useStore } from '../../store'
 import { fileMeta, imageUrl } from '../../attach'
 import { ArtifactCard } from './Artifact'
 import { artifactsAsCode, splitArtifacts } from '../../../../shared/artifacts'
@@ -361,9 +360,8 @@ export const AssistantMessage = memo(function AssistantMessage({
   const thinkingText = streaming ? (live?.thinking ?? '') : (message.parts?.thinking?.text ?? '')
   const tools = streaming ? (live?.tools ?? []) : (message.parts?.tools ?? [])
   const error = message.parts?.error
-  // The host's Claude replies run on their Claude plan, not credits.
-  const host = useStore((s) => s.identity !== null && s.identity.kind !== 'guest')
-  const onPlan = host && Boolean(message.model?.startsWith('claude'))
+  // Claude replies run on your Claude plan, not credits.
+  const onPlan = Boolean(message.model?.startsWith('claude'))
 
   return (
     <div data-message={message.id} className="msg-in group my-5">

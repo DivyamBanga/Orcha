@@ -28,7 +28,7 @@ export function loginShell(): string {
 // nvm tools are invisible and git/claude run without UTF-8. Ask the user's
 // login shell once, at startup. Only PATH and the locale come back: the shell
 // may also export API keys or provider switches, and those must never leak
-// into the sessions Orcha starts (they would bypass the guest relay).
+// into the sessions Orcha starts (they would override the login they run on).
 export async function resolveShellEnv(): Promise<void> {
   if (!isMac) return
   const found = await new Promise<ReturnType<typeof parseShellEnv>>((resolve) => {
@@ -95,10 +95,6 @@ export function startLogFile(): void {
       }
     }
   }
-}
-
-export function logFilePath(): string {
-  return join(app.getPath('logs'), 'main.log')
 }
 
 // The Agent SDK finds its bundled Claude binary relative to its own file, which

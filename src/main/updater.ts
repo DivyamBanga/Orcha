@@ -33,23 +33,15 @@ const CHECK_EVERY_MS = 6 * 60 * 60_000
 // person approve every update the way it did the first download.
 export class Updater {
   private state: UpdateState = { phase: 'idle', version: null, error: null }
-  private feed: string
 
   // True while a session is mid-turn; installing restarts Orcha, which would
   // cut it off.
   busy: () => boolean = () => false
 
-  constructor(private send: SendFn) {
-    // A local feed for the CI smoke test, honoured only in smoke runs.
-    const flag = process.argv.find((a) => a.startsWith('--orcha-update-feed='))
-    this.feed =
-      flag && process.argv.includes('--orcha-smoke')
-        ? flag.slice('--orcha-update-feed='.length)
-        : RELEASES
-  }
+  constructor(private send: SendFn) {}
 
   start(): void {
-    if (!app.isPackaged && !process.argv.includes('--orcha-smoke')) return
+    if (!app.isPackaged) return
     setTimeout(() => this.check().catch(() => {}), 10_000)
     setInterval(() => this.check().catch(() => {}), CHECK_EVERY_MS)
   }
@@ -68,7 +60,7 @@ export class Updater {
   // and office networks).
   async check(): Promise<UpdateState> {
     if (this.state.phase === 'downloading') return this.state
-    const response = await fetch(`${this.feed}/latest`, {
+    const response = await fetch(`${RELEASES}/latest`, {
       method: 'HEAD',
       signal: AbortSignal.timeout(15_000)
     })
@@ -96,7 +88,7 @@ export class Updater {
   }
 
   private async download(version: string, file: string, to: string): Promise<void> {
-    const base = `${this.feed}/download/v${version}`
+    const base = `${RELEASES}/download/v${version}`
     const sums = await fetch(`${base}/SHA256SUMS`, { signal: AbortSignal.timeout(30_000) })
     if (!sums.ok) throw new Error(`Couldn't fetch the update's checksums (${sums.status}).`)
     const expected = (await sums.text())

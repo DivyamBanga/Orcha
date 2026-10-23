@@ -5,8 +5,7 @@ import {
   mergePath,
   parseShellEnv,
   SHELL_ENV_SENTINEL,
-  utf8Locale,
-  xcodeInstallOutcome
+  utf8Locale
 } from './platform-core'
 
 describe('mergePath', () => {
@@ -55,19 +54,5 @@ describe('isTranslocated', () => {
   it('spots a translocated app', () => {
     expect(isTranslocated('/private/var/folders/x/T/AppTranslocation/ABC/d/Orcha.app')).toBe(true)
     expect(isTranslocated('/Applications/Orcha.app')).toBe(false)
-  })
-})
-
-describe('xcodeInstallOutcome', () => {
-  it("reads xcode-select --install's answer", () => {
-    expect(
-      xcodeInstallOutcome('xcode-select: note: install requested for command line developer tools')
-    ).toBe('requested')
-    expect(
-      xcodeInstallOutcome(
-        'xcode-select: error: command line tools are already installed, use "Software Update" in System Settings to install updates'
-      )
-    ).toBe('installed')
-    expect(xcodeInstallOutcome('xcode-select: error: no developer tools were found')).toBe('error')
   })
 })

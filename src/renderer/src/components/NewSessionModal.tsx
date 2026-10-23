@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useStore, useIsGuest, useCodexAvailable } from '../store'
-import { codexModel, poolFor, poolState } from '../money'
+import { useStore, useCodexAvailable } from '../store'
+import { codexModel } from '../money'
 import Modal from './Modal'
 import type { Agent } from '../../../shared/types'
 
@@ -12,8 +12,6 @@ function NewSessionModal(): React.JSX.Element {
   const show = useStore((s) => s.showNewSession)
   const setShow = useStore((s) => s.setShowNewSession)
   const createParallelSession = useStore((s) => s.createParallelSession)
-  const balance = useStore((s) => s.guestBalance)
-  const isGuest = useIsGuest()
   const codexAvailable = useCodexAvailable()
   const catalog = useStore((s) => s.catalog)
   const codexDefault = codexModel(null, catalog)?.id ?? 'gpt-6-sol'
@@ -32,28 +30,17 @@ function NewSessionModal(): React.JSX.Element {
 
   const selectedProject = projectId || lastShow || projects[0]?.id || ''
 
-  const empty = (a: Agent, m: string): boolean => {
-    const p = poolState(balance, poolFor(a, m || null, catalog))
-    return p !== null && p.spent >= p.cap
-  }
-
   const modelChoices: [string, string][] =
     agent === 'codex'
       ? (catalog?.models ?? [])
           .filter((m) => m.codex)
           .map((m): [string, string] => [m.id === codexDefault ? '' : m.id, m.label])
-      : isGuest
-        ? [
-            ['', 'Sonnet'],
-            ['opus', 'Opus'],
-            ['haiku', 'Haiku']
-          ]
-        : [
-            ['', 'Default'],
-            ['opus', 'Opus'],
-            ['sonnet', 'Sonnet'],
-            ['haiku', 'Haiku']
-          ]
+      : [
+          ['', 'Default'],
+          ['opus', 'Opus'],
+          ['sonnet', 'Sonnet'],
+          ['haiku', 'Haiku']
+        ]
 
   const handleCreate = async (): Promise<void> => {
     if (!name.trim() || !selectedProject) return
@@ -143,8 +130,6 @@ function NewSessionModal(): React.JSX.Element {
             key={value}
             type="button"
             data-active={model === value}
-            disabled={isGuest && empty(agent, value)}
-            title={isGuest && empty(agent, value) ? 'This budget is used up' : undefined}
             onClick={() => setModel(value)}
           >
             {label}
@@ -187,7 +172,7 @@ function NewSessionModal(): React.JSX.Element {
         </button>
         <button
           onClick={handleCreate}
-          disabled={creating || !name.trim() || (isGuest && empty(agent, model))}
+          disabled={creating || !name.trim()}
           className="btn btn-primary"
         >
           {creating ? 'Creating…' : 'Create'}

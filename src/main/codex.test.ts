@@ -5,15 +5,9 @@ vi.mock('./catalog', () => ({
   codexModels: () => ({ ids: ['gpt-6-sol', 'gpt-6-astra'], fallback: 'gpt-6-sol' })
 }))
 
-vi.mock('./guest', () => ({
-  relayConfig: () => ({ relay: 'https://relay.example', token: 'og_x' }),
-  attributionHeaders: (project: string, session: string) => ({
-    'X-Orcha-Project': project,
-    'X-Orcha-Session': session
-  })
-}))
+const { codexArgv, codexEnv, codexLaunchCommand, OFFICIAL_CODEX_EXE } = await import('./codex')
 
-const { codexArgv, codexLaunchCommand, OFFICIAL_CODEX_EXE } = await import('./codex')
+const BASE_URL = 'https://example.openai.azure.com/openai/v1'
 
 const workspace = {
   id: 'ws-1',
@@ -23,17 +17,17 @@ const workspace = {
 } as Workspace
 
 describe('codex launch', () => {
-  // Pinned byte for byte to the command line Windows tabs ran before the
-  // launch was split into argv (for Mac) and a PowerShell string.
-  it('builds the same PowerShell command line as before', () => {
-    const { file } = codexArgv(workspace, undefined)
+  // Pinned byte for byte to the command line Windows tabs run: the provider
+  // block is the one part that follows the endpoint it is given.
+  it('builds the PowerShell command line', () => {
+    const { file } = codexArgv(workspace, BASE_URL)
     const quoted = (s: string): string => `'${s.replace(/'/g, "''")}'`
     const expected = [
       '--no-daemon',
       '-c',
       'model_provider=orcha',
       '-c',
-      "model_providers.orcha={name='Orcha',base_url='https://relay.example/openai/v1',env_key='ORCHA_RELAY_KEY',wire_api='responses',stream_idle_timeout_ms=600000,http_headers={'X-Orcha-Project'='main','X-Orcha-Session'='ws-1'}}",
+      "model_providers.orcha={name='Orcha',base_url='https://example.openai.azure.com/openai/v1',env_key='ORCHA_CODEX_KEY',wire_api='responses',stream_idle_timeout_ms=600000}",
       '-c',
       'check_for_update_on_startup=false',
       '-c',
@@ -45,13 +39,13 @@ describe('codex launch', () => {
       workspace.worktreePath
     ]
     expect([OFFICIAL_CODEX_EXE, 'codex']).toContain(file)
-    expect(codexLaunchCommand(workspace, undefined)).toBe(
+    expect(codexLaunchCommand(workspace, BASE_URL)).toBe(
       `& ${quoted(file)} ${expected.map(quoted).join(' ')}`
     )
   })
 
   it('gives Mac tabs the same arguments as an argv', () => {
-    const { args } = codexArgv(workspace, undefined)
+    const { args } = codexArgv(workspace, BASE_URL)
     expect(args[0]).toBe('--no-daemon')
     expect(args.slice(-3)).toEqual([
       '--dangerously-bypass-approvals-and-sandbox',
@@ -61,7 +55,16 @@ describe('codex launch', () => {
   })
 
   it('falls back to the default model for anything not on the list', () => {
-    const { args } = codexArgv({ ...workspace, model: 'opus' } as Workspace, undefined)
+    const { args } = codexArgv({ ...workspace, model: 'opus' } as Workspace, BASE_URL)
     expect(args[args.indexOf('-m') + 1]).toBe('gpt-6-sol')
+  })
+})
+
+describe('codex environment', () => {
+  it('carries the provider key in the variable the launch names, beside the rest', () => {
+    expect(codexEnv({ PATH: '/bin' }, 'sk-azure')).toEqual({
+      PATH: '/bin',
+      ORCHA_CODEX_KEY: 'sk-azure'
+    })
   })
 })

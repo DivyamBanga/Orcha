@@ -9,23 +9,20 @@ import type {
   ChatItem,
   SessionUsage,
   UsageSummary,
-  GuestBalance,
-  GuestStatus,
-  GuestUsage,
-  ToolsStatus,
   Agent,
   Identity,
   Catalog,
   ChatSettings
 } from '../../shared/types'
 
-// A small in-app message (budget warnings and the like). Not an OS toast:
-// these are about the app itself, so they only matter while you're in it.
+// A small in-app message (a new version, a chat that couldn't send, and the
+// like). Not an OS toast: these are about the app itself, so they only matter
+// while you're in it.
 export interface Notice {
   id: string
   text: string
   tone: 'neutral' | 'warn' | 'danger'
-  // A button on the notice; without one, clicking it opens Credits.
+  // A button on the notice; without one, clicking it dismisses it.
   action?: { label: string; run: () => void }
   // Stays until dismissed even when it isn't 'danger'.
   sticky?: boolean
@@ -85,17 +82,8 @@ interface OrchaStore {
   // The ⌘K palette.
   showPalette: boolean
 
-  // Guest mode (running on a host's credits). null = not checked yet.
-  guest: GuestStatus | null
-  guestBalance: GuestBalance | null
-  guestUsage: GuestUsage | null
-  // When guestUsage was fetched, for pace maths without calling Date.now() in
-  // render (React's purity rule).
-  guestUsageAt: number | null
-  showCredits: boolean
-  tools: ToolsStatus | null
   notices: Notice[]
-  // Who this Orcha bills, and the models on offer (null until loaded).
+  // Who this Orcha is, and the models on offer (null until loaded).
   identity: Identity | null
   catalog: Catalog | null
   // Settings → Profile, Appearance and Defaults (null until loaded).
@@ -125,11 +113,6 @@ interface OrchaStore {
   setUsage: (workspaceId: string, usage: SessionUsage | null) => void
   setShowUsageDashboard: (show: boolean) => void
   loadUsageSummary: (force?: boolean) => Promise<void>
-  loadGuest: () => Promise<GuestStatus>
-  loadGuestBalance: (force?: boolean) => Promise<void>
-  loadGuestUsage: () => Promise<void>
-  setShowCredits: (show: boolean) => void
-  checkTools: () => Promise<ToolsStatus>
   loadIdentity: () => Promise<void>
   loadSettings: () => Promise<void>
   saveSettings: (changes: Partial<ChatSettings>) => void
@@ -161,12 +144,6 @@ export const useStore = create<OrchaStore>((set) => ({
   showNewSession: null,
   showSettings: false,
   showPalette: false,
-  guest: null,
-  guestBalance: null,
-  guestUsage: null,
-  guestUsageAt: null,
-  showCredits: false,
-  tools: null,
   notices: [],
   identity: null,
   catalog: null,
@@ -340,20 +317,6 @@ export const useStore = create<OrchaStore>((set) => ({
     const usageSummary = await window.orcha.usage.summary(force)
     set({ usageSummary, usageSummaryFetchedAt: Date.now() })
   },
-  loadGuest: async () => {
-    const guest = await window.orcha.guest.status()
-    set({ guest })
-    return guest
-  },
-  loadGuestBalance: async (force) => {
-    const guestBalance = await window.orcha.guest.balance(force)
-    set({ guestBalance })
-  },
-  loadGuestUsage: async () => {
-    const guestUsage = await window.orcha.guest.usage()
-    set({ guestUsage, guestUsageAt: Date.now() })
-  },
-  setShowCredits: (show) => set({ showCredits: show }),
   loadIdentity: async () => {
     const [identity, catalog] = await Promise.all([window.orcha.identity(), window.orcha.catalog()])
     set({ identity, catalog })
@@ -379,24 +342,14 @@ export const useStore = create<OrchaStore>((set) => ({
     }
     window.orcha.settings.set(changes).catch(() => {})
   },
-  checkTools: async () => {
-    const tools = await window.orcha.tools.status()
-    set({ tools })
-    return tools
-  },
   pushNotice: (notice) =>
     set((s) => ({ notices: [...s.notices.filter((n) => n.id !== notice.id), notice] })),
   dismissNotice: (id) => set((s) => ({ notices: s.notices.filter((n) => n.id !== id) }))
 }))
 
-// Whether Codex tabs are on offer (there's a relay to bill them to).
+// Whether Codex tabs are on offer (there's an Azure connection to run them on).
 export function useCodexAvailable(): boolean {
   return useStore((s) => s.identity?.codex ?? false)
-}
-
-// Whether this app is running on a host's credits.
-export function useIsGuest(): boolean {
-  return useStore((s) => s.guest?.paired ?? false)
 }
 
 export function useActiveWorkspace(): Workspace | undefined {

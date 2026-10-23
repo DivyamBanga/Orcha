@@ -25,12 +25,8 @@ import { CodexService } from './services/CodexService'
 import { ClipboardService } from './services/ClipboardService'
 import { MobileService } from './services/MobileService'
 import { IPC } from '../shared/ipc'
-import { ensureHostRelay, isGuest, queueInviteLink } from './guest'
-import { refreshCatalog } from './catalog'
-import { refreshPath } from './tools'
 import { isMac, resolveShellEnv, startLogFile } from './platform'
 import { Updater } from './updater'
-import { registerSmoke } from './smoke'
 import { ChatService } from './chat/ChatService'
 import { serveAttachments } from './chat/attachments'
 import { serveArtifacts } from './chat/artifactRuntime'
@@ -102,19 +98,6 @@ let appWindow: BrowserWindow | null = null
 // lives for the whole app.
 let quitting = false
 app.on('before-quit', () => (quitting = true))
-
-// orcha://join/… from an invite page. Registered before launch finishes so a
-// link that starts Orcha isn't lost; the welcome screen picks it up.
-app.on('will-finish-launching', () => {
-  app.on('open-url', (event, url) => {
-    event.preventDefault()
-    const link = queueInviteLink(url)
-    if (link && appWindow && !appWindow.isDestroyed()) {
-      appWindow.webContents.send(IPC.EvInviteLink, { link })
-      appWindow.show()
-    }
-  })
-})
 
 // The window's own colours, matching the theme the renderer will paint.
 const surface = (): string => (nativeTheme.shouldUseDarkColors ? '#09090b' : '#fcfcfd')
@@ -249,26 +232,11 @@ function createWindow(): void {
   const updater = new Updater(send)
   updater.busy = () => activityMonitor.anyWorking()
   updater.start()
-  // The model list from the relay (and, on the host's machine, the token that
-  // lets their own chat and Codex tabs use it).
-  const loadCatalog = (): void => {
-    ensureHostRelay()
-      .catch((err) => console.log('[relay] host token:', err instanceof Error ? err.message : err))
-      .then(() => refreshCatalog())
-      .then((fresh) => send(IPC.EvCatalog, fresh))
-      .catch((err) => console.log('[relay] catalog:', err instanceof Error ? err.message : err))
-  }
-  loadCatalog()
-  setInterval(loadCatalog, 6 * 60 * 60_000)
   // The phone companion opens a network port, so it only starts at launch on
   // a machine where it's already been set up; otherwise the first open of
   // Settings → Phone starts it (and a fresh install never meets a firewall
-  // prompt for a feature nobody asked for). Guest machines never run it, and
-  // instead pick up tools installed from inside Orcha since Windows last
-  // logged in.
-  if (isGuest()) {
-    refreshPath().catch(() => {})
-  } else if (db.appState.get('mobile:token')) {
+  // prompt for a feature nobody asked for).
+  if (db.appState.get('mobile:token')) {
     mobileService.start().catch((err) => console.log('[mobile] failed to start:', err))
   }
   activityMonitor.onNotificationClick = (workspaceId) => {
@@ -286,7 +254,6 @@ function createWindow(): void {
     send(IPC.EvFocusSession, { workspaceId })
   }
   activityMonitor.start()
-  registerSmoke(mainWindow, ptyManager, activityMonitor)
   app.on('before-quit', () => {
     activityMonitor.stop()
     clipboardService.stop()
@@ -312,7 +279,7 @@ function createWindow(): void {
 // A downloaded Mac app that's opened where it landed runs from a randomised
 // read-only copy and can't update itself, so offer to move it once.
 async function offerMoveToApplications(): Promise<boolean> {
-  if (!isMac || !app.isPackaged || process.argv.includes('--orcha-smoke')) return false
+  if (!isMac || !app.isPackaged) return false
   if (app.isInApplicationsFolder()) return false
   const { response } = await dialog.showMessageBox({
     type: 'question',
@@ -347,7 +314,6 @@ app.whenReady().then(async () => {
   initDb()
   serveAttachments()
   serveArtifacts()
-  if (isMac && app.isPackaged) app.setAsDefaultProtocolClient('orcha')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

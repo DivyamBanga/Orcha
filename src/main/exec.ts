@@ -15,7 +15,9 @@ export async function execFileAsync(
   options: ExecFileOptions = {}
 ): Promise<{ stdout: string; stderr: string }> {
   if (file === 'git' && !(await gitReady())) {
-    throw new Error("Git isn't installed yet. Install Apple's developer tools from Orcha's setup.")
+    throw new Error(
+      "Git isn't installed yet. Install Apple's developer tools (xcode-select --install)."
+    )
   }
   // encoding is pinned so the overload resolves to the string-returning one
   // rather than the Buffer union; utf8 is already the default, so callers see

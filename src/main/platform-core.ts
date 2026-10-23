@@ -75,11 +75,3 @@ export function compareVersions(a: string, b: string): number {
   }
   return 0
 }
-
-// `xcode-select --install` either opens Apple's installer or says the tools
-// are already there; anything else is a failure worth reporting.
-export function xcodeInstallOutcome(output: string): 'requested' | 'installed' | 'error' {
-  if (/install requested/i.test(output)) return 'requested'
-  if (/already installed/i.test(output)) return 'installed'
-  return 'error'
-}

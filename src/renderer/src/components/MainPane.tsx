@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useStore, useActiveWorkspace, useIsGuest } from '../store'
-import { useAnimatedNumber } from '../motion'
-import { codexModel, modelName, poolFor, poolState, sessionCost, usd } from '../money'
+import { useStore, useActiveWorkspace } from '../store'
+import { codexModel, modelName } from '../money'
 import ChatView from './ChatView'
 import ChatPane from './chat/ChatPane'
 import ProjectHome from './chat/ProjectHome'
@@ -41,76 +40,9 @@ function GitChip({ workspaceId }: { workspaceId: string }): React.JSX.Element | 
   )
 }
 
-// What this tab runs: "Claude · Sonnet" / "Codex · GPT-6 Sol".
-function agentLabel(workspace: Workspace, catalog: Catalog | null): string {
-  if (workspace.agent === 'codex') {
-    return `Codex · ${codexModel(workspace.model, catalog)?.label ?? modelName(workspace.model ?? '')}`
-  }
-  const model = workspace.model ?? 'sonnet'
-  return `Claude · ${model[0].toUpperCase()}${model.slice(1)}`
-}
-
-// A guest tab's running cost, ticking up as the relay records each reply.
-function TabCost({ workspaceId }: { workspaceId: string }): React.JSX.Element | null {
-  const cost = useStore((s) => sessionCost(s.guestBalance, workspaceId))
-  const shown = useAnimatedNumber(cost ?? 0)
-  if (cost === null) return null
-  return (
-    <span
-      className="tnum fade-late font-mono text-[11.5px] text-zinc-400"
-      title="What this tab has cost so far"
-    >
-      {usd(shown)}
-    </span>
-  )
-}
-
-// Shown across the top of a guest tab whose budget has run out: why nothing
-// will run, and the quickest way to keep going.
-function BudgetBanner({ workspace }: { workspace: Workspace }): React.JSX.Element | null {
-  const balance = useStore((s) => s.guestBalance)
-  const catalog = useStore((s) => s.catalog)
-  const pool = poolFor(workspace.agent, workspace.model, catalog)
-  const state = poolState(balance, pool)
-  if (!balance || !state || state.spent < state.cap) return null
-  const open = (p: string): boolean => {
-    const b = poolState(balance, p)
-    return b !== null && b.spent < b.cap
-  }
-  // Another Codex model with money left, else Claude; a Claude tab moves to
-  // the first Codex model with money left.
-  const codexWithBudget = catalog?.models.find((m) => m.codex && m.pool !== pool && open(m.pool))
-  const alternative = codexWithBudget
-    ? {
-        label: `Switch this tab to ${pool === 'claude' ? 'Codex' : codexWithBudget.label}`,
-        agent: 'codex' as const,
-        model: codexWithBudget.id
-      }
-    : pool !== 'claude' && open('claude')
-      ? { label: 'Switch this tab to Claude', agent: 'claude' as const, model: null }
-      : null
-  return (
-    <div className="flex h-9 shrink-0 items-center gap-3 border-b border-red-400/15 bg-red-400/[0.05] px-4 text-[12.5px]">
-      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-      <span className="text-zinc-300">
-        Your {state.label} budget is used up. Ask {balance.hostName} to top it up
-        {alternative ? ', or keep going on another model.' : '.'}
-      </span>
-      {alternative && (
-        <button
-          onClick={() => {
-            window.orcha.session
-              .setAgent(workspace.id, alternative.agent, alternative.model)
-              .then(() => useStore.getState().load())
-              .catch(() => {})
-          }}
-          className="btn btn-secondary btn-sm ml-auto"
-        >
-          {alternative.label}
-        </button>
-      )}
-    </div>
-  )
+// What a Codex tab runs: "Codex · GPT-6 Sol".
+function codexLabel(workspace: Workspace, catalog: Catalog | null): string {
+  return `Codex · ${codexModel(workspace.model, catalog)?.label ?? modelName(workspace.model ?? '')}`
 }
 
 function MainPane(): React.JSX.Element {
@@ -125,7 +57,6 @@ function MainPane(): React.JSX.Element {
   const setLinkModal = useStore((s) => s.setLinkModal)
   const sharing = useStore((s) => (workspace ? Boolean(s.shareStatus[workspace.id]?.url) : false))
   const setUsage = useStore((s) => s.setUsage)
-  const isGuest = useIsGuest()
   const catalog = useStore((s) => s.catalog)
   const [gitBusy, setGitBusy] = useState(false)
   const [showSession, setShowSession] = useState(false)
@@ -287,12 +218,11 @@ function MainPane(): React.JSX.Element {
             header itself, outside the animated wrapper. */}
         <div className="boot-item boot-d1 flex min-w-0 flex-1 items-center gap-2">
           <span className="truncate font-medium text-zinc-50">{workspace.name}</span>
-          {(isGuest || workspace.agent === 'codex') && (
+          {workspace.agent === 'codex' && (
             <span className="shrink-0 whitespace-nowrap text-[12px] text-zinc-500">
-              {agentLabel(workspace, catalog)}
+              {codexLabel(workspace, catalog)}
             </span>
           )}
-          {isGuest && <TabCost workspaceId={workspace.id} />}
           {!project?.sshHost && (
             <>
               <GitChip workspaceId={workspace.id} />
@@ -358,22 +288,20 @@ function MainPane(): React.JSX.Element {
             {sharing && <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
             {sharing ? 'Sharing' : 'Share'}
           </button>
-          {!isGuest && (
-            <button
-              onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
-              className="btn btn-ghost btn-sm"
-              title="Continue this session from your phone (Claude Code Remote Control)"
-            >
-              Phone
-            </button>
-          )}
+          <button
+            onClick={() => setLinkModal({ kind: 'phone', workspaceId: workspace.id })}
+            className="btn btn-ghost btn-sm"
+            title="Continue this session from your phone (Claude Code Remote Control)"
+          >
+            Phone
+          </button>
           <span className="mx-1 h-4 w-px bg-edge" />
           {!project?.sshHost && (
             <button
               onClick={() => setShowSession((v) => !v)}
               data-active={showSession}
               className="btn btn-ghost btn-sm"
-              title={isGuest ? 'Agent, model and cost for this tab' : 'Session usage and auth mode'}
+              title="Session usage and auth mode"
             >
               Session
               <ChevronDown size={11} />
@@ -395,7 +323,6 @@ function MainPane(): React.JSX.Element {
         )}
       </header>
 
-      {isGuest && <BudgetBanner workspace={workspace} />}
       <div className="relative min-h-0 flex-1">{terminalHost}</div>
     </main>
   )

@@ -10,8 +10,7 @@ import type {
   ChatMessage,
   ChatStreamEvent,
   ChatSummary,
-  ChatTool,
-  Identity
+  ChatTool
 } from '../../shared/types'
 
 // Chats on screen. Routes are 'chat:<id>' for a chat and 'chat:new' for the
@@ -135,28 +134,14 @@ function clearFiles(route: string): void {
   updateFiles(route, () => [])
 }
 
-// The models this person can chat with. Only a guest's Claude goes through
-// the relay; your own arrives with the Max-plan chat, so until then it shows
-// but can't be picked.
-export function chatModels(
-  catalog: Catalog | null,
-  identity: Identity | null
-): (CatalogModel & { blocked: boolean })[] {
-  if (!catalog) return []
-  const blocked = new Set(catalog.pools.filter((p) => p.blocked).map((p) => p.id))
-  // The host's Claude runs on their own Claude plan, so the relay blocking it
-  // doesn't apply.
-  const onPlan = (m: CatalogModel): boolean =>
-    m.provider === 'anthropic' && identity?.kind !== 'guest'
-  return catalog.models
-    .filter((m) => m.chat)
-    .map((m) => ({ ...m, blocked: blocked.has(m.pool) && !onPlan(m) }))
+// The models you can chat with.
+export function chatModels(catalog: Catalog | null): CatalogModel[] {
+  return catalog?.models.filter((m) => m.chat) ?? []
 }
 
-// Where a new chat starts: the last model picked, else the catalog's default
-// among the ones that work here.
-export function defaultModel(catalog: Catalog | null, identity: Identity | null): string | null {
-  const usable = chatModels(catalog, identity).filter((m) => !m.blocked)
+// Where a new chat starts: the last model picked, else the catalog's default.
+export function defaultModel(catalog: Catalog | null): string | null {
+  const usable = chatModels(catalog)
   const picked = useChatStore.getState().picked[NEW_CHAT]
   if (picked && usable.some((m) => m.id === picked)) return picked
   return (

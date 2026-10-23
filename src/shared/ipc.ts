@@ -54,14 +54,7 @@ export const IPC = {
   SessionSetAgent: 'session:setAgent',
   ProjectsInitGit: 'projects:initGit',
 
-  // guest mode (running on a host's credits) and the host's admin side
-  GuestStatus: 'guest:status',
-  GuestRedeem: 'guest:redeem',
-  GuestLeave: 'guest:leave',
-  GuestBalance: 'guest:balance',
-  GuestUsage: 'guest:usage',
-  GuestClipboardInvite: 'guest:clipboardInvite',
-  GuestPendingInvite: 'guest:pendingInvite',
+  // who this Orcha is, and the models it offers
   Identity: 'identity:get',
   Catalog: 'catalog:get',
 
@@ -91,8 +84,6 @@ export const IPC = {
   ChatStar: 'chat:star',
   ChatDelete: 'chat:delete',
   ChatSearch: 'chat:search',
-  ToolsStatus: 'tools:status',
-  ToolsInstall: 'tools:install',
   RelayAdminStatus: 'relayAdmin:status',
   RelayAdminGuests: 'relayAdmin:guests',
   RelayAdminCreate: 'relayAdmin:create',
@@ -101,12 +92,11 @@ export const IPC = {
   RelayAdminPause: 'relayAdmin:pause',
   RelayAdminAccess: 'relayAdmin:access',
 
-  // updates, the Mac terminal paste path, support diagnostics
+  // updates and the Mac terminal paste path
   UpdateStatus: 'update:status',
   UpdateInstall: 'update:install',
   ClipboardSaveBlob: 'clipboard:saveBlob',
   AppPaste: 'app:paste',
-  AppDiagnostics: 'app:diagnostics',
 
   // events: main -> renderer
   EvSessionMessage: 'ev:session:message',
@@ -118,9 +108,6 @@ export const IPC = {
   EvGitStatus: 'ev:git:status',
   EvWorkspacesChanged: 'ev:workspaces:changed',
   EvShareStatus: 'ev:share:status',
-  EvToolsProgress: 'ev:tools:progress',
-  EvInviteLink: 'ev:inviteLink',
-  EvCatalog: 'ev:catalog',
   EvChat: 'ev:chat',
   EvChatsChanged: 'ev:chats:changed',
   EvUpdate: 'ev:update'

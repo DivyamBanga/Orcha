@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { useStore, useIsGuest } from '../store'
+import { useStore } from '../store'
 import { codexModel as codexModelOf } from '../money'
 import ContextMenu, { type MenuItem } from './ContextMenu'
 import UsageGlance from './UsageGlance'
-import CreditsPanel from './CreditsPanel'
 import { chatRoute, deleteChat, NEW_CHAT, startChat, useChatStore } from '../chatStore'
 import { Branch, Bubble, Diamond, Mark, More, Plus, Search, SessionState, Settings } from './Icon'
 import type { ChatSummary, Project, Workspace } from '../../../shared/types'
@@ -32,8 +31,6 @@ function useSessionMenu(): {
     const s = useStore.getState()
     const project = s.projects.find((p) => p.id === workspace.projectId)
     const isRemote = Boolean(project?.sshHost)
-    // Remote Control needs a claude.ai login, which a guest's sessions don't use.
-    const guest = s.guest?.paired ?? false
     const items: MenuItem[] = [
       {
         label: 'Restart session',
@@ -55,14 +52,10 @@ function useSessionMenu(): {
         label: 'Share live view',
         onClick: () => s.setLinkModal({ kind: 'share', workspaceId: workspace.id })
       },
-      ...(guest
-        ? []
-        : [
-            {
-              label: 'Connect phone',
-              onClick: () => s.setLinkModal({ kind: 'phone', workspaceId: workspace.id })
-            }
-          ]),
+      {
+        label: 'Connect phone',
+        onClick: () => s.setLinkModal({ kind: 'phone', workspaceId: workspace.id })
+      },
       {
         label: 'Copy path',
         onClick: () => navigator.clipboard.writeText(workspace.worktreePath)
@@ -312,7 +305,6 @@ function Sidebar(): React.JSX.Element {
   const setShowNewProject = useStore((s) => s.setShowNewProject)
   const setShowSettings = useStore((s) => s.setShowSettings)
   const setShowPalette = useStore((s) => s.setShowPalette)
-  const isGuest = useIsGuest()
   const chats = useChatStore((s) => s.chats)
   const { menu, closeMenu, openSessionMenu, openProjectMenu, openChatMenu } = useSessionMenu()
   const starred = chats.filter((c) => c.starred)
@@ -379,7 +371,7 @@ function Sidebar(): React.JSX.Element {
             </span>
           )}
           <div className="flex-1" />
-          {!isGuest && <UsageGlance />}
+          <UsageGlance />
           <button
             onClick={() => setShowSettings(true)}
             className="btn btn-ghost btn-icon shrink-0 text-zinc-500"
@@ -537,7 +529,6 @@ function Sidebar(): React.JSX.Element {
       </div>
 
       <div className="border-t border-edge p-2">
-        {isGuest && <CreditsPanel />}
         <button
           onClick={() => setShowNewProject(true)}
           className="boot-item boot-d7 btn btn-ghost h-8 w-full justify-start gap-2 px-2.5 font-normal text-zinc-500"

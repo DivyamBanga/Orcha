@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useStore } from '../store'
 import { levelColors, poolLevel, usd } from '../money'
 import type { AdminGuest, CreditPool, PoolBalance } from '../../../shared/types'
 
 // What a new invite starts with in each budget, before you change it.
 const DEFAULT_CAP = '50'
+
+// The budgets the relay gives a guest. Friends stay on the Orcha they have, so
+// these no longer change, and they're listed here rather than fetched.
+const POOLS: { id: CreditPool; label: string }[] = [
+  { id: 'claude', label: 'Claude' },
+  { id: 'sol', label: 'GPT-6 Sol' },
+  { id: 'astra', label: 'GPT-6 Astra' }
+]
 
 const cleanError = (err: unknown): string =>
   (err instanceof Error ? err.message : String(err)).replace(
@@ -231,8 +238,6 @@ function InviteForm({
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [hostName, setHostName] = useState('')
-  // Every budget the relay has (the catalog lists them all, Claude included).
-  const pools = useStore((s) => s.catalog?.pools ?? [])
   const [caps, setCaps] = useState<Record<CreditPool, string>>({})
   const capFor = (pool: CreditPool): string => caps[pool] ?? DEFAULT_CAP
   const [busy, setBusy] = useState(false)
@@ -252,7 +257,7 @@ function InviteForm({
     try {
       window.orcha.ui.saveState('hostName', hostName.trim()).catch(() => {})
       const numbers = Object.fromEntries(
-        pools.map((p) => [p.id, Math.max(0, Number(capFor(p.id)) || 0)])
+        POOLS.map((p) => [p.id, Math.max(0, Number(capFor(p.id)) || 0)])
       ) as Record<CreditPool, number>
       const { guest, inviteUrl } = await window.orcha.relayAdmin.create(
         name.trim(),
@@ -293,9 +298,9 @@ function InviteForm({
       <label className="field-label">Budgets (one-time, top up anytime)</label>
       <div
         className="mb-3 grid gap-2"
-        style={{ gridTemplateColumns: `repeat(${Math.max(pools.length, 1)}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${POOLS.length}, minmax(0, 1fr))` }}
       >
-        {pools.map((p) => (
+        {POOLS.map((p) => (
           <div key={p.id}>
             <div className="mb-1 text-[11.5px] text-zinc-500">{p.label}</div>
             <div className="relative">

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
-import { useStore, useIsGuest } from '../store'
+import { useStore } from '../store'
 import { chatModels, defaultModel, NEW_CHAT, useChatStore } from '../chatStore'
-import { levelColors, poolLevel, usd } from '../money'
 import Modal from './Modal'
 import GuestsPanel from './GuestsPanel'
 import { Check as CheckIcon, Circle, Close } from './Icon'
@@ -19,18 +18,26 @@ function Check({ ok, label }: { ok: boolean; label: string }): React.JSX.Element
   )
 }
 
-type Section =
-  'Profile' | 'Appearance' | 'Defaults' | 'Memory' | 'Data' | 'Credits' | 'Guests' | 'Integrations'
+type Section = 'Profile' | 'Appearance' | 'Defaults' | 'Memory' | 'Data' | 'Guests' | 'Integrations'
+
+const SECTIONS: Section[] = [
+  'Profile',
+  'Appearance',
+  'Defaults',
+  'Memory',
+  'Data',
+  'Guests',
+  'Integrations'
+]
 
 function SettingsModal(): React.JSX.Element {
   const show = useStore((s) => s.showSettings)
   const setShow = useStore((s) => s.setShowSettings)
-  const isGuest = useIsGuest()
+  // Guests are managed from the machine that hosts the relay.
+  const host = useStore((s) => s.identity?.kind === 'host')
   const [section, setSection] = useState<Section>('Profile')
   const onClose = (): void => setShow(false)
-  const sections: Section[] = isGuest
-    ? ['Profile', 'Appearance', 'Defaults', 'Memory', 'Data', 'Credits']
-    : ['Profile', 'Appearance', 'Defaults', 'Memory', 'Data', 'Guests', 'Integrations']
+  const sections = host ? SECTIONS : SECTIONS.filter((s) => s !== 'Guests')
 
   return (
     <Modal open={show} onClose={onClose} width={780} bare>
@@ -63,7 +70,6 @@ function SettingsModal(): React.JSX.Element {
           {section === 'Defaults' && <DefaultsSection />}
           {section === 'Memory' && <MemorySection />}
           {section === 'Data' && <DataSection />}
-          {section === 'Credits' && <GuestSettings onClose={onClose} />}
           {section === 'Guests' && <GuestsPanel />}
           {section === 'Integrations' && <HostSettings />}
         </div>
@@ -238,11 +244,10 @@ function AppearanceSection(): React.JSX.Element {
 function DefaultsSection(): React.JSX.Element | null {
   const settings = useStore((s) => s.settings)
   const catalog = useStore((s) => s.catalog)
-  const identity = useStore((s) => s.identity)
   const save = useStore((s) => s.saveSettings)
   if (!settings) return null
-  const models = chatModels(catalog, identity).filter((m) => !m.blocked)
-  const current = settings.model ?? defaultModel(catalog, identity) ?? ''
+  const models = chatModels(catalog)
+  const current = settings.model ?? defaultModel(catalog) ?? ''
   return (
     <>
       <Heading
@@ -453,83 +458,6 @@ function DataSection(): React.JSX.Element {
         </button>
       </Row>
     </>
-  )
-}
-
-// A guest's settings are about the credits they're using.
-function GuestSettings({ onClose }: { onClose: () => void }): React.JSX.Element {
-  const balance = useStore((s) => s.guestBalance)
-  const guest = useStore((s) => s.guest)
-  const openCredits = useStore((s) => s.setShowCredits)
-  const [leaving, setLeaving] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  // Something to paste to the host when Orcha misbehaves on this computer.
-  const copyDiagnostics = async (): Promise<void> => {
-    await window.orcha.clipboard.copy(await window.orcha.app.diagnostics())
-    setCopied(true)
-  }
-
-  const leave = async (): Promise<void> => {
-    if (
-      !confirm(
-        `Stop using ${guest?.hostName ?? 'your host'}'s credits on this computer? You'd need a new invite link to come back.`
-      )
-    ) {
-      return
-    }
-    setLeaving(true)
-    await window.orcha.guest.leave()
-    window.location.reload()
-  }
-
-  return (
-    <section className="mb-5">
-      <Heading title="Credits" />
-      <div className="card p-3.5">
-        <div className="mb-3 text-[12.5px] text-zinc-400">
-          Shared with you by <span className="text-zinc-200">{guest?.hostName}</span>
-        </div>
-        <div className="flex flex-col gap-2">
-          {(balance?.pools ?? []).map((p) => {
-            const level = poolLevel(p)
-            return (
-              <div key={p.pool} className="tnum flex items-baseline justify-between text-[12.5px]">
-                <span className="text-zinc-400">{p.label}</span>
-                <span className={level === 'ok' ? 'text-zinc-200' : levelColors(level).text}>
-                  {usd(Math.max(p.cap - p.spent, 0))} left
-                  <span className="text-zinc-600"> of {usd(p.cap)}</span>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-        <div className="mt-3.5 flex gap-1.5 border-t border-edge pt-3">
-          <button
-            onClick={() => {
-              onClose()
-              openCredits(true)
-            }}
-            className="btn btn-secondary btn-sm"
-          >
-            Usage details
-          </button>
-          <button
-            onClick={leave}
-            disabled={leaving}
-            className="btn btn-ghost btn-sm ml-auto text-zinc-500"
-          >
-            Unpair this computer
-          </button>
-        </div>
-      </div>
-      <div className="mt-3 flex items-center gap-2 text-[12px] text-zinc-500">
-        Something not working?
-        <button onClick={copyDiagnostics} className="btn btn-ghost btn-sm -ml-1.5 text-zinc-400">
-          {copied ? `Copied, send it to ${guest?.hostName ?? 'your host'}` : 'Copy diagnostics'}
-        </button>
-      </div>
-    </section>
   )
 }
 

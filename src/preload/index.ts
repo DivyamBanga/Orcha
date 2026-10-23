@@ -14,11 +14,6 @@ import type {
   Agent,
   AdminGuest,
   CreditPool,
-  GuestBalance,
-  GuestStatus,
-  GuestUsage,
-  ToolName,
-  ToolsStatus,
   UpdateState,
   Identity,
   Catalog,
@@ -38,17 +33,11 @@ const api = {
   platform: process.platform,
   app: {
     // A real paste into the focused field (the terminal's Paste menu on a Mac).
-    paste: (): Promise<void> => ipcRenderer.invoke(IPC.AppPaste),
-    diagnostics: (): Promise<string> => ipcRenderer.invoke(IPC.AppDiagnostics)
+    paste: (): Promise<void> => ipcRenderer.invoke(IPC.AppPaste)
   },
   update: {
     status: (): Promise<UpdateState> => ipcRenderer.invoke(IPC.UpdateStatus),
     install: (): Promise<void> => ipcRenderer.invoke(IPC.UpdateInstall)
-  },
-  // CI smoke-test hooks; main only answers when launched with --orcha-smoke.
-  smoke: {
-    state: (): Promise<unknown> => ipcRenderer.invoke('smoke:state'),
-    quit: (): Promise<void> => ipcRenderer.invoke('smoke:quit')
   },
   setup: {
     status: (): Promise<{ gh: boolean; claude: boolean }> => ipcRenderer.invoke(IPC.SetupStatus)
@@ -125,18 +114,6 @@ const api = {
     setAgent: (workspaceId: string, agent: Agent, model: string | null): Promise<Workspace> =>
       ipcRenderer.invoke(IPC.SessionSetAgent, workspaceId, agent, model)
   },
-  guest: {
-    status: (): Promise<GuestStatus> => ipcRenderer.invoke(IPC.GuestStatus),
-    redeem: (link: string): Promise<GuestStatus> => ipcRenderer.invoke(IPC.GuestRedeem, link),
-    leave: (): Promise<void> => ipcRenderer.invoke(IPC.GuestLeave),
-    balance: (force?: boolean): Promise<GuestBalance | null> =>
-      ipcRenderer.invoke(IPC.GuestBalance, force),
-    usage: (): Promise<GuestUsage | null> => ipcRenderer.invoke(IPC.GuestUsage),
-    // An invite link sitting on the clipboard, if there is one.
-    clipboardInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestClipboardInvite),
-    // An invite that arrived as an orcha:// link and hasn't been shown yet.
-    pendingInvite: (): Promise<string | null> => ipcRenderer.invoke(IPC.GuestPendingInvite)
-  },
   identity: (): Promise<Identity> => ipcRenderer.invoke(IPC.Identity),
   // Chats: replies stream in as ev:chat events; ev:chats:changed means the
   // list (titles, order, stars) changed.
@@ -173,7 +150,7 @@ const api = {
     search: (query: string): Promise<{ chatId: string; messageId: number; snippet: string }[]> =>
       ipcRenderer.invoke(IPC.ChatSearch, query)
   },
-  // The models on offer (from the relay; see EvCatalog for updates).
+  // The models on offer.
   catalog: (): Promise<Catalog> => ipcRenderer.invoke(IPC.Catalog),
   // An artifact in a window of its own (the window reads it back by id).
   artifact: {
@@ -201,10 +178,6 @@ const api = {
       ipcRenderer.invoke(IPC.SettingsSet, changes),
     setTheme: (theme: 'system' | 'light' | 'dark'): Promise<void> =>
       ipcRenderer.invoke(IPC.AppSetTheme, theme)
-  },
-  tools: {
-    status: (): Promise<ToolsStatus> => ipcRenderer.invoke(IPC.ToolsStatus),
-    install: (name: ToolName): Promise<void> => ipcRenderer.invoke(IPC.ToolsInstall, name)
   },
   relayAdmin: {
     status: (): Promise<{ configured: boolean; url: string | null }> =>
