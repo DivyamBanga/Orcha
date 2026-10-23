@@ -68,7 +68,7 @@ export interface SessionUsage {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
-  estimatedCostUsd: number | null // null if model is unrecognized/default
+  estimatedCostUsd: number | null // plan value at list price; null if no price
 }
 
 // One real subscription limit, exactly as Anthropic reports it to Claude
@@ -115,9 +115,10 @@ export interface BurnRate {
   reachesReset: boolean // true if the window resets before the limit is hit
 }
 
-// Everything derived from local ~/.claude/projects transcripts: approximate,
-// this machine only. Used to answer "what is burning the quota", never to
-// state the quota itself — that comes from PlanUsage.
+// Everything derived from the usage ledger (Claude Code transcripts on this
+// machine, plus Orcha's own chats on the Max plan), priced at list price:
+// plan value, not money spent. Used to answer "what is burning the quota",
+// never to state the quota itself — that comes from PlanUsage.
 export interface UsageInsights {
   projects: ProjectUsage[]
   models: ModelUsage[]

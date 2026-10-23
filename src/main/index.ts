@@ -12,6 +12,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { initDb } from './db'
+import { startUsage } from './usage'
 import * as db from './db'
 import { registerIpc } from './ipc'
 import { WorkspaceManager } from './services/WorkspaceManager'
@@ -317,6 +318,7 @@ app.whenReady().then(async () => {
   await resolveShellEnv()
   buildMenu()
   initDb()
+  startUsage()
   serveAttachments()
   serveArtifacts()
 

@@ -1,7 +1,18 @@
 import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import { NO_USAGE } from '../chat/provider'
-import { recent, record, spendSince, totals, USAGE_SCHEMA, type UsageInput } from './ledger'
+import {
+  migrateUsage,
+  recent,
+  record,
+  recordScanned,
+  sessionTotals,
+  spendSince,
+  totals,
+  USAGE_SCHEMA,
+  type UsageInput
+} from './ledger'
+import type { ScannedEvent } from './transcripts'
 import { addPrice, PRICE_SCHEMA, priceAt, seedPrices } from './pricing'
 import { specFor } from '../../shared/models'
 
@@ -12,6 +23,7 @@ function ledger(): Database.Database {
   const db = new Database(':memory:')
   db.exec(PRICE_SCHEMA)
   db.exec(USAGE_SCHEMA)
+  migrateUsage(db)
   seedPrices(db)
   return db
 }
@@ -445,5 +457,81 @@ describe('recent calls', () => {
     const first = record(db, call({ input: 1 }))
     const second = record(db, call({ input: 2 }))
     expect(recent(db, 2).map((e) => e.id)).toEqual([second.id, first.id])
+  })
+})
+
+// A Claude Code call as the scanner hands it over.
+const scanned = (over: Partial<ScannedEvent> = {}): ScannedEvent => ({
+  ...call({ route: 'plan', keyId: null, surface: 'claude-code', sessionId: 'sess-1' }),
+  costUsd: null,
+  costKind: 'plan',
+  priceId: null,
+  key: 'msg_1:req_1',
+  cwd: 'C:/work/app',
+  speed: null,
+  ...over
+})
+
+describe('adding scanned calls', () => {
+  it('gives a database from before scanning a source key, and can be migrated twice', () => {
+    const db = new Database(':memory:')
+    db.exec('CREATE TABLE usage_events (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)')
+    migrateUsage(db)
+    migrateUsage(db)
+    const columns = db.prepare('PRAGMA table_info(usage_events)').all() as { name: string }[]
+    expect(columns.map((c) => c.name)).toContain('source_key')
+  })
+
+  it('costs a call as plan value and keeps one row per key', () => {
+    const db = ledger()
+    recordScanned(db, scanned({ input: 1_000, output: 500 }))
+    recordScanned(db, scanned({ input: 1_000, output: 500 }))
+    const rows = recent(db)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ costKind: 'plan', route: 'plan', surface: 'claude-code' })
+    expect(rows[0].costUsd).toBeGreaterThan(0)
+  })
+
+  it('lets the version with the most output win, keeping the first time and session', () => {
+    const db = ledger()
+    recordScanned(db, scanned({ output: 8, at: T0, sessionId: 'sess-1' }))
+    recordScanned(db, scanned({ output: 506, at: T0 + HOUR, sessionId: 'sess-2' }))
+    recordScanned(db, scanned({ output: 100, at: T0 + 2 * HOUR }))
+    const [row, ...others] = recent(db)
+    expect(others).toEqual([])
+    expect(row).toMatchObject({ output: 506, at: T0, sessionId: 'sess-1', costKind: 'plan' })
+    const price = priceAt(db, 'claude-opus-5-5', T0)
+    expect(row.priceId).toBe(price?.id)
+    expect(row.costUsd).toBeCloseTo((506 * (price?.price.out ?? 0)) / 1_000_000, 10)
+  })
+
+  it('doubles the cost of a fast-mode call', () => {
+    const db = ledger()
+    recordScanned(db, scanned({ key: 'a', output: 1_000 }))
+    recordScanned(db, scanned({ key: 'b', output: 1_000, speed: 'fast' }))
+    const [b, a] = recent(db)
+    expect(b.costUsd).toBeCloseTo((a.costUsd ?? 0) * 2, 10)
+  })
+
+  it('keeps live calls apart from scanned ones and from each other', () => {
+    const db = ledger()
+    record(db, call())
+    record(db, call())
+    recordScanned(db, scanned())
+    expect(recent(db)).toHaveLength(3)
+  })
+
+  it('adds up one coding session', () => {
+    const db = ledger()
+    recordScanned(db, scanned({ key: 'a', input: 10, output: 20, cacheRead: 30, cacheWrite5m: 4 }))
+    recordScanned(db, scanned({ key: 'b', input: 1, output: 2, cacheWrite1h: 3 }))
+    recordScanned(db, scanned({ key: 'c', sessionId: 'other', output: 999 }))
+    expect(sessionTotals(db, 'sess-1')).toMatchObject({
+      input: 11,
+      output: 22,
+      cacheRead: 30,
+      cacheWrite: 7
+    })
+    expect(sessionTotals(db, 'nobody')).toBeNull()
   })
 })

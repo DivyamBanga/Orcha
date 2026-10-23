@@ -6,7 +6,7 @@ import { homedir } from 'os'
 import { IPC } from '../shared/ipc'
 import * as db from './db'
 import { sessionUsage } from './claudeSessions'
-import { computeUsageSummary } from './usageStats'
+import { computeUsageSummary } from './usage'
 import { catalog } from './catalog'
 import { codexProvider } from './codex'
 import { relayAdmin, relayAdminStatus } from './relayAdmin'
@@ -230,7 +230,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
     if (!workspace) return null
     const project = db.projects.get(workspace.projectId)
     if (project?.sshHost) return null
-    return sessionUsage(workspace.worktreePath, workspace.model)
+    return sessionUsage(db.database(), workspace.worktreePath)
   })
 
   // Per-workspace auth-mode override (subscription login vs. API key).
@@ -244,7 +244,7 @@ export function registerIpc(mainWindow: BrowserWindow, services: Services): void
 
   // Real subscription limits from Anthropic's usage endpoint, plus local
   // transcript-derived attribution for what's consuming them — see
-  // planUsage.ts and usageStats.ts.
+  // planUsage.ts and usage/insights.ts.
   ipcMain.handle(IPC.UsageSummary, (_e, force?: boolean) => computeUsageSummary(force === true))
 
   // Connect a session to your phone via Claude Code's official Remote Control:

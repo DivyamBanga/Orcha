@@ -3,6 +3,7 @@ import type { CostKind, Route, UsageEvent } from '../../shared/ai'
 import { specFor } from '../../shared/models'
 import type { TotalsQuery, UsageGroup, UsageTotals } from '../../shared/usage'
 import { costOf, priceAt } from './pricing'
+import type { ScannedEvent } from './transcripts'
 
 // The usage ledger: one row for every model call (chat turns, titles, memory
 // and other chores, research, Mission Control, Claude Code, Codex, local
@@ -41,13 +42,29 @@ export const USAGE_SCHEMA = `
     price_id       INTEGER,
     duration_ms    INTEGER,
     ttft_ms        INTEGER,
-    incognito      INTEGER NOT NULL DEFAULT 0
+    incognito      INTEGER NOT NULL DEFAULT 0,
+    source_key     TEXT
   );
   CREATE INDEX IF NOT EXISTS usage_at ON usage_events (at);
   CREATE INDEX IF NOT EXISTS usage_route_at ON usage_events (route, at);
   CREATE INDEX IF NOT EXISTS usage_chat ON usage_events (chat_id);
   CREATE INDEX IF NOT EXISTS usage_project ON usage_events (project_id);
+  CREATE INDEX IF NOT EXISTS usage_session ON usage_events (session_id);
 `
+
+// A database made before transcripts were scanned has no source_key column,
+// and CREATE TABLE IF NOT EXISTS won't add it. Run after USAGE_SCHEMA.
+// Calls recorded live have no key; the index only holds the scanned ones.
+export function migrateUsage(db: Db): void {
+  const columns = db.prepare('PRAGMA table_info(usage_events)').all() as { name: string }[]
+  if (!columns.some((c) => c.name === 'source_key')) {
+    db.exec('ALTER TABLE usage_events ADD COLUMN source_key TEXT')
+  }
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS usage_source ON usage_events (source_key)
+     WHERE source_key IS NOT NULL`
+  )
+}
 
 // What a caller knows about a call; the ledger works out the cost, the price
 // row and (when left out) the spec. The one exception is costKind 'free', for
@@ -94,12 +111,12 @@ const INSERT = `
     at, route, key_id, model, spec, surface, project_id, chat_id, session_id,
     input, cache_read, cache_write_5m, cache_write_1h, cache_write, output, reasoning,
     web_searches, images, audio_seconds, long_context, cost_usd, cost_kind, price_id,
-    duration_ms, ttft_ms, incognito
+    duration_ms, ttft_ms, incognito, source_key
   ) VALUES (
     @at, @route, @keyId, @model, @spec, @surface, @projectId, @chatId, @sessionId,
     @input, @cacheRead, @cacheWrite5m, @cacheWrite1h, @cacheWrite, @output, @reasoning,
     @webSearches, @images, @audioSeconds, @longContext, @costUsd, @costKind, @priceId,
-    @durationMs, @ttftMs, @incognito
+    @durationMs, @ttftMs, @incognito, @sourceKey
   )
 `
 
@@ -108,6 +125,15 @@ const INSERT = `
 // row points back at the chat or project it came from. A session id would
 // lead to the project just the same, so that goes too.
 export function record(db: Db, call: UsageInput, opts: RecordOptions = {}): UsageEvent {
+  return insert(db, call, opts, null)
+}
+
+function insert(
+  db: Db,
+  call: UsageInput,
+  opts: RecordOptions,
+  sourceKey: string | null
+): UsageEvent {
   const priced = priceCall(db, call, opts)
   const event: UsageEvent = {
     ...call,
@@ -122,9 +148,81 @@ export function record(db: Db, call: UsageInput, opts: RecordOptions = {}): Usag
   const result = db.prepare(INSERT).run({
     ...event,
     longContext: Number(event.longContext),
-    incognito: Number(event.incognito)
+    incognito: Number(event.incognito),
+    sourceKey
   })
   return { ...event, id: Number(result.lastInsertRowid) }
+}
+
+const REPRICE = `
+  UPDATE usage_events SET
+    model = @model, spec = @spec, input = @input, cache_read = @cacheRead,
+    cache_write_5m = @cacheWrite5m, cache_write_1h = @cacheWrite1h, cache_write = @cacheWrite,
+    output = @output, reasoning = @reasoning, web_searches = @webSearches,
+    long_context = @longContext, cost_usd = @costUsd, cost_kind = @costKind, price_id = @priceId
+  WHERE id = @id
+`
+
+// Adds a call read from a transcript, once per call however often it is seen.
+// A message is written to a transcript several times as it streams, and a
+// resumed session copies whole messages, so the same key comes again: the
+// version with the most output is the finished one and replaces the row's
+// tokens and cost. The time, project and session stay as first seen, and the
+// price is the one in force at that first time.
+export function recordScanned(db: Db, scanned: ScannedEvent): void {
+  const held = db
+    .prepare('SELECT id, at, output FROM usage_events WHERE source_key = ?')
+    .get(scanned.key) as { id: number; at: number; output: number } | undefined
+  if (!held) {
+    insert(db, scanned, { fast: scanned.speed === 'fast' }, scanned.key)
+    return
+  }
+  if (scanned.output <= held.output) return
+  const call = { ...scanned, at: held.at }
+  const priced = priceCall(db, call, { fast: scanned.speed === 'fast' })
+  db.prepare(REPRICE).run({
+    ...call,
+    ...priced,
+    id: held.id,
+    longContext: Number(call.longContext)
+  })
+}
+
+// What one coding session (a transcript's session id) has used and cost, or
+// null when the ledger has nothing for it yet.
+export function sessionTotals(
+  db: Db,
+  sessionId: string
+): {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  costUsd: number | null
+} | null {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n, SUM(input) AS input, SUM(output) AS output, SUM(cache_read) AS cache_read,
+              SUM(cache_write_5m + cache_write_1h + cache_write) AS cache_write,
+              SUM(cost_usd) AS cost_usd
+       FROM usage_events WHERE session_id = ?`
+    )
+    .get(sessionId) as {
+    n: number
+    input: number
+    output: number
+    cache_read: number
+    cache_write: number
+    cost_usd: number | null
+  }
+  if (row.n === 0) return null
+  return {
+    input: row.input,
+    output: row.output,
+    cacheRead: row.cache_read,
+    cacheWrite: row.cache_write,
+    costUsd: row.cost_usd
+  }
 }
 
 interface EventRow {

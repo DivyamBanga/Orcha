@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { homedir } from 'os'
+import type Database from 'better-sqlite3'
+import { sessionTotals } from './usage/ledger'
 import type { ChatBlock, PendingAsk, SessionUsage } from '../shared/types'
 
 // ~/.claude/projects/<cwd with every non-alphanumeric char replaced by '-'>
@@ -31,97 +33,24 @@ function latestSessionFile(cwd: string): string | null {
   return files[0]?.path ?? null
 }
 
-// Published per-million-token rates (input/output/5m-cache-write/cache-read),
-// verified 2026-07-26 against platform.claude.com/docs/en/pricing. Cache
-// writes are 1.25x input (5-minute TTL) and cache reads 0.1x input.
-interface Rates {
-  input: number
-  output: number
-  cacheWrite: number
-  cacheRead: number
-}
-
-// Sonnet 5 is on an introductory rate that ends 2026-08-31, after which it
-// rises to $3/$15. Events are priced by their own timestamp so a trend that
-// spans the changeover stays correct on both sides of it.
-const SONNET_INTRO_ENDS = Date.parse('2026-09-01T00:00:00Z')
-
-const MODEL_PRICING: Record<string, Rates> = {
-  opus: { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
-  sonnet: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
-  haiku: { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 }
-}
-
-const SONNET_STANDARD: Rates = { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 }
-
-function ratesFor(model: string | null, at: number): Rates | undefined {
-  if (!model) return undefined
-  if (model === 'sonnet' && at >= SONNET_INTRO_ENDS) return SONNET_STANDARD
-  return MODEL_PRICING[model]
-}
-
-// Shared by sessionUsage() below and usageStats.ts's cross-project aggregator.
-export function estimateCostUsd(
-  model: string | null,
-  usage: {
-    inputTokens: number
-    outputTokens: number
-    cacheReadTokens: number
-    cacheCreationTokens: number
-  },
-  at: number = Date.now()
-): number | null {
-  const rates = ratesFor(model, at)
-  if (!rates) return null
-  return (
-    (usage.inputTokens * rates.input +
-      usage.outputTokens * rates.output +
-      usage.cacheCreationTokens * rates.cacheWrite +
-      usage.cacheReadTokens * rates.cacheRead) /
-    1_000_000
-  )
-}
-
-// Token usage (and an estimated cost) for the workspace's current session,
-// parsed from its latest transcript — the same data `/cost` reads inside the
-// TUI. Scoped to the current session only, matching `/cost`'s own behavior;
-// this does not aggregate across earlier --continue restarts.
-export function sessionUsage(cwd: string, model: string | null): SessionUsage | null {
+// Token usage and cost for the workspace's current session, from the usage
+// ledger (which prices each call at the price book's rate for the day and
+// counts a message once, however often the transcript repeats it). Scoped to
+// the current session only, matching the TUI's `/cost`; this does not
+// aggregate across earlier --continue restarts. Null until the scanner has
+// read the transcript, which it does every few seconds.
+export function sessionUsage(db: Database.Database, cwd: string): SessionUsage | null {
   const file = latestSessionFile(cwd)
   if (!file) return null
-
-  let inputTokens = 0
-  let outputTokens = 0
-  let cacheReadTokens = 0
-  let cacheCreationTokens = 0
-  try {
-    const lines = readFileSync(file, 'utf8').trim().split('\n')
-    for (const line of lines) {
-      let entry: { message?: { usage?: Record<string, number> } }
-      try {
-        entry = JSON.parse(line)
-      } catch {
-        continue
-      }
-      const usage = entry.message?.usage
-      if (!usage) continue
-      inputTokens += usage.input_tokens ?? 0
-      outputTokens += usage.output_tokens ?? 0
-      cacheReadTokens += usage.cache_read_input_tokens ?? 0
-      cacheCreationTokens += usage.cache_creation_input_tokens ?? 0
-    }
-  } catch {
-    return null
+  const totals = sessionTotals(db, basename(file, '.jsonl'))
+  if (!totals) return null
+  return {
+    inputTokens: totals.input,
+    outputTokens: totals.output,
+    cacheReadTokens: totals.cacheRead,
+    cacheCreationTokens: totals.cacheWrite,
+    estimatedCostUsd: totals.costUsd
   }
-
-  const estimatedCostUsd = estimateCostUsd(model, {
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheCreationTokens
-  })
-
-  return { inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, estimatedCostUsd }
 }
 
 // Seconds since the session last wrote to its transcript; null if none.
